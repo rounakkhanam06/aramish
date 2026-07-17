@@ -1,0 +1,13 @@
+{
+  "name": "aramish-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install": "echo 'No root dependencies to install'",
+    "build": "cd Frontend && npm install && npm run build",
+    "build:frontend": "cd Frontend && npm install && npm run build",
+    "build:admin": "cd Admin-Frontend && npm install && npm run build",
+    "build:backend": "cd Backend && npm install && npm run build"
+  },
+  "dependencies": {}
+}
