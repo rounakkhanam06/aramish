@@ -744,8 +744,8 @@ export default function ProductDetailsPage() {
               disabled={!product.stock || product.stock <= 0}
               className={`flex-1 rounded-xl font-black text-xs uppercase tracking-wider py-3.5 transition-colors flex items-center justify-center gap-1.5
                 ${(!product.stock || product.stock <= 0) 
-                  ? 'bg-surface border border-white/10 text-slate-400 cursor-not-allowed opacity-60' 
-                  : 'bg-surface hover:bg-surface border border-[#02006c] text-[#02006c] cursor-pointer'
+                  ? 'bg-white border border-slate-200 text-slate-400 cursor-not-allowed opacity-60' 
+                  : 'bg-white hover:bg-slate-50 border border-[#02006c] text-[#02006c] cursor-pointer'
                 }`}
             >
               Add to cart
@@ -1107,8 +1107,8 @@ export default function ProductDetailsPage() {
             disabled={!product.stock || product.stock <= 0}
             className={`flex-1 rounded font-bold text-[13px] flex items-center justify-center transition-colors
               ${(!product.stock || product.stock <= 0) 
-                ? 'bg-surface border border-white/10 text-slate-400 cursor-not-allowed opacity-60' 
-                : 'bg-surface border border-[#02006c] text-[#02006c] active:bg-surface'
+                ? 'bg-white border border-slate-200 text-slate-400 cursor-not-allowed opacity-60' 
+                : 'bg-white border border-[#02006c] text-[#02006c] active:bg-slate-50'
               }`}
           >
             Add to cart
