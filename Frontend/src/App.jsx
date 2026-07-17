@@ -47,10 +47,14 @@ import './App.css';
 import analytics from './utils/analytics';
 
 
+import SplashScreen from './components/ui/SplashScreen';
+
 function AppContent() {
   const { user } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const [showSplash, setShowSplash] = useState(true);
 
   // Initialize analytics on app mount
   useEffect(() => {
@@ -78,6 +82,7 @@ function AppContent() {
 
   return (
     <>
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       <Toaster position="bottom-center" toastOptions={{ duration: 3000 }} />
       <Layout>
       <Suspense fallback={<PageSkeleton />}>
@@ -117,7 +122,6 @@ function AppContent() {
     </>
   );
 }
-
 
 function App() {
   return (
