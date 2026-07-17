@@ -21,6 +21,10 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5174'
 ];
 
+// Add dynamic origins from environment variables if they exist
+if (process.env.FRONTEND_URL) ALLOWED_ORIGINS.push(process.env.FRONTEND_URL);
+if (process.env.ADMIN_URL) ALLOWED_ORIGINS.push(process.env.ADMIN_URL);
+
 // Export ALLOWED_ORIGINS for socket.io configuration
 app.ALLOWED_ORIGINS = ALLOWED_ORIGINS;
 
