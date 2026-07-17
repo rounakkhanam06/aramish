@@ -20,7 +20,7 @@ export default function SplashScreen({ onFinish }) {
   }, [onFinish]);
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-[#02006c] flex items-center justify-center transition-opacity duration-500">
+    <div className="fixed inset-0 z-[9999] bg-white flex items-center justify-center transition-opacity duration-500">
       <div className="w-64 h-64 md:w-80 md:h-80 flex flex-col items-center justify-center">
         {animationData ? (
           <Lottie animationData={animationData} loop={true} />
