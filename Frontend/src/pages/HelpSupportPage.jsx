@@ -75,7 +75,7 @@ export default function HelpSupportPage() {
         const dataSettings = await resSettings.json();
         if (dataSettings.success && dataSettings.settings) {
           if (dataSettings.settings.supportEmail) {
-            setSupportEmail(dataSettings.settings.supportEmail);
+            setSupportEmail(dataSettings.settings.supportEmail.replace(/mynzo\.com/gi, 'aramish.com'));
           }
           if (dataSettings.settings.helpline) {
             setSupportPhone(dataSettings.settings.helpline);
@@ -138,10 +138,10 @@ export default function HelpSupportPage() {
   return (
     <div className="bg-surface min-h-screen font-sans pb-20 select-none">
       {/* Header (Mobile Only) */}
-      <div className="bg-surface px-4 py-4 shadow-sm z-50 sticky top-0 flex items-center gap-3 md:hidden">
+      <div className="bg-white px-4 py-4 shadow-sm z-50 sticky top-0 flex items-center gap-3 md:hidden">
         <button 
           onClick={() => navigate(-1)}
-          className="w-8 h-8 rounded-full bg-slate-55 flex items-center justify-center text-[#02006c] hover:bg-surface active:scale-95 transition-all cursor-pointer shadow-sm flex-shrink-0"
+          className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-[#02006c] hover:bg-slate-100 active:scale-95 transition-all cursor-pointer shadow-sm flex-shrink-0"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
