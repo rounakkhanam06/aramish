@@ -27,7 +27,7 @@ export default function SplashScreen({ onFinish }) {
         ) : (
           <div className="w-10 h-10 rounded-full border-4 border-yellow-500/20 border-t-yellow-500 animate-spin" />
         )}
-        <h2 className="font-logo text-[#D4AF37] text-4xl -mt-6 md:-mt-10">Aramish</h2>
+        <img src="/aramish-logo.png" alt="Aramish Logo" className="w-48 h-auto object-contain -mt-6 md:-mt-10" />
       </div>
     </div>
   );
