@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+  <!-- Primary Meta -->
+  <script>
+    (function() {
+      if (typeof navigator !== 'undefined' && !navigator.serviceWorker) {
+        try {
+          Object.defineProperty(navigator, 'serviceWorker', {
+            configurable: true,
+            enumerable: true,
+            value: {
+              register: function() { return Promise.reject("Mock SW"); },
+              addEventListener: function() {},
+              removeEventListener: function() {},
+              ready: new Promise(function(res) { res({}); }),
+              getRegistration: function() { return Promise.resolve(null); },
+              getRegistrations: function() { return Promise.resolve([]); }
+            }
+          });
+        } catch (e) { console.warn(e); }
+      }
+    })();
+  </script>
+  <title>Aramish – Shop Smarter</title>
+  <meta name="description" content="India's smartest shopping app. Crazy deals, gifting, electronics & more. Shop now on Aramish!" />
+  <meta name="theme-color" content="#ee4923" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/png" href="/aramish-logo.png" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Aramish" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <!-- Performance: preconnect for font provider -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <!-- Fonts (Nunito and Great Vibes for logo text) -->
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,600;0,700;0,800;0,900;1,400&family=Great+Vibes&display=swap" rel="stylesheet" />
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+
+</html>

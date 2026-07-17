@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+@theme {
+  --color-orange-50: #E6E7EA;
+  --color-orange-100: #BFC2CC;
+  --color-orange-200: #999DAF;
+  --color-orange-300: #737991;
+  --color-orange-400: #4D5474;
+  --color-orange-500: #0B132B;
+  --color-orange-600: #0A1127;
+  --color-orange-700: #080E1F;
+}
+
+/* Force Nunito across all visual components, buttons, fields, and text elements */
+* {
+  font-family: 'Nunito', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  /* Prevent tap highlight color on mobile */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.font-logo {
+  font-family: 'Great Vibes', cursive !important;
+  font-weight: 400;
+  letter-spacing: 1px;
+}
+
+/* Global native app behaviors */
+body {
+  /* Disable text selection on mobile by default, but enable on desktop */
+  -webkit-user-select: none;
+  user-select: none;
+  
+  /* Disable callout menus on iOS */
+  -webkit-touch-callout: none;
+  
+  /* Prevent pinch-to-zoom and double-tap zoom (allows scrolling) on mobile */
+  touch-action: pan-x pan-y;
+}
+
+@media (min-width: 1024px) {
+  body {
+    -webkit-user-select: auto;
+    user-select: auto;
+    touch-action: auto;
+  }
+}
+
+/* Re-enable text selection for form inputs */
+input, textarea, select {
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+.nunito-heading {
+  font-family: "Nunito", sans-serif !important;
+  font-optical-sizing: auto;
+  font-style: normal;
+}
+
+/* Hide scrollbar universally */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Shimmer animation for skeleton loaders */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+/* Enterprise standard product image styling */
+.product-image-container {
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #ffffff;
+  position: relative;
+  width: 100%;
+}
+
+.product-image-standard {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
