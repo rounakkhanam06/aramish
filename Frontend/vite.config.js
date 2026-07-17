@@ -11,7 +11,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true
   },
-  base: './',
+  base: '/',
   build: {
     target: 'es2015',
     rollupOptions: {
