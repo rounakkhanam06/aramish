@@ -12,6 +12,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { CRAZY_DEALS, VALUE_PROPS } from '../data/mockData';
 import OptimizedImage from '../components/ui/OptimizedImage';
+import sneakerHero from '../assets/new_sneaker.png';
 
 // Dynamic SVG Avatar Component
 function DynamicAvatar({ config, size = "w-20 h-20" }) {
@@ -313,19 +314,28 @@ export default function ProfilePage() {
         {/* Centered card wrapper */}
         <div className="w-full max-w-md px-4 py-8 space-y-6">
           {/* Login Section Card */}
-          <div className="bg-surface border border-white/10 rounded-2xl p-6 shadow-3xs text-center space-y-4">
-            <div className="w-16 h-16 bg-gold/10 text-[#0B132B] rounded-full flex items-center justify-center mx-auto shadow-sm">
-              <User className="w-8 h-8" />
+          <div className="bg-surface border border-white/10 rounded-2xl p-6 shadow-3xs relative overflow-hidden flex flex-col justify-between min-h-[200px]">
+            {/* Blue Gradient Circle Background */}
+            <div className="absolute -top-16 -right-16 w-52 h-52 bg-gradient-to-br from-[#02006c] via-[#0B132B] to-[#1a2542] rounded-full opacity-90"></div>
+            
+            {/* Sneaker Image Overlaid on Circle */}
+            <div className="absolute -top-4 -right-6 w-48 h-48 z-10 flex items-center justify-center">
+              <img src={sneakerHero} alt="Sneaker" className="w-[120%] h-auto object-contain transform -rotate-[10deg] drop-shadow-2xl" />
             </div>
-            <div className="space-y-1">
-              <h2 className="text-lg font-black text-[#02006c]">Welcome to Aramish</h2>
-              <p className="text-xs text-slate-500 font-semibold leading-relaxed">
-                Log in to view your orders, wishlist, rewards, and custom avatar.
+
+            <div className="relative z-20 w-[60%] space-y-1.5 mt-2">
+              <h2 className="text-xl font-black text-[#02006c] leading-tight">
+                Welcome to<br/>
+                <span className="text-[#F59E0B] font-logo text-3xl font-normal tracking-wide drop-shadow-sm">Aramish</span>
+              </h2>
+              <p className="text-[11px] text-slate-500 font-bold leading-relaxed pr-2">
+                Step into style! Log in to track orders, save your favorite kicks, and unlock exclusive rewards.
               </p>
             </div>
+
             <button 
               onClick={() => navigate('/login')}
-              className="w-full bg-[#0B132B] hover:bg-orange-650 text-white font-black text-xs uppercase tracking-wider py-3.5 rounded-xl shadow-md shadow-gold/20 transition-all cursor-pointer"
+              className="relative z-20 w-full bg-[#0B132B] hover:bg-[#1a2542] text-white font-black text-xs uppercase tracking-wider py-3.5 mt-6 rounded-xl shadow-lg shadow-[#0B132B]/20 transition-all cursor-pointer"
             >
               Log In / Sign Up
             </button>
