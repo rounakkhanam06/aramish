@@ -25,9 +25,9 @@ export default function SplashScreen({ onFinish }) {
         {animationData ? (
           <Lottie animationData={animationData} loop={true} />
         ) : (
-          <div className="w-10 h-10 rounded-full border-4 border-gold/20 border-t-gold animate-spin" />
+          <div className="w-10 h-10 rounded-full border-4 border-yellow-500/20 border-t-yellow-500 animate-spin" />
         )}
-        <h2 className="text-gold font-extrabold text-2xl mt-4 tracking-widest uppercase">Aramish</h2>
+        <h2 className="font-logo text-[#D4AF37] text-4xl -mt-6 md:-mt-10">Aramish</h2>
       </div>
     </div>
   );
