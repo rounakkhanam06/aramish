@@ -392,18 +392,6 @@ export default function Navbar() {
               </div>
             </div>
 
-            {/* Fun Zone / Games button highlight */}
-            <button 
-              onClick={() => navigate('/games')}
-              className="relative overflow-hidden group active:scale-95 text-[#0B132B] rounded-lg shadow-md transition-all duration-300 w-[42px] h-[42px] flex items-center justify-center flex-shrink-0 bg-slate-100 backdrop-blur-md border border-white/40 hover:bg-surface/30"
-            >
-              <Gamepad2 className="w-5 h-5 drop-shadow-sm" />
-              {/* Little ping animation to highlight it */}
-              <span className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-surface opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-surface shadow-sm"></span>
-              </span>
-            </button>
           </div>
         </div>
       </header>
@@ -472,18 +460,6 @@ export default function Navbar() {
 
           {/* Right Action Menu Icons */}
           <div className="flex items-center gap-4 text-[#0B132B] flex-shrink-0">
-            {/* Fun Games */}
-            <button 
-              onClick={() => navigate('/games')}
-              className="p-2 hover:bg-surface/10 rounded-full transition-colors flex items-center justify-center relative cursor-pointer group"
-              title="Games & Rewards"
-            >
-              <Gamepad2 className="w-5 h-5 stroke-[1.8]" />
-              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-surface opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-surface"></span>
-              </span>
-            </button>
 
             {/* Notifications */}
             <button 
