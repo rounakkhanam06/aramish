@@ -80,8 +80,8 @@ const Auth = () => {
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center mb-5">
             <img 
-              src="/HopeFinal.webp" 
-              alt="Cocia Logo" 
+              src="/aramish-logo.png" 
+              alt="Aramish Logo" 
               className="h-16 w-auto object-contain"
               onError={(e) => {
                 e.target.style.display = 'none';

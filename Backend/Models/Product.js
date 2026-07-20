@@ -20,7 +20,8 @@ const productSchema = new mongoose.Schema({
     required: true
   },
   mrp: {
-    type: Number
+    type: Number,
+    required: true
   },
   stock: {
     type: Number,
@@ -90,10 +91,14 @@ const productSchema = new mongoose.Schema({
     default: 0
   },
   variations: [{
-    sku: String,
-    price: Number,
-    stock: Number,
-    attributes: { type: Map, of: String }
+    color: { type: String, required: true },
+    size: { type: String, required: true },
+    stock: { type: Number, required: true, default: 0 },
+    sku: { type: String, required: true },
+    useDefaultPricing: { type: Boolean, default: true },
+    mrp: { type: Number },
+    sellingPrice: { type: Number },
+    images: [{ type: String }]
   }]
 }, { timestamps: true });
 

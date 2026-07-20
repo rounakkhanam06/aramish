@@ -428,6 +428,15 @@ const OrderDetail = () => {
                        <div className="flex-1">
                           <h4 className="font-black text-slate-900 font-montserrat uppercase tracking-tight text-sm">{item.name}</h4>
                           <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest">Product ID: {item.productId?.substring(item.productId.length - 8).toUpperCase() || 'N/A'}</p>
+                          {item.attributes && Object.keys(item.attributes).length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {Object.entries(item.attributes).map(([key, val]) => (
+                                <span key={key} className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold uppercase">
+                                  {key}: {val}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           <div className="flex items-center gap-6 mt-4">
                              <div>
                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Price</p>

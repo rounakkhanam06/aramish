@@ -39,14 +39,30 @@ function ProductCard({ product }) {
 
   const brandName = "Aramish";
 
+  let baseSellingPrice = product.price || product.sellingPrice;
+  let baseMrp = product.originalPrice || product.mrp;
+  
   // Handle swapped prices dynamically (if MRP < SellingPrice in DB, swap them)
-  const displaySellingPrice = (product.originalPrice && product.originalPrice < product.price) 
-    ? product.originalPrice 
-    : product.price;
+  if (baseMrp && baseMrp < baseSellingPrice) {
+      const temp = baseMrp;
+      baseMrp = baseSellingPrice;
+      baseSellingPrice = temp;
+  }
 
-  const displayMrp = (product.originalPrice && product.originalPrice < product.price) 
-    ? product.price 
-    : product.originalPrice;
+  let minPrice = baseSellingPrice;
+  let hasDifferentPrices = false;
+  
+  if (product.variations && product.variations.length > 0) {
+     const prices = product.variations.map(v => v.useDefaultPricing ? baseSellingPrice : v.sellingPrice).filter(Boolean);
+     if (prices.length > 0) {
+        minPrice = Math.min(...prices);
+        const maxPrice = Math.max(...prices);
+        hasDifferentPrices = minPrice !== maxPrice;
+     }
+  }
+
+  const displaySellingPrice = minPrice;
+  const displayMrp = baseMrp;
 
   // Format discount nicely (especially if it is a decimal like 0.38)
   const displayDiscount = (() => {
@@ -144,7 +160,9 @@ function ProductCard({ product }) {
 
         {/* Prices */}
         <div className="mt-1 flex items-baseline gap-1.5 flex-wrap leading-none h-4.5 overflow-hidden">
-          <span className="text-xs md:text-[14px] font-black text-slate-800">₹{displaySellingPrice}</span>
+          <span className="text-xs md:text-[14px] font-black text-slate-800">
+            {hasDifferentPrices ? 'From ' : ''}₹{displaySellingPrice}
+          </span>
           {displayMrp && displayMrp > displaySellingPrice && (
             <span className="text-[10px] md:text-[11px] text-slate-400 line-through">₹{displayMrp}</span>
           )}

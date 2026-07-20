@@ -109,6 +109,7 @@ const processImages = async (req, res, next) => {
         .toFile(outputPath);
 
       req.processedFiles.push({
+        fieldname: file.fieldname,
         filename,
         path: outputPath,
         url: `/uploads/${filename}`
@@ -155,6 +156,7 @@ const processBrandFiles = async (req, res, next) => {
 module.exports = {
   uploadImage: upload.single('image'),
   uploadImages: upload.array('images', 5),
+  uploadImagesAny: upload.any(),
   uploadBrandFiles,
   processImage,
   processImages,

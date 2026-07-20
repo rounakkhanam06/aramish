@@ -8,7 +8,7 @@
     "start": "node index.js",
     "dev": "node index.js",
     "seed": "node Router/seedAdmin.js",
-    "seed:banners": "node seed-banners.js"
+    "seed:banners": "node seedBanners.js"
   },
   "keywords": [],
   "author": "",

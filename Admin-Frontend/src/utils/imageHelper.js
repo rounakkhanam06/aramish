@@ -57,7 +57,7 @@ export const getImageUrl = (imagePath) => {
     path.startsWith('/assets/') ||
     path.startsWith('src/') ||
     path.startsWith('assets/') ||
-    path.startsWith('/HopeFinal.webp') ||
+    path.startsWith('/aramish-logo.png') ||
     path.includes('categoryForU') ||
     path.includes('Category')
   ) {

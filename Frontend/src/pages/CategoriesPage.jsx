@@ -30,7 +30,7 @@ export default function CategoriesPage() {
   const [sortBy, setSortBy] = useState('none'); // 'none', 'price-low', 'price-high', 'rating'
   const [showSortDropdown, setShowSortDropdown] = useState(false);
 
-  const [categories, setCategories] = useState(CATEGORIES);
+  const [categories, setCategories] = useState(CATEGORIES.filter(c => c.id === 'for-you'));
   const [subCategories, setSubCategories] = useState([]);
   const [rawProducts, setRawProducts] = useState([]);
   const [loading, setLoading] = useState(true);

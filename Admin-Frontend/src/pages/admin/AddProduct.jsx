@@ -5,39 +5,14 @@ import {
   Info, Image as ImageIcon, Layers,
   DollarSign, Tag, FileText, 
   Truck, ShieldCheck, ToggleLeft, ToggleRight,
-  ArrowLeft
+  ArrowLeft, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '../../utils/toast';
 import { useParams, useNavigate } from 'react-router-dom';
 import OptimizedImage from '../../components/common/OptimizedImage';
 
-const generateCombinations = (attrs) => {
-  if (attrs.length === 0) return [];
-  const helper = (acc, index) => {
-    if (index === attrs.length) return acc;
-    const currentAttr = attrs[index];
-    const currentValues = currentAttr.values || [];
-    if (currentValues.length === 0) return helper(acc, index + 1);
-    if (acc.length === 0) {
-      const newAcc = currentValues.map(val => ({
-        [currentAttr.name]: val
-      }));
-      return helper(newAcc, index + 1);
-    }
-    const newAcc = [];
-    acc.forEach(combo => {
-      currentValues.forEach(val => {
-        newAcc.push({
-          ...combo,
-          [currentAttr.name]: val
-        });
-      });
-    });
-    return helper(newAcc, index + 1);
-  };
-  return helper([], 0);
-};
+// generateCombinations removed for new Variant system
 
 const Label = ({ children, required }) => (
   <label className="block text-sm font-semibold text-slate-600 mb-2">
@@ -55,6 +30,7 @@ const SectionTitle = ({ icon: Icon, color, children }) => (
 );
 
 const inputCls = "w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm font-medium text-slate-800 focus:ring-4 focus:ring-orange-50 focus:border-orange-300 transition-all outline-none placeholder:text-slate-400";
+const tableInputCls = "w-full min-w-[80px] bg-slate-50 border border-slate-200 rounded-lg py-2 px-3 text-sm font-medium text-slate-800 focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition-all outline-none placeholder:text-slate-400";
 
 const AddProduct = () => {
   const { id } = useParams();
@@ -88,23 +64,24 @@ const AddProduct = () => {
     }
   }, [mrp, discountPercent]);
 
-  // Key Highlights specs
+  // Highlights
   const [highlights, setHighlights] = useState({
-    packOf: '',
-    fabric: '',
-    material: '',
-    sleeve: '',
+    idealFor: '',
+    outerMaterial: '',
+    soleMaterial: '',
+    occasion: '',
+    color: '',
     pattern: '',
-    collar: '',
-    color: ''
+    fastening: ''
   });
 
   // Technical specs
   const [techSpecs, setTechSpecs] = useState({
+    type: '',
+    toeShape: '',
+    careInstructions: '',
     fit: '',
-    fabricCare: '',
-    suitableFor: '',
-    hem: ''
+    warranty: ''
   });
 
   // Shipping specs
@@ -128,6 +105,18 @@ const AddProduct = () => {
 
   // Tax compliance
   const [hsnCode, setHsnCode] = useState('');
+
+  // Variations state
+  const [variations, setVariations] = useState([]);
+  
+  // Generator state
+  const [generatorColors, setGeneratorColors] = useState('');
+  const [generatorSizes, setGeneratorSizes] = useState('');
+  const [generatorColorImages, setGeneratorColorImages] = useState({});
+
+  // Visuals State
+  const [images, setImages] = useState([]); // holds urls or previews
+  const [imageFiles, setImageFiles] = useState([]); // holds files for multipart uploading
 
   useEffect(() => {
     if (!isEditMode) return;
@@ -185,23 +174,7 @@ const AddProduct = () => {
           if (p.flags) {
             setFlags(prev => ({ ...prev, ...p.flags }));
           }
-          if (Array.isArray(p.variations) && p.variations.length > 0) {
-            setVariations(p.variations);
-            const attrMap = {};
-            p.variations.forEach(v => {
-              if (v.attributes) {
-                Object.entries(v.attributes).forEach(([key, val]) => {
-                  if (!attrMap[key]) attrMap[key] = new Set();
-                  attrMap[key].add(val);
-                });
-              }
-            });
-            const attrs = Object.entries(attrMap).map(([name, set]) => ({
-              name,
-              values: Array.from(set)
-            }));
-            setAttributes(attrs);
-          }
+          setVariations(p.variations || []);
         }
       } catch (err) {
         console.error('Failed to load product details:', err);
@@ -287,90 +260,117 @@ const AddProduct = () => {
     }
   }, [subCategoriesMap, subCategory, category]);
 
-  // Variations state
-  const [attributes, setAttributes] = useState([]);
-  const [isAddingAttr, setIsAddingAttr] = useState(false);
-  const [newAttrName, setNewAttrName] = useState('');
-  const [newAttrVal, setNewAttrVal] = useState('');
-  const [variations, setVariations] = useState([]);
+  const generateSku = (colorStr, sizeStr) => {
+    let base = sku ? sku.toUpperCase() : `ARM-${Math.floor(1000 + Math.random() * 9000)}`;
+    if (base.includes('MNZ')) base = base.replace(/MNZ/g, 'ARM');
+    const colorPart = colorStr ? colorStr.substring(0,3).toUpperCase() : '';
+    const sizePart = sizeStr ? sizeStr.toUpperCase() : '';
+    const parts = [base, colorPart, sizePart].filter(Boolean);
+    if (parts.length === 1 && !base.includes('-')) parts.push(Math.floor(1000 + Math.random() * 9000));
+    return parts.join('-');
+  };
 
-  useEffect(() => {
-    const combos = generateCombinations(attributes);
-    const newVariations = combos.map(combo => {
-      const attrString = Object.values(combo).join('-');
-      const computedSku = sku ? `${sku}-${attrString}` : `SKU-${attrString}`;
-      
-      const existing = variations.find(v => {
-        if (!v.attributes) return false;
-        return Object.entries(combo).every(([k, val]) => v.attributes[k] === val);
+  const handleGenerateVariants = () => {
+    const colors = generatorColors.split(',').map(c => c.trim()).filter(Boolean);
+    const sizes = generatorSizes.split(',').map(s => s.trim()).filter(Boolean);
+
+    if (colors.length === 0 || sizes.length === 0) {
+      toast.info('Please enter at least one color and one size to generate.');
+      return;
+    }
+
+    const generated = [];
+    colors.forEach(color => {
+      const colorKey = color.toLowerCase();
+      const colorFiles = generatorColorImages[colorKey] || [];
+      const imagesUrls = colorFiles.map(f => f.previewUrl);
+
+      sizes.forEach(size => {
+        generated.push({
+          color,
+          size,
+          stock: 1,
+          sku: generateSku(color, size),
+          useDefaultPricing: true,
+          mrp: '',
+          sellingPrice: '',
+          images: [...imagesUrls],
+          newImageFiles: [...colorFiles]
+        });
       });
-      
-      return {
-        sku: existing?.sku || computedSku,
-        price: existing?.price !== undefined ? existing.price : (Number(sellingPrice) || 0),
-        stock: existing?.stock !== undefined ? existing.stock : (Number(stock) || 1),
-        attributes: combo
-      };
     });
-    setVariations(newVariations);
-  }, [attributes, sku, sellingPrice, stock]);
 
-  const handleAddAttribute = () => {
-    if (!newAttrName.trim()) {
-      toast.info('Attribute name is required!');
-      return;
-    }
-    if (attributes.some(attr => attr.name.toLowerCase() === newAttrName.trim().toLowerCase())) {
-      toast.info('Attribute already exists!');
-      return;
-    }
-    const parsedValues = newAttrVal
-      .split(',')
-      .map(v => v.trim())
-      .filter(Boolean);
-
-    setAttributes([...attributes, { name: newAttrName.trim(), values: parsedValues }]);
-    setNewAttrName('');
-    setNewAttrVal('');
-    setIsAddingAttr(false);
+    // Replace or Append? Let's ask the user via a prompt or just replace.
+    // Based on requirements, typically it just populates it. We'll append to be safe.
+    setVariations(prev => [...prev, ...generated]);
+    toast.success(`Generated ${generated.length} variants!`);
+    
+    // Clear inputs
+    setGeneratorColors('');
+    setGeneratorSizes('');
+    setGeneratorColorImages({});
   };
 
-  const handleAddValueToAttribute = (attrIndex, val) => {
-    if (!val.trim()) return;
-    const updated = [...attributes];
-    if (updated[attrIndex].values.includes(val.trim())) {
-      toast.info('Value already exists!');
-      return;
-    }
-    updated[attrIndex].values.push(val.trim());
-    setAttributes(updated);
+  const handleAddVariation = () => {
+    setVariations([...variations, {
+      color: '',
+      size: '',
+      stock: 1,
+      sku: '',
+      useDefaultPricing: true,
+      mrp: '',
+      sellingPrice: '',
+      images: []
+    }]);
   };
 
-  const handleRemoveValueFromAttribute = (attrIndex, valIndex) => {
-    const updated = [...attributes];
-    updated[attrIndex].values.splice(valIndex, 1);
-    setAttributes(updated);
-  };
-
-  const handleRemoveAttribute = (attrIndex) => {
-    setAttributes(attributes.filter((_, i) => i !== attrIndex));
+  const handleRemoveVariation = (index) => {
+    const updated = [...variations];
+    updated.splice(index, 1);
+    setVariations(updated);
   };
 
   const handleVariationChange = (index, field, value) => {
     const updated = [...variations];
-    if (field === 'price' || field === 'stock') {
-      updated[index][field] = Number(value);
+    if (field === 'useDefaultPricing') {
+      updated[index][field] = value;
+      if (value) {
+          updated[index].mrp = '';
+          updated[index].sellingPrice = '';
+      }
     } else {
       updated[index][field] = value;
     }
     setVariations(updated);
   };
 
-  // Visuals State
-  const [images, setImages] = useState([]); // holds urls or previews
-  const [imageFiles, setImageFiles] = useState([]); // holds files for multipart uploading
+  const handleAddVariantImageFile = (index, e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast.info('Image size cannot exceed 10MB!');
+        return;
+      }
+      const previewUrl = URL.createObjectURL(file);
+      const updated = [...variations];
+      if (!updated[index].images) updated[index].images = [];
+      if (!updated[index].newImageFiles) updated[index].newImageFiles = [];
+      
+      updated[index].images.push(previewUrl);
+      updated[index].newImageFiles.push({ previewUrl, file });
+      setVariations(updated);
+    }
+  };
 
-
+  const handleRemoveVariantImage = (varIndex, imgIndex) => {
+    const updated = [...variations];
+    const target = updated[varIndex].images[imgIndex];
+    updated[varIndex].images = updated[varIndex].images.filter((_, i) => i !== imgIndex);
+    if (updated[varIndex].newImageFiles) {
+        updated[varIndex].newImageFiles = updated[varIndex].newImageFiles.filter(item => item.previewUrl !== target);
+    }
+    setVariations(updated);
+  };
 
   const handleAddImageUrl = () => {
     const url = prompt('Enter Image URL');
@@ -459,15 +459,28 @@ const AddProduct = () => {
       return;
     }
 
-    if (variations && variations.length > 0) {
-      for (let i = 0; i < variations.length; i++) {
-        const v = variations[i];
-        if (Number(v.price) <= 0) {
-          toast.info(`Variation ${i + 1} price must be greater than zero!`);
+    if (!variations || variations.length === 0) {
+      toast.info('At least one variant is required!');
+      return;
+    }
+
+    for (let i = 0; i < variations.length; i++) {
+      const v = variations[i];
+      if (!v.color || !v.size || !v.sku) {
+        toast.info(`Color, Size, and SKU are required for Variation ${i + 1}!`);
+        return;
+      }
+      if (Number(v.stock) < 0) {
+        toast.info(`Variation ${i + 1} stock cannot be negative!`);
+        return;
+      }
+      if (!v.useDefaultPricing) {
+        if (!v.mrp || !v.sellingPrice) {
+          toast.info(`Variant MRP and Selling Price are required for Variation ${i + 1} if default pricing is disabled!`);
           return;
         }
-        if (Number(v.stock) < 0) {
-          toast.info(`Variation ${i + 1} stock cannot be negative!`);
+        if (Number(v.mrp) < Number(v.sellingPrice)) {
+          toast.info(`Variant MRP cannot be less than Selling Price for Variation ${i + 1}!`);
           return;
         }
       }
@@ -514,10 +527,20 @@ const AddProduct = () => {
           rawImageUrls.push(img);
         }
       });
-      bodyFormData.append('images', JSON.stringify(rawImageUrls));
+      bodyFormData.append('imageUrls', JSON.stringify(rawImageUrls));
 
       imageFiles.forEach(fileObj => {
         bodyFormData.append('images', fileObj.file);
+      });
+
+      variations.forEach((v, i) => {
+          if (v.newImageFiles && v.newImageFiles.length > 0) {
+              v.newImageFiles.forEach(fileObj => {
+                  bodyFormData.append(`variantImages_${i}`, fileObj.file);
+              });
+          }
+          const existingImages = (v.images || []).filter(img => typeof img === 'string' && !img.startsWith('blob:'));
+          bodyFormData.append(`variantImagesExisting_${i}`, JSON.stringify(existingImages));
       });
 
       toast.loading(isEditMode ? 'Updating product...' : 'Publishing product to catalog...', { id: 'publish' });
@@ -725,13 +748,23 @@ const AddProduct = () => {
               </div>
               <div>
                 <Label>SKU / Product Code</Label>
-                <input 
-                  type="text" 
-                  value={sku}
-                  onChange={e => setSku(e.target.value)}
-                  placeholder="e.g. FSH-001" 
-                  className={inputCls} 
-                />
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="text" 
+                    value={sku}
+                    onChange={e => setSku(e.target.value)}
+                    placeholder="e.g. ARM-001" 
+                    className={inputCls} 
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSku(`ARM-${Math.floor(1000 + Math.random() * 9000)}`)}
+                    title="Generate Base SKU"
+                    className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl border border-slate-200 transition-colors shrink-0 flex items-center justify-center"
+                  >
+                    <RefreshCw size={18} />
+                  </button>
+                </div>
               </div>
             </div>
           </section>
@@ -745,13 +778,13 @@ const AddProduct = () => {
                 <p className="text-sm font-semibold text-indigo-500">Key Highlights</p>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { key: 'packOf', label: 'Pack Of' },
-                    { key: 'fabric', label: 'Fabric' },
-                    { key: 'material', label: 'Material' },
-                    { key: 'sleeve', label: 'Sleeve' },
+                    { key: 'idealFor', label: 'Ideal For (Men/Women)' },
+                    { key: 'outerMaterial', label: 'Outer Material' },
+                    { key: 'soleMaterial', label: 'Sole Material' },
+                    { key: 'occasion', label: 'Occasion' },
+                    { key: 'color', label: 'Color' },
                     { key: 'pattern', label: 'Pattern' },
-                    { key: 'collar', label: 'Collar' },
-                    { key: 'color', label: 'Color' }
+                    { key: 'fastening', label: 'Fastening (Lace-Up etc)' }
                   ].map(f => (
                     <div key={f.key}>
                       <Label>{f.label}</Label>
@@ -770,10 +803,11 @@ const AddProduct = () => {
                 <p className="text-sm font-semibold text-indigo-500">Technical Specs</p>
                 <div className="space-y-3">
                   {[
-                    { key: 'fit', label: 'Fit' },
-                    { key: 'fabricCare', label: 'Fabric Care' },
-                    { key: 'suitableFor', label: 'Suitable For' },
-                    { key: 'hem', label: 'Hem' }
+                    { key: 'type', label: 'Type (Sneakers etc)' },
+                    { key: 'toeShape', label: 'Toe Shape' },
+                    { key: 'careInstructions', label: 'Care Instructions' },
+                    { key: 'fit', label: 'Fit (Regular/Wide)' },
+                    { key: 'warranty', label: 'Warranty' }
                   ].map(f => (
                     <div key={f.key}>
                       <Label>{f.label}</Label>
@@ -796,173 +830,221 @@ const AddProduct = () => {
             <div className="flex justify-between items-center pb-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-purple-50 text-purple-500 rounded-xl"><Layers size={17} /></div>
-                <h3 className="text-base font-semibold text-slate-700">Variations (SKUs)</h3>
+                <h3 className="text-base font-semibold text-slate-700">Variations</h3>
               </div>
-              {!isAddingAttr && (
-                <button 
-                  onClick={() => setIsAddingAttr(true)}
-                  className="text-sm font-semibold text-blue-500 hover:underline flex items-center gap-1"
-                >
-                  <Plus size={16} /> Add Attribute
-                </button>
-              )}
+              <button 
+                onClick={handleAddVariation}
+                className="text-sm font-semibold text-blue-500 hover:underline flex items-center gap-1"
+              >
+                <Plus size={16} /> Add Variant
+              </button>
             </div>
 
-            {/* Inline form to add a new Attribute */}
-            {isAddingAttr && (
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-4">
-                <h4 className="text-sm font-semibold text-slate-700">New Attribute</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label required>Attribute Name</Label>
-                    <input 
-                      type="text"
-                      value={newAttrName}
-                      onChange={e => setNewAttrName(e.target.value)}
-                      placeholder="e.g. Size, Color, Material"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <Label>Values (Comma Separated)</Label>
-                    <input 
-                      type="text"
-                      value={newAttrVal}
-                      onChange={e => setNewAttrVal(e.target.value)}
-                      placeholder="e.g. S, M, L or Red, Blue"
-                      className={inputCls}
-                    />
-                  </div>
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4">
+              <h4 className="text-sm font-semibold text-slate-700 mb-3">Variant Generator</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                <div>
+                  <Label>Colors</Label>
+                  <input 
+                    type="text" 
+                    value={generatorColors}
+                    onChange={e => setGeneratorColors(e.target.value)}
+                    placeholder="e.g. Black, White" 
+                    className={inputCls} 
+                  />
                 </div>
-                <div className="flex justify-end gap-2">
-                  <button 
-                    onClick={() => {
-                      setIsAddingAttr(false);
-                      setNewAttrName('');
-                      setNewAttrVal('');
-                    }}
-                    className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-100"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={handleAddAttribute}
-                    className="px-4 py-2 bg-[#0B132B] text-white rounded-lg text-xs font-semibold hover:bg-orange-600"
-                  >
-                    Add Attribute
-                  </button>
+                <div>
+                  <Label>Sizes (comma separated)</Label>
+                  <input 
+                    type="text" 
+                    value={generatorSizes}
+                    onChange={e => setGeneratorSizes(e.target.value)}
+                    placeholder="e.g. UK 7, UK 8, UK 9" 
+                    className={inputCls} 
+                  />
                 </div>
               </div>
-            )}
 
-            {/* List of currently defined attributes */}
-            {attributes.length > 0 && (
-              <div className="space-y-4">
-                {attributes.map((attr, attrIndex) => {
-                  return (
-                    <div key={attrIndex} className="p-4 border border-slate-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div>
-                        <span className="text-sm font-bold text-slate-700">{attr.name}</span>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {attr.values.map((val, valIndex) => (
-                            <span key={valIndex} className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-medium border border-slate-200">
-                              {val}
-                              <button 
-                                onClick={() => handleRemoveValueFromAttribute(attrIndex, valIndex)}
-                                className="text-slate-400 hover:text-red-500"
-                              >
-                                <X size={12} />
-                              </button>
-                            </span>
-                          ))}
-                          {/* Inline tag input */}
-                          <input 
-                            type="text"
-                            placeholder="+ Add value"
-                            className="bg-transparent border-b border-dashed border-slate-300 focus:border-blue-500 outline-none text-xs px-1 py-0.5 w-20"
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                handleAddValueToAttribute(attrIndex, e.target.value);
-                                e.target.value = '';
-                              }
-                            }}
-                            onBlur={e => {
-                              handleAddValueToAttribute(attrIndex, e.target.value);
-                              e.target.value = '';
-                            }}
-                          />
+              {generatorColors.split(',').map(c => c.trim()).filter(Boolean).length > 0 && (
+                <div className="mb-4 space-y-3">
+                  <Label>Color Images (Up to 3 per color)</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {generatorColors.split(',').map(c => c.trim()).filter(Boolean).map((color, idx) => {
+                      const colorKey = color.toLowerCase();
+                      const uploadedFiles = generatorColorImages[colorKey] || [];
+                      
+                      return (
+                        <div key={idx} className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg shadow-sm">
+                          <span className="font-semibold text-sm text-slate-700 min-w-[60px]">{color}</span>
+                          <div className="flex gap-2">
+                            {uploadedFiles.map((fileObj, fIdx) => (
+                              <div key={fIdx} className="relative w-10 h-10 border border-slate-200 rounded overflow-hidden group">
+                                <img src={fileObj.previewUrl} alt="preview" className="w-full h-full object-cover" />
+                                <button
+                                  onClick={() => {
+                                    setGeneratorColorImages(prev => ({
+                                      ...prev,
+                                      [colorKey]: prev[colorKey].filter((_, i) => i !== fIdx)
+                                    }));
+                                  }}
+                                  className="absolute top-0 right-0 bg-red-500 text-white rounded-bl p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  <X size={10} />
+                                </button>
+                              </div>
+                            ))}
+                            {uploadedFiles.length < 3 && (
+                              <label className="w-10 h-10 rounded border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:bg-slate-50 bg-white">
+                                <Plus size={14} className="text-slate-400" />
+                                <input 
+                                  type="file" 
+                                  accept="image/*" 
+                                  className="hidden" 
+                                  onChange={(e) => {
+                                    const file = e.target.files[0];
+                                    if (!file) return;
+                                    if (file.size > 10 * 1024 * 1024) {
+                                      toast.info('Image size cannot exceed 10MB!');
+                                      return;
+                                    }
+                                    const previewUrl = URL.createObjectURL(file);
+                                    setGeneratorColorImages(prev => ({
+                                      ...prev,
+                                      [colorKey]: [...(prev[colorKey] || []), { previewUrl, file }]
+                                    }));
+                                  }} 
+                                />
+                              </label>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      <button 
-                        onClick={() => handleRemoveAttribute(attrIndex)}
-                        className="text-xs text-red-500 hover:underline flex items-center gap-1 self-start md:self-center"
-                      >
-                        Remove Attribute
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Combinations list */}
-            {variations.length > 0 ? (
-              <div className="space-y-3">
-                <p className="text-xs font-bold text-slate-500 tracking-wide uppercase">Generated SKUs / Combinations</p>
-                <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                  <table className="w-full text-left border-collapse text-sm">
-                    <thead>
-                      <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                        <th className="p-3">Combination</th>
-                        <th className="p-3">SKU Code</th>
-                        <th className="p-3">Price (₹)</th>
-                        <th className="p-3">Stock</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-slate-700">
-                      {variations.map((v, i) => (
-                        <tr key={i} className="hover:bg-slate-50/50">
-                          <td className="p-3 font-medium">
-                            {Object.entries(v.attributes).map(([key, val]) => `${key}: ${val}`).join(', ')}
-                          </td>
-                          <td className="p-3">
-                            <input 
-                              type="text" 
-                              value={v.sku} 
-                              onChange={e => handleVariationChange(i, 'sku', e.target.value)}
-                              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-100 outline-none"
-                            />
-                          </td>
-                          <td className="p-3">
-                            <input 
-                              type="number" 
-                              value={v.price} 
-                              onChange={e => handleVariationChange(i, 'price', e.target.value)}
-                              className="w-24 bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-100 outline-none"
-                            />
-                          </td>
-                          <td className="p-3">
-                            <input 
-                              type="number" 
-                              value={v.stock} 
-                              onChange={e => handleVariationChange(i, 'stock', e.target.value)}
-                              className="w-20 bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-100 outline-none"
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      );
+                    })}
+                  </div>
                 </div>
+              )}
+
+              <button 
+                onClick={handleGenerateVariants}
+                className="px-4 py-2 bg-blue-50 text-blue-600 font-semibold text-sm rounded-lg hover:bg-blue-100 transition-colors border border-blue-200"
+              >
+                Generate Combinations
+              </button>
+            </div>
+
+            {variations.length > 0 ? (
+              <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                <table className="w-full text-left text-sm text-slate-600">
+                  <thead className="bg-slate-50 text-slate-700 text-xs uppercase font-semibold border-b border-slate-200">
+                    <tr>
+                      <th className="px-4 py-3 min-w-[120px]">Color / Size</th>
+                      <th className="px-4 py-3 min-w-[140px]">Default Price?</th>
+                      <th className="px-4 py-3 min-w-[120px]">MRP (₹)</th>
+                      <th className="px-4 py-3 min-w-[120px]">Selling (₹)</th>
+                      <th className="px-4 py-3 min-w-[100px]">Stock</th>
+                      <th className="px-4 py-3 min-w-[180px]">SKU</th>
+                      <th className="px-4 py-3 min-w-[150px]">Images</th>
+                      <th className="px-4 py-3 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {(() => {
+                      const renderedColors = new Set();
+                      return variations.map((v, i) => {
+                        // Treat empty color string as unique so it always gets an upload button
+                        const colorKey = v.color ? v.color.toLowerCase().trim() : `empty-${i}`;
+                        const isFirstOfColor = !renderedColors.has(colorKey);
+                        if (isFirstOfColor) {
+                          renderedColors.add(colorKey);
+                        }
+
+                        return (
+                          <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-4 py-3 align-top">
+                              <input type="text" value={v.color} onChange={e => handleVariationChange(i, 'color', e.target.value)} placeholder="Color" className={`${tableInputCls} mb-2`} />
+                              <input type="text" value={v.size} onChange={e => handleVariationChange(i, 'size', e.target.value)} placeholder="Size" className={tableInputCls} />
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <button 
+                                onClick={() => handleVariationChange(i, 'useDefaultPricing', !v.useDefaultPricing)}
+                                className="flex items-center gap-2 mt-2"
+                              >
+                                 {v.useDefaultPricing ? <ToggleRight size={24} className="text-blue-500" /> : <ToggleLeft size={24} className="text-slate-400" />}
+                                 <span className="text-xs font-medium text-slate-600 whitespace-nowrap">{v.useDefaultPricing ? 'Yes' : 'No'}</span>
+                              </button>
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              {v.useDefaultPricing ? (
+                                <div className="text-xs text-slate-400 mt-3 font-medium text-center">Auto</div>
+                              ) : (
+                                <input type="number" value={v.mrp} onChange={e => handleVariationChange(i, 'mrp', e.target.value)} placeholder="MRP" className={tableInputCls} />
+                              )}
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              {v.useDefaultPricing ? (
+                                <div className="text-xs text-slate-400 mt-3 font-medium text-center">Auto</div>
+                              ) : (
+                                <input type="number" value={v.sellingPrice} onChange={e => handleVariationChange(i, 'sellingPrice', e.target.value)} placeholder="Selling" className={tableInputCls} />
+                              )}
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <input type="number" value={v.stock} onChange={e => handleVariationChange(i, 'stock', e.target.value)} placeholder="Stock" className={tableInputCls} />
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <div className="flex items-center gap-1">
+                                 <input type="text" value={v.sku} onChange={e => handleVariationChange(i, 'sku', e.target.value)} placeholder="SKU" className={tableInputCls} />
+                                 <button 
+                                   onClick={() => handleVariationChange(i, 'sku', generateSku(v.color, v.size))}
+                                   title="Generate SKU"
+                                   className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg border border-slate-200 transition-colors"
+                                 >
+                                   <RefreshCw size={14} />
+                                 </button>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              {isFirstOfColor ? (
+                                <div className="flex flex-col items-center gap-1.5">
+                                  {v.images && v.images.length > 0 ? (
+                                    <div className="w-12 h-12 rounded border border-slate-200 relative group bg-white">
+                                      <OptimizedImage src={v.images[0]} alt="Variant" type="product" className="w-full h-full object-contain p-0.5 rounded" />
+                                      <button 
+                                        onClick={() => handleRemoveVariantImage(i, 0)}
+                                        className="absolute -top-1 -right-1 bg-red-500 text-white p-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                                      >
+                                        <X size={10} />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <label className="w-12 h-12 rounded border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:bg-slate-100 bg-white group">
+                                      <Plus size={14} className="text-slate-400 group-hover:text-slate-600" />
+                                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleAddVariantImageFile(i, e)} />
+                                    </label>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="h-full flex items-center justify-center pt-3">
+                                   <span className="text-[10px] text-slate-400 font-medium italic">Same as above</span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 align-middle text-center">
+                              <button onClick={() => handleRemoveVariation(i)} title="Remove Variant" className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                                <X size={18} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
               </div>
             ) : (
-              !isAddingAttr && (
-                <div className="p-10 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-400 gap-3">
-                  <Layers size={32} />
-                  <p className="text-sm font-medium text-center text-slate-400">No variations defined.<br />Add Size, Color or Material to create SKUs.</p>
-                </div>
-              )
+              <div className="p-10 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-400 gap-3">
+                <Layers size={32} />
+                <p className="text-sm font-medium text-center text-slate-400">No variations defined.<br />Use the generator above or click Add Variant.</p>
+              </div>
             )}
           </section>
 
@@ -1005,9 +1087,9 @@ const AddProduct = () => {
             <SectionTitle icon={Tag} color="bg-orange-50 text-orange-500">Product Flags</SectionTitle>
 
             {[
-              { key: 'topSection', label: 'Top Section', desc: 'Show in the top hero grid' },
+              { key: 'topSection', label: 'Featured Collection', desc: 'Show in the Featured Collection grid' },
               { key: 'crazyDeals', label: 'Crazy Deals', desc: 'Feature in the crazy deals list' },
-              { key: 'flashSale', label: 'Flash Sale', desc: 'Include in the active flash sale' },
+              { key: 'flashSale', label: 'New Arrivals', desc: 'Include in the New Arrivals active list' },
             ].map(flag => (
               <div key={flag.key} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
                 <div>
@@ -1053,62 +1135,9 @@ const AddProduct = () => {
             </div>
           </section>
 
-          {/* Image Gallery */}
-          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-indigo-50 text-indigo-500 rounded-xl"><ImageIcon size={17} /></div>
-                <h3 className="text-base font-semibold text-slate-700">Visuals</h3>
-              </div>
-              <span className="text-sm font-semibold text-blue-500">{images.length}/5</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              {images.map((img, i) => (
-                <div key={i} className="relative aspect-square bg-slate-50 rounded-xl border border-slate-200 overflow-hidden group">
-                  <OptimizedImage src={img} alt="Product" type="product" className="w-full h-full" />
-                  <button
-                    onClick={() => handleRemoveImage(i)}
-                    className="absolute top-2 right-2 p-1.5 bg-white/90 text-red-500 rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ))}
-              {images.length < 5 && (
-                <div className="flex gap-2 col-span-2">
-                  <label
-                    className="flex-1 aspect-square border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-2 hover:border-blue-400 hover:bg-blue-50/20 transition-all text-slate-400 cursor-pointer"
-                  >
-                    <Upload size={22} />
-                    <span className="text-xs font-semibold">Upload File</span>
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      className="hidden" 
-                      onChange={handleAddImageFile} 
-                    />
-                  </label>
-                  <button
-                    onClick={handleAddImageUrl}
-                    className="flex-1 aspect-square border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-2 hover:border-blue-400 hover:bg-blue-50/20 transition-all text-slate-400"
-                  >
-                    <Plus size={22} />
-                    <span className="text-xs font-semibold">Add URL</span>
-                  </button>
-                </div>
-              )}
-            </div>
-            <p className="text-xs text-slate-500 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
-              Recommended: <strong className="text-slate-700">1080×1080 px</strong>. High-quality images increase conversion by up to <strong className="text-slate-700">40%</strong>.
-            </p>
-          </section>
-
           {/* Organization */}
           <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
             <SectionTitle icon={Tag} color="bg-amber-50 text-amber-500">Organization</SectionTitle>
-
-
 
             <div>
               <Label>Tags (Comma Separated)</Label>
@@ -1149,6 +1178,7 @@ const AddProduct = () => {
             </div>
           </div>
         </div>
+
       </div>
     </div>
   );

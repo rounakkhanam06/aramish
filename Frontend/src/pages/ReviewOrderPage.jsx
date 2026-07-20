@@ -8,7 +8,7 @@ import analytics from '../utils/analytics';
 
 export default function ReviewOrderPage() {
   const navigate = useNavigate();
-  const { cart, totalCartPrice, user, clearCart, addOrder, systemSettings } = useApp();
+  const { cart, totalCartPrice, user, clearCart, addOrder, systemSettings, removeFromCart } = useApp();
 
   useEffect(() => {
     if (!user) {
@@ -545,7 +545,7 @@ export default function ReviewOrderPage() {
               {/* Product items list in checkout */}
               <div className="space-y-3.5 mt-2">
                 {cart && cart.map((item, idx) => (
-                  <div key={item.id || idx} className="flex items-center gap-3.5 bg-surface p-3 rounded-xl border border-slate-150/40">
+                  <div key={item.id || idx} className="relative flex items-center gap-3.5 bg-surface p-3 rounded-xl border border-slate-150/40 pr-8">
                     <div className="w-14 h-14 relative flex-shrink-0 bg-surface rounded-lg border border-white/10 overflow-hidden flex items-center justify-center">
                       <OptimizedImage src={item.image} alt={item.name} type="product" objectFit="contain" className="absolute inset-0 shadow-3xs" />
                     </div>
@@ -569,6 +569,15 @@ export default function ReviewOrderPage() {
                         {etd ? `Estimated Delivery: ${etd}` : 'Delivery Tomorrow'}
                       </div>
                     </div>
+                    {cart.length > 1 && (
+                      <button 
+                        onClick={() => removeFromCart(item.id)}
+                        className="absolute top-2 right-2 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors cursor-pointer"
+                        title="Remove item"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

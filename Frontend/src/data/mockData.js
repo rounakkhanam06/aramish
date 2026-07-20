@@ -71,14 +71,12 @@ export const CATEGORIES = [
   { id: 'electrical', name: 'Electrical', icon: 'Zap', image: elec11 },
 ];
 
-import banner1 from '../assets/Banner/finalBanner.webp';
-import banner2 from '../assets/Banner/finalBanner2.webp';
-import banner3 from '../assets/Banner/finalBanner3.webp';
+import banner1 from '../assets/Banner/footwear1.png';
+import banner2 from '../assets/Banner/footwear2.png';
 
 export const BANNERS = [
   { id: 1, image: banner1 },
-  { id: 2, image: banner2 },
-  { id: 3, image: banner3 }
+  { id: 2, image: banner2 }
 ];
 
 export const VALUE_PROPS = [

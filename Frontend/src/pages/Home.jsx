@@ -19,7 +19,7 @@ export default function Home() {
   const [activeFlashTab, setActiveFlashTab] = useState('All');
   const [budgetFilter, setBudgetFilter] = useState(null);
 
-  const [categories, setCategories] = useState(CATEGORIES);
+  const [categories, setCategories] = useState(CATEGORIES.filter(c => c.id === 'for-you'));
   const [dynamicBanners, setDynamicBanners] = useState([]);
 
   // Dynamic Products from API
@@ -455,40 +455,40 @@ export default function Home() {
         {/* 1. Category Strip Skeleton */}
         <div className="flex items-center gap-4 overflow-x-auto px-4 py-3.5 bg-surface border-b border-white/10 scrollbar-none">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="flex flex-col items-center gap-2 flex-shrink-0 w-[60px] animate-pulse">
-              <div className="w-12 h-12 rounded-2xl bg-surface" />
-              <div className="w-10 h-2.5 bg-surface rounded" />
+            <div key={i} className="flex flex-col items-center gap-2 flex-shrink-0 w-[60px]">
+              <div className="w-12 h-12 rounded-2xl skeleton-shimmer" />
+              <div className="w-10 h-2.5 skeleton-shimmer rounded" />
             </div>
           ))}
         </div>
 
         {/* 2. Banner Skeleton */}
-        <div className="px-3 animate-pulse">
-          <div className="w-full aspect-[21/9] rounded-2xl bg-surface shadow-sm" />
+        <div className="px-3">
+          <div className="w-full aspect-[21/9] rounded-2xl skeleton-shimmer shadow-sm" />
         </div>
 
         {/* 3. Flash Sale / Crazy Deals Header Skeleton */}
-        <div className="px-4 space-y-3 animate-pulse">
+        <div className="px-4 space-y-3">
           <div className="flex justify-between items-center">
-            <div className="w-28 h-5 bg-surface rounded" />
-            <div className="w-20 h-4 bg-surface rounded-full" />
+            <div className="w-28 h-5 skeleton-shimmer rounded" />
+            <div className="w-20 h-4 skeleton-shimmer rounded-full" />
           </div>
           <div className="flex gap-3 overflow-x-auto scrollbar-none pb-1">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="w-32 aspect-[3/4.2] bg-surface rounded-2xl flex-shrink-0" />
+              <div key={i} className="w-32 aspect-[3/4.2] skeleton-shimmer rounded-2xl flex-shrink-0" />
             ))}
           </div>
         </div>
 
         {/* 4. Top 10 Buys Skeleton */}
-        <div className="px-4 space-y-3 animate-pulse">
+        <div className="px-4 space-y-3">
           <div className="flex justify-between items-center">
-            <div className="w-24 h-5 bg-surface rounded" />
-            <div className="w-16 h-4 bg-surface rounded-full" />
+            <div className="w-24 h-5 skeleton-shimmer rounded" />
+            <div className="w-16 h-4 skeleton-shimmer rounded-full" />
           </div>
           <div className="flex gap-3 overflow-x-auto scrollbar-none">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="w-32 h-44 bg-surface rounded-2xl flex-shrink-0" />
+              <div key={i} className="w-32 h-44 skeleton-shimmer rounded-2xl flex-shrink-0" />
             ))}
           </div>
         </div>

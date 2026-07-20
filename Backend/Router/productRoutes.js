@@ -16,7 +16,7 @@ const {
   downloadTemplate
 } = require('../Controllers/productController');
 const { protectAdmin } = require('../Middlewares/authMiddleware');
-const { uploadImages, processImages, handleUploadError } = require('../Middlewares/uploadMiddleware');
+const { uploadImagesAny, processImages, handleUploadError } = require('../Middlewares/uploadMiddleware');
 
 // Public routes to list products/brands
 router.get('/', getProducts);
@@ -28,9 +28,9 @@ router.get('/:id', getProductById);
 
 // Admin protected routes
 router.post('/bulk-upload', protectAdmin, uploadCSV.single('file'), bulkUploadProducts);
-router.post('/', protectAdmin, uploadImages, processImages, handleUploadError, createProduct);
+router.post('/', protectAdmin, uploadImagesAny, processImages, handleUploadError, createProduct);
 router.post('/bulk-delete', protectAdmin, bulkDeleteProducts);
-router.put('/:id', protectAdmin, uploadImages, processImages, handleUploadError, updateProduct);
+router.put('/:id', protectAdmin, uploadImagesAny, processImages, handleUploadError, updateProduct);
 router.delete('/:id', protectAdmin, deleteProduct);
 
 module.exports = router;

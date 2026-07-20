@@ -1068,11 +1068,12 @@ const getEarnings = async (req, res) => {
     // 6. Recent Transaction Log (10 latest paid orders)
     const latestOrders = await Order.find(matchQuery).populate('userId', 'name').sort({ createdAt: -1 }).limit(10);
     const transactions = latestOrders.map((order, i) => {
+      const orderId = order._id ? order._id.toString().substring(18).toUpperCase() : String(i).padStart(6, '0');
       return {
-        id: order.paymentId || `TXN${order._id.toString().substring(18).toUpperCase()}`,
-        source: `Order #OD${order._id.toString().substring(18).toUpperCase()}`,
+        id: order.paymentId || `TXN${orderId}`,
+        source: `Order #OD${orderId}`,
         type: order.paymentMethod === 'Online' ? 'Online Payment' : 'COD Payment',
-        gross: `₹${order.total.toLocaleString()}`,
+        gross: `₹${(order.total || 0).toLocaleString()}`,
         discount: '₹0',
         status: order.paymentStatus === 'Paid' ? 'Settled' : order.paymentStatus === 'Pending' ? 'Pending' : 'Failed'
       };

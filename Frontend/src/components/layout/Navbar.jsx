@@ -42,7 +42,16 @@ export default function Navbar() {
     if (!scrollContainer) return;
 
     const handleScroll = (e) => {
-      setIsScrolled(e.target.scrollTop > 20);
+      const currentScrollY = e.target.scrollTop;
+      setIsScrolled((prev) => {
+        if (!prev && currentScrollY > 150) {
+          return true; // Collapse header when scrolling down past 150px
+        }
+        if (prev && currentScrollY < 20) {
+          return false; // Expand header when scrolling back up near the top
+        }
+        return prev;
+      });
     };
 
     scrollContainer.addEventListener('scroll', handleScroll);

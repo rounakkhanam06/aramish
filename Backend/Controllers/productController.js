@@ -112,7 +112,7 @@ const getProducts = async (req, res) => {
 
     let query = Product.find(filter);
     if (full !== 'true') {
-      query = query.select('-highlights -technicalSpecs -description -variations -shippingSpecs');
+      query = query.select('-highlights -technicalSpecs -description -shippingSpecs');
     }
     const products = await query.sort({ createdAt: -1 }).lean();
     res.status(200).json({ success: true, products });
@@ -146,12 +146,33 @@ const createProduct = async (req, res) => {
       subCategory
     } = req.body;
 
-    if (!name || !category || !sellingPrice) {
-      return res.status(400).json({ success: false, message: 'Name, Category, and Selling Price are required' });
+    if (!name || !category || sellingPrice === undefined || mrp === undefined) {
+      return res.status(400).json({ success: false, message: 'Name, Category, MRP, and Selling Price are required' });
     }
 
-    if (mrp && Number(mrp) < Number(sellingPrice)) {
+    if (Number(mrp) < Number(sellingPrice)) {
       return res.status(400).json({ success: false, message: 'Actual Price (MRP) cannot be less than Selling Price' });
+    }
+
+    const variations = parseJsonField(req.body.variations, []);
+    if (!Array.isArray(variations) || variations.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one variant is required.' });
+    }
+    
+    // Validate each variant
+    for (let i = 0; i < variations.length; i++) {
+        const v = variations[i];
+        if ((!v.color && !v.size) || v.stock === undefined || v.stock === '' || !v.sku) {
+            return res.status(400).json({ success: false, message: `At least Color or Size, plus Stock and SKU are required for variant ${i+1}.` });
+        }
+        if (!v.useDefaultPricing) {
+            if (v.mrp === undefined || v.mrp === '' || v.sellingPrice === undefined || v.sellingPrice === '') {
+                return res.status(400).json({ success: false, message: `Variant MRP and Selling Price are required for variant ${v.sku} if default pricing is disabled.` });
+            }
+            if (Number(v.mrp) < Number(v.sellingPrice)) {
+                return res.status(400).json({ success: false, message: `Variant MRP cannot be less than Variant Selling Price for variant ${v.sku}.` });
+            }
+        }
     }
 
     if (stock !== undefined && Number(stock) < 0) {
@@ -160,13 +181,38 @@ const createProduct = async (req, res) => {
 
     let imageUrls = [];
     if (req.processedFiles && req.processedFiles.length > 0) {
-      imageUrls = req.processedFiles.map(f => getImageUrl(f.url));
+      imageUrls = req.processedFiles
+        .filter(f => f.fieldname === 'images' || !f.fieldname)
+        .map(f => getImageUrl(f.url));
     }
 
+    // Process variant images
+    for (let i = 0; i < variations.length; i++) {
+      const v = variations[i];
+        let newVImages = [];
+        if (req.processedFiles) {
+          const vFiles = req.processedFiles.filter(f => f.fieldname === `variantImages_${i}`);
+          if (vFiles.length > 0) {
+             newVImages = vFiles.map(f => getImageUrl(f.url));
+          }
+        }
+        const existingVariantImages = req.body[`variantImagesExisting_${i}`];
+        const existingVImages = existingVariantImages ? parseJsonField(existingVariantImages, []) : [];
+        v.images = [...existingVImages, ...newVImages];
+      }
+
     // Check if additional image URLs were sent in body
-    const bodyImages = parseJsonField(req.body.images, []);
+    const bodyImages = parseJsonField(req.body.imageUrls, []);
     if (Array.isArray(bodyImages)) {
       imageUrls = [...imageUrls, ...bodyImages];
+    }
+
+    // Fallback: If global product has no images, but a variation does, use it
+    if (imageUrls.length === 0 && variations && variations.length > 0) {
+      const firstVarWithImg = variations.find(v => v.images && v.images.length > 0);
+      if (firstVarWithImg) {
+        imageUrls.push(firstVarWithImg.images[0]);
+      }
     }
 
     const { categoryId, subCategoryId } = await resolveCategoryAndSubcategory(category, subCategory);
@@ -202,7 +248,7 @@ const createProduct = async (req, res) => {
       tags: parseJsonField(req.body.tags, []),
       manufacturerInfo,
       status: status || 'Pending',
-      variations: parseJsonField(req.body.variations, [])
+      variations: variations
     });
 
     await newProduct.save();
@@ -221,6 +267,8 @@ const createProduct = async (req, res) => {
 // @access  Private (Admin)
 const updateProduct = async (req, res) => {
   try {
+    console.log('[updateProduct] body keys:', Object.keys(req.body));
+    console.log('[updateProduct] mrp:', req.body.mrp, 'sellingPrice:', req.body.sellingPrice);
     const product = await Product.findById(req.params.id);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
@@ -285,20 +333,67 @@ const updateProduct = async (req, res) => {
     if (req.body.shippingSpecs !== undefined) product.shippingSpecs = parseJsonField(req.body.shippingSpecs);
     if (req.body.flags !== undefined) product.flags = parseJsonField(req.body.flags);
     if (req.body.tags !== undefined) product.tags = parseJsonField(req.body.tags);
-    if (req.body.variations !== undefined) product.variations = parseJsonField(req.body.variations, []);
+    if (req.body.variations !== undefined) {
+      const variations = parseJsonField(req.body.variations, []);
+      if (!Array.isArray(variations) || variations.length === 0) {
+        return res.status(400).json({ success: false, message: 'At least one variant is required.' });
+      }
+      for (let i = 0; i < variations.length; i++) {
+          const v = variations[i];
+        if ((!v.color && !v.size) || v.stock === undefined || v.stock === '' || !v.sku) {
+            return res.status(400).json({ success: false, message: `At least Color or Size, plus Stock and SKU are required for variant ${i+1}.` });
+        }
+          if (!v.useDefaultPricing) {
+              if (v.mrp === undefined || v.mrp === '' || v.sellingPrice === undefined || v.sellingPrice === '') {
+                  return res.status(400).json({ success: false, message: `Variant MRP and Selling Price are required for variant ${v.sku} if default pricing is disabled.` });
+              }
+              if (Number(v.mrp) < Number(v.sellingPrice)) {
+                  return res.status(400).json({ success: false, message: `Variant MRP cannot be less than Variant Selling Price for variant ${v.sku}.` });
+              }
+          }
+      }
+      product.variations = variations;
+    }
 
     // Process Images
     let updatedImages = product.images || [];
-    if (req.body.images !== undefined) {
-      updatedImages = parseJsonField(req.body.images);
+    if (req.body.imageUrls !== undefined) {
+      updatedImages = parseJsonField(req.body.imageUrls);
     }
 
     if (req.processedFiles && req.processedFiles.length > 0) {
-      const newUrls = req.processedFiles.map(f => getImageUrl(f.url));
+      const newUrls = req.processedFiles
+        .filter(f => f.fieldname === 'images' || !f.fieldname)
+        .map(f => getImageUrl(f.url));
       updatedImages = [...updatedImages, ...newUrls];
     }
 
     product.images = updatedImages;
+
+    // Process variant images if variations were updated
+    if (product.variations && product.variations.length > 0) {
+      for (let i = 0; i < product.variations.length; i++) {
+        const v = product.variations[i];
+        let newVImages = [];
+        if (req.processedFiles) {
+          const vFiles = req.processedFiles.filter(f => f.fieldname === `variantImages_${i}`);
+          if (vFiles.length > 0) {
+             newVImages = vFiles.map(f => getImageUrl(f.url));
+          }
+        }
+        const existingVariantImages = req.body[`variantImagesExisting_${i}`];
+        const existingVImages = existingVariantImages ? parseJsonField(existingVariantImages, []) : [];
+        v.images = [...existingVImages, ...newVImages];
+      }
+    }
+
+    // Fallback: If global product has no images, but a variation does, use it
+    if ((!product.images || product.images.length === 0) && product.variations && product.variations.length > 0) {
+      const firstVarWithImg = product.variations.find(v => v.images && v.images.length > 0);
+      if (firstVarWithImg) {
+        product.images = [firstVarWithImg.images[0]];
+      }
+    }
 
     await product.save();
     res.status(200).json({ success: true, message: 'Product updated successfully', product });
@@ -353,6 +448,9 @@ const bulkDeleteProducts = async (req, res) => {
 const getProductById = async (req, res) => {
   try {
     const mongoose = require('mongoose');
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid product ID format' });
+    }
     const product = await Product.findById(req.params.id).populate('brandId').lean();
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
@@ -670,20 +768,27 @@ const getCombinedCatalog = async (req, res) => {
     }
 
     // 3. Search query
+    let isTextSearch = false;
     if (search && search.trim() !== '') {
-      const escapedSearch = search.trim().replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
       andConditions.push({
-        $or: [
-          { name: { $regex: escapedSearch, $options: 'i' } },
-          { description: { $regex: escapedSearch, $options: 'i' } }
-        ]
+        $text: { $search: search.trim() }
       });
+      isTextSearch = true;
     }
 
     const finalQuery = { $and: andConditions };
 
-    // 4. Sorting option
+    // 4. Sorting option & Projection
     let sortOption = { createdAt: -1 };
+    let projection = { highlights: 0, technicalSpecs: 0, description: 0, variations: 0, shippingSpecs: 0 };
+    
+    if (isTextSearch) {
+      projection.score = { $meta: 'textScore' };
+      if (sortBy === 'none') {
+        sortOption = { score: { $meta: 'textScore' } };
+      }
+    }
+
     if (sortBy === 'price-low') {
       sortOption = { sellingPrice: 1 };
     } else if (sortBy === 'price-high') {
@@ -701,8 +806,7 @@ const getCombinedCatalog = async (req, res) => {
       ? SubCategoryChip.find({}).lean()
       : Promise.resolve([]);
 
-    const productsPromise = Product.find(finalQuery)
-      .select('-highlights -technicalSpecs -description -variations -shippingSpecs')
+    const productsPromise = Product.find(finalQuery, projection)
       .sort(sortOption)
       .skip(skip)
       .limit(parsedLimit)

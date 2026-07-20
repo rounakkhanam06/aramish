@@ -15,7 +15,8 @@ export default function ProductDetailsPage() {
   const { totalCartItems, addToCart, cart, toggleWishlist, isInWishlist, user, setSearchQuery, location: userLocation } = useApp();
   
   const [product, setProduct] = useState(null);
-  const [selectedSize, setSelectedSize] = useState('M');
+  const [selectedSize, setSelectedSize] = useState('');
+  const [selectedColor, setSelectedColor] = useState('');
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -297,9 +298,16 @@ export default function ProductDetailsPage() {
             highlights: p.highlights || {},
             technicalSpecs: p.technicalSpecs || {},
             manufacturerInfo: p.manufacturerInfo || '',
-            shippingSpecs: p.shippingSpecs || {}
+            shippingSpecs: p.shippingSpecs || {},
+            variations: p.variations || []
           };
           
+          if (normalised.variations.length > 0) {
+              const defaultVariant = normalised.variations[0];
+              setSelectedColor(defaultVariant.color || '');
+              setSelectedSize(defaultVariant.size || '');
+          }
+
           setProduct(normalised);
 
           // Fetch similar products dynamically
@@ -400,24 +408,64 @@ export default function ProductDetailsPage() {
     );
   }
 
+  const activeVariant = product?.variations?.find(v => v.color === selectedColor && v.size === selectedSize) || product?.variations?.[0];
+  const displayPrice = activeVariant && !activeVariant.useDefaultPricing ? activeVariant.sellingPrice : product?.price;
+  const displayOriginalPrice = activeVariant && !activeVariant.useDefaultPricing ? activeVariant.mrp : product?.originalPrice;
+  const displayStock = activeVariant ? activeVariant.stock : product?.stock;
+  
+  let displayDiscount = product?.discount;
+  if (activeVariant && !activeVariant.useDefaultPricing && displayOriginalPrice && displayPrice) {
+      displayDiscount = formatDiscount('', displayOriginalPrice, displayPrice, 'off');
+  }
+  const colorVariantWithImage = product?.variations?.find(v => v.color === selectedColor && v.images && v.images.length > 0);
+  let displayImages = [];
+  if (activeVariant?.images?.length > 0) {
+      displayImages = activeVariant.images.map(getImageUrl);
+  } else if (colorVariantWithImage?.images?.length > 0) {
+      displayImages = colorVariantWithImage.images.map(getImageUrl);
+  } else if (product?.images?.length > 0) {
+      displayImages = product.images;
+  } else {
+      displayImages = [product?.image];
+  }
+  
+  const uniqueColors = product?.variations ? [...new Set(product.variations.map(v => v.color).filter(c => c && c.toUpperCase() !== 'N/A' && c.toUpperCase() !== 'NA'))] : [];
+  const sizesForSelectedColor = product?.variations ? product.variations.filter(v => v.color === selectedColor).map(v => v.size).filter(Boolean) : [];
+
   const handleAddToCart = () => {
-    if (!product || !product.stock || product.stock <= 0) {
+    if (!displayStock || displayStock <= 0) {
       toast.error('Item is out of stock!');
       return;
     }
-    addToCart(product);
+    const cartItem = {
+       ...product,
+       price: displayPrice,
+       originalPrice: displayOriginalPrice,
+       selectedColor,
+       selectedSize,
+       variantSku: activeVariant?.sku || product.sku
+    };
+    addToCart(cartItem);
     setToastMessage('Item added to cart!');
     setTimeout(() => setToastMessage(''), 3000);
   };
 
   const handleBuyNow = () => {
-    if (!product || !product.stock || product.stock <= 0) {
+    if (!displayStock || displayStock <= 0) {
       toast.error('Item is out of stock!');
       return;
     }
-    const itemInCart = cart.find(item => item.id === product.id);
+    const cartItem = {
+       ...product,
+       price: displayPrice,
+       originalPrice: displayOriginalPrice,
+       selectedColor,
+       selectedSize,
+       variantSku: activeVariant?.sku || product.sku
+    };
+    const itemInCart = cart.find(item => item.id === product.id && item.selectedColor === selectedColor && item.selectedSize === selectedSize);
     if (!itemInCart) {
-      addToCart(product);
+      addToCart(cartItem);
     }
     navigate('/review-order');
   };
@@ -425,7 +473,6 @@ export default function ProductDetailsPage() {
   const handleShare = () => {
     setIsShareModalOpen(true);
   };
-
 
   return (
     <div className="flex flex-col min-h-screen bg-surface font-sans relative pb-[80px] md:pb-12 animate-fade-in select-none">
@@ -464,13 +511,13 @@ export default function ProductDetailsPage() {
       </header>
 
       {/* Main Content wrapper */}
-      <div className={`max-w-7xl mx-auto w-full px-0 md:px-6 lg:px-8 md:py-8 pb-28 md:pb-8 grid grid-cols-1 md:grid-cols-12 gap-8 items-start ${(!product.stock || product.stock <= 0) ? 'grayscale opacity-90' : ''}`}>
+      <div className={`max-w-7xl mx-auto w-full px-0 md:px-6 lg:px-8 md:py-8 pb-28 md:pb-8 grid grid-cols-1 md:grid-cols-12 gap-8 items-start ${(!displayStock || displayStock <= 0) ? 'grayscale opacity-90' : ''}`}>
         
         {/* Left Column: Image Gallery on desktop */}
         <div className="md:col-span-7 bg-surface p-0 md:p-6 md:rounded-2xl md:border md:border-white/10 md:shadow-xs space-y-6">
           {/* Hero Image Section */}
           <div className="relative bg-surface border-b border-white/10 md:border-b-0">
-            <div className={`w-full aspect-square relative overflow-hidden rounded-none md:rounded-2xl ${product.stock === 0 ? 'grayscale opacity-75' : ''}`}>
+            <div className={`w-full aspect-square relative overflow-hidden rounded-none md:rounded-2xl ${displayStock === 0 ? 'grayscale opacity-75' : ''}`}>
               {/* Main Product Images Slider */}
               <div 
                 id="product-image-slider"
@@ -482,7 +529,7 @@ export default function ProductDetailsPage() {
                   setActiveImageIndex(Math.round(scrollPosition / width));
                 }}
               >
-                {(product.images && product.images.length > 0 ? product.images : [product.image]).map((img, idx) => (
+                {displayImages.map((img, idx) => (
                   <div
                     key={idx}
                     className="w-full h-full flex-shrink-0 snap-center relative overflow-hidden bg-surface flex items-center justify-center cursor-pointer"
@@ -494,7 +541,7 @@ export default function ProductDetailsPage() {
               </div>
 
               {/* Out of Stock Overlay Badge */}
-              {product.stock === 0 && (
+              {displayStock === 0 && (
                 <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[0.5px] flex items-center justify-center z-25">
                   <span className="bg-red-650 text-white text-xs font-black uppercase tracking-wider px-4 py-2 rounded-full shadow-lg border border-red-500">
                     Out of Stock
@@ -503,9 +550,9 @@ export default function ProductDetailsPage() {
               )}
 
               {/* Dots Indicator Overlay */}
-              {product.images && product.images.length > 1 && (
+              {displayImages.length > 1 && (
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-                  {product.images.map((_, idx) => (
+                  {displayImages.map((_, idx) => (
                     <div 
                       key={idx}
                       className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${activeImageIndex === idx ? 'bg-[#0B132B] w-3.5' : 'bg-surface/60'}`}
@@ -583,9 +630,9 @@ export default function ProductDetailsPage() {
             </div>
 
             {/* Image Thumbnails Row */}
-            {product.images && product.images.length > 1 && (
-              <div className={`flex justify-center gap-2 mt-4 px-4 overflow-x-auto scrollbar-none ${(!product.stock || product.stock <= 0) ? 'grayscale opacity-70' : ''}`}>
-                {product.images.map((img, idx) => (
+            {displayImages.length > 1 && (
+              <div className={`flex justify-center gap-2 mt-4 px-4 overflow-x-auto scrollbar-none ${(!displayStock || displayStock <= 0) ? 'grayscale opacity-70' : ''}`}>
+                {displayImages.map((img, idx) => (
                   <button
                     key={idx}
                     onClick={() => {
@@ -611,79 +658,131 @@ export default function ProductDetailsPage() {
         </div>
 
         {/* Right Column: Info & Specs on desktop */}
-        <div className="md:col-span-5 bg-surface p-4 md:p-6 md:rounded-2xl md:border md:border-white/10 md:shadow-xs space-y-6 md:sticky md:top-28">
-          {/* Brand & Desc */}
-          <div className="border-b border-white/10 pb-4">
+        <div className="md:col-span-5 bg-surface p-4 md:p-6 md:rounded-2xl md:border md:border-white/10 md:shadow-xs space-y-4 md:sticky md:top-28">
+          {/* Brand & Name */}
+          <div className="border-b border-white/10 pb-3">
             <span className="text-xs uppercase tracking-widest text-slate-400 font-extrabold block mb-1">
               {product.brandName}
             </span>
             <h1 className="text-base md:text-xl font-bold text-[#02006c] leading-tight">
               {product.name}
             </h1>
-            <p className="text-xs text-slate-500 mt-2 font-medium">
-              {product.desc}
-            </p>
+          </div>
+
+          {/* Variant Selectors */}
+          <div className="pb-3 border-b border-white/10 space-y-3">
+            {uniqueColors.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-xs text-[#02006c]">Selected Color: <span className="font-normal text-slate-700">{selectedColor}</span></span>
+                </div>
+                <div className="flex gap-2.5 flex-wrap">
+                  {uniqueColors.map((color) => {
+                    const isSelected = selectedColor === color;
+                    const colorVariant = product.variations.find(v => v.color === color);
+                    let colorImg = colorVariant?.images?.[0] ? getImageUrl(colorVariant.images[0]) : null;
+
+                    // Fallback to global product image if variation has no image
+                    if (!colorImg && product) {
+                      colorImg = product.images?.[0] ? getImageUrl(product.images[0]) : (product.image ? getImageUrl(product.image) : null);
+                    }
+
+                    return (
+                      <button
+                        key={color}
+                        title={color}
+                        onClick={() => {
+                           setSelectedColor(color);
+                           setActiveImageIndex(0);
+                           // auto-select first available size for this color
+                           const sizes = product.variations.filter(v => v.color === color).map(v => v.size).filter(Boolean);
+                           if (sizes.length > 0 && !sizes.includes(selectedSize)) {
+                               setSelectedSize(sizes[0]);
+                           }
+                        }}
+                        className={`rounded-xl border-2 flex items-center justify-center text-xs font-bold transition-all cursor-pointer overflow-hidden bg-white
+                          ${isSelected ? 'border-[#0B132B] shadow-sm scale-[1.02]' : 'border-slate-200 hover:border-slate-400 opacity-80 hover:opacity-100'}
+                          ${colorImg ? 'w-16 h-20 p-1' : 'px-4 py-2 text-slate-700'}
+                        `}
+                      >
+                        {colorImg ? <img src={colorImg} alt={color} className="w-full h-full object-cover rounded-lg" /> : color}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {sizesForSelectedColor.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-xs text-[#02006c]">Select Size</span>
+                  <button 
+                    onClick={() => setIsSizeChartOpen(true)}
+                    className="text-[#0B132B] font-bold text-[11px] cursor-pointer hover:underline"
+                  >
+                    Size Chart
+                  </button>
+                </div>
+                
+                <div className="flex gap-2.5 flex-wrap">
+                  {sizesForSelectedColor.map((size) => {
+                    const isSelected = selectedSize === size;
+                    // check if this specific variant is out of stock
+                    const vInfo = product.variations.find(v => v.color === selectedColor && v.size === size);
+                    const isOutOfStock = !vInfo || vInfo.stock <= 0;
+                    
+                    return (
+                      <button
+                        key={size}
+                        disabled={isOutOfStock}
+                        onClick={() => setSelectedSize(size)}
+                        className={`w-11 h-11 rounded-xl border flex items-center justify-center text-xs font-bold transition-all relative overflow-hidden cursor-pointer
+                          ${isSelected ? 'border-[#0B132B] text-[#0B132B] bg-[#0B132B]/5' : 
+                            isOutOfStock ? 'border-dashed border-white/10 text-slate-300 bg-surface cursor-not-allowed' : 
+                            'border-white/10 text-slate-700 hover:border-slate-400'
+                          }
+                        `}
+                      >
+                        {size}
+                        {isOutOfStock && <div className="absolute w-[150%] h-[1px] bg-slate-300 -rotate-45" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Pricing */}
-          <div className="border-b border-white/10 pb-4 flex items-center justify-between">
+          <div className="border-b border-white/10 pb-4 flex items-center justify-between mt-4">
             <div>
               <div className="flex items-baseline gap-2">
-                <span className="text-[#0B132B] font-bold text-lg">{product.discount} OFF</span>
-                <span className="text-2xl md:text-3xl font-black text-[#02006c] tracking-tight">₹{product.price}</span>
+                <span className="text-[#0B132B] font-bold text-lg">{displayDiscount}</span>
+                <span className="text-2xl md:text-3xl font-black text-[#02006c] tracking-tight">₹{displayPrice}</span>
               </div>
-              <p className="text-xs text-slate-400 line-through mt-1">MRP ₹{product.originalPrice}</p>
+              <p className="text-xs text-slate-400 line-through mt-1">MRP ₹{displayOriginalPrice}</p>
             </div>
             <div>
-              {product.stock === 0 ? (
+              {displayStock === 0 ? (
                 <span className="text-xs font-black text-red-650 bg-red-50 border border-red-250 px-3 py-1.5 rounded-full uppercase tracking-wider animate-pulse">
                   Out of Stock
                 </span>
-              ) : (
-                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full uppercase tracking-wider">
-                  In Stock ({product.stock} available)
+              ) : displayStock <= 10 ? (
+                <span className="text-[10px] font-bold text-orange-600 bg-orange-50 border border-orange-200 px-2.5 py-1 rounded-full uppercase tracking-wider animate-pulse">
+                  Hurry up! Only {displayStock} left
                 </span>
-              )}
+              ) : null}
             </div>
           </div>
 
-          {/* Size Selector */}
-          {['tee', 'pants', 'blouse', 'outfit'].includes(product.type) && (
-            <div className="pb-4 border-b border-white/10">
-              <div className="flex items-center justify-between mb-3">
-                <span className="font-bold text-sm text-[#02006c]">Select Size</span>
-                <button 
-                  onClick={() => setIsSizeChartOpen(true)}
-                  className="text-[#0B132B] font-bold text-[11px] cursor-pointer hover:underline"
-                  disabled={!product.stock || product.stock <= 0}
-                >
-                  Size Chart
-                </button>
-              </div>
-              
-              <div className="flex gap-2.5">
-                {['XS', 'S', 'M', 'L', 'XL'].map((size) => {
-                  const isSelected = selectedSize === size;
-                  const isOutOfStock = size === 'S' || !product.stock || product.stock <= 0;
-                  
-                  return (
-                    <button
-                      key={size}
-                      disabled={isOutOfStock}
-                      onClick={() => setSelectedSize(size)}
-                      className={`w-11 h-11 rounded-xl border flex items-center justify-center text-xs font-bold transition-all relative overflow-hidden cursor-pointer
-                        ${isSelected ? 'border-[#0B132B] text-[#0B132B] bg-[#0B132B]/5' : 
-                          isOutOfStock ? 'border-dashed border-white/10 text-slate-300 bg-surface cursor-not-allowed' : 
-                          'border-white/10 text-slate-700 hover:border-slate-400'
-                        }
-                      `}
-                    >
-                      {size}
-                      {isOutOfStock && <div className="absolute w-[150%] h-[1px] bg-surface -rotate-45" />}
-                    </button>
-                  );
-                })}
-              </div>
+          {/* Product Description */}
+          {product.desc && (
+            <div className="border-b border-white/10 pb-4">
+              <h3 className="font-bold text-sm text-[#02006c] mb-2">Description</h3>
+              <p className="text-xs text-slate-500 font-medium">
+                {product.desc}
+              </p>
             </div>
           )}
 
@@ -741,9 +840,9 @@ export default function ProductDetailsPage() {
           <div className="hidden md:flex gap-3 pt-2">
             <button 
               onClick={handleAddToCart}
-              disabled={!product.stock || product.stock <= 0}
+              disabled={!displayStock || displayStock <= 0}
               className={`flex-1 rounded-xl font-black text-xs uppercase tracking-wider py-3.5 transition-colors flex items-center justify-center gap-1.5
-                ${(!product.stock || product.stock <= 0) 
+                ${(!displayStock || displayStock <= 0) 
                   ? 'bg-white border border-slate-200 text-slate-400 cursor-not-allowed opacity-60' 
                   : 'bg-white hover:bg-slate-50 border border-[#02006c] text-[#02006c] cursor-pointer'
                 }`}
@@ -752,14 +851,14 @@ export default function ProductDetailsPage() {
             </button>
             <button 
               onClick={handleBuyNow}
-              disabled={!product.stock || product.stock <= 0}
+              disabled={!displayStock || displayStock <= 0}
               className={`flex-1 rounded-xl font-black text-xs uppercase tracking-wider py-3.5 shadow-md transition-colors flex items-center justify-center gap-1.5
-                ${(!product.stock || product.stock <= 0) 
+                ${(!displayStock || displayStock <= 0) 
                   ? 'bg-surface text-slate-400 cursor-not-allowed opacity-60 shadow-none' 
                   : 'bg-[#0B132B] hover:bg-gold text-white shadow-gold/20 cursor-pointer'
                 }`}
             >
-              {(!product.stock || product.stock <= 0) ? 'Out of Stock' : `Buy at ₹${product.price}`}
+              {(!displayStock || displayStock <= 0) ? 'Out of Stock' : `Buy at ₹${displayPrice}`}
             </button>
           </div>
         </div>

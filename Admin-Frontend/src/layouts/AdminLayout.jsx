@@ -225,7 +225,7 @@ const AdminLayout = () => {
           {isSidebarOpen ? (
             <Link to="/admin/dashboard" className="flex items-center gap-3 group">
               <img 
-                src="/HopeFinal.webp" 
+                src="/aramish-logo.png" 
                 alt="Logo" 
                 className="h-14 w-auto object-contain transition-transform duration-300 group-hover:scale-105" 
               />
@@ -233,7 +233,7 @@ const AdminLayout = () => {
           ) : (
             <div className="w-12 h-12 flex items-center justify-center transition-all">
               <img 
-                src="/HopeFinal.webp" 
+                src="/aramish-logo.png" 
                 alt="Logo" 
                 className="h-10 w-10 object-contain" 
               />
