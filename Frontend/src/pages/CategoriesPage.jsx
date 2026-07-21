@@ -179,14 +179,12 @@ export default function CategoriesPage() {
     let imgSrc = null;
     switch (id) {
       case 'for-you': imgSrc = catForYou; break;
-      case 'beauty': imgSrc = cat1; break;
-      case 'toys': imgSrc = cat2; break; // teddy bear
-      case 'jewellery': imgSrc = cat3; break; // woman with necklace
-      case 'electronics': imgSrc = cat4; break; // home appliances
-      case 'stationery': imgSrc = cat5; break; // pencils
-      case 'fashion': imgSrc = cat6; break;
-      case 'gifting': imgSrc = cat7; break;
-      case 'electrical': imgSrc = cat4; break;
+      case 'mens-footwear': imgSrc = cat1; break;
+      case 'kids': imgSrc = cat2; break; 
+      case 'women': imgSrc = cat3; break; 
+      case 'brands': imgSrc = cat4; break; 
+      case 'new-launch': imgSrc = cat5; break; 
+      case 'trendy': imgSrc = cat6; break;
       default: imgSrc = catForYou;
     }
 

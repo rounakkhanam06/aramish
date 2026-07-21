@@ -49,6 +49,8 @@ import OrderDetail from '../pages/admin/operations/OrderDetail';
 // Support
 import Tickets from '../pages/admin/support/Tickets';
 
+import NotFoundPage from '../pages/admin/NotFoundPage';
+
 const AdminRoutes = () => {
   return (
     <Routes>
@@ -88,7 +90,7 @@ const AdminRoutes = () => {
         <Route path="promotions/coupons" element={<Coupons />} />
         <Route path="promotions/flash-sale" element={<FlashSale />} />
         <Route path="promotions/featured" element={<FeaturedProducts />} />
-        <Route path="promotions/games" element={<GameManager />} />
+        {/* <Route path="promotions/games" element={<GameManager />} /> */}
         <Route path="promotions/referrals" element={<ReferralProgram />} />
 
         {/* Comms */}
@@ -111,6 +113,7 @@ const AdminRoutes = () => {
         <Route path="settings" element={<Settings />} />
         
         <Route path="" element={<Navigate to="dashboard" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
   );

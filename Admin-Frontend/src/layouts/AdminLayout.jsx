@@ -113,7 +113,6 @@ const AdminLayout = () => {
       title: 'PROMOTIONS',
       items: [
         { name: 'Coupon Manager', path: '/admin/promotions/coupons', icon: <Tag size={18} /> },
-        { name: 'Game Manager', path: '/admin/promotions/games', icon: <Gamepad2 size={18} /> },
         { name: 'Referral Program', path: '/admin/promotions/referrals', icon: <GitBranch size={18} /> },
       ]
     },
@@ -221,21 +220,21 @@ const AdminLayout = () => {
       <aside
         className={`${isSidebarOpen ? 'w-72' : 'w-24'} bg-white border-r border-slate-200 transition-all duration-500 ease-in-out flex flex-col fixed inset-y-0 z-50 shadow-[4px_0_24px_rgba(0,0,0,0.02)]`}
       >
-        <div className="h-20 flex items-center px-6 gap-3">
+        <div className="h-28 flex items-center px-6 gap-3 py-2">
           {isSidebarOpen ? (
-            <Link to="/admin/dashboard" className="flex items-center gap-3 group">
+            <Link to="/admin/dashboard" className="flex items-center gap-3 group w-full justify-center">
               <img 
                 src="/aramish-logo.png" 
                 alt="Logo" 
-                className="h-14 w-auto object-contain transition-transform duration-300 group-hover:scale-105" 
+                className="h-24 w-auto object-contain transition-transform duration-300 group-hover:scale-105" 
               />
             </Link>
           ) : (
-            <div className="w-12 h-12 flex items-center justify-center transition-all">
+            <div className="w-16 h-16 flex items-center justify-center transition-all mx-auto">
               <img 
                 src="/aramish-logo.png" 
                 alt="Logo" 
-                className="h-10 w-10 object-contain" 
+                className="h-12 w-12 object-contain" 
               />
             </div>
           )}

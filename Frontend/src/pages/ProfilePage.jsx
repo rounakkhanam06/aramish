@@ -7,7 +7,7 @@ import {
   ChevronLeft, User, Lock, Settings, Phone, LogOut, Camera, 
   ChevronRight, Coins, Gift, ShoppingBag, Sparkles, X,
   CreditCard, Globe, Bell, Headphones, Store, FileText, HelpCircle,
-  Heart, Package, Edit2, MapPin, Truck, RotateCcw, ShieldCheck, Tag, Trash2
+  Heart, Package, Edit2, MapPin, Truck, RotateCcw, ShieldCheck, Tag, Trash2, Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CRAZY_DEALS, VALUE_PROPS } from '../data/mockData';
@@ -148,12 +148,71 @@ export default function ProfilePage() {
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [showWalletBalance, setShowWalletBalance] = useState(false);
-  const [tempConfig, setTempConfig] = useState({ ...avatarConfig });
-  const [modalStep, setModalStep] = useState(0); // 0 = Welcome onboarding, 1 = Creator editor
   const [infoModalType, setInfoModalType] = useState(null); // 'terms', 'faq', or null
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteSuccess, setDeleteSuccess] = useState(false);
+  const [showWalletBalance, setShowWalletBalance] = useState(false);
+  const [modalStep, setModalStep] = useState(0); // 0 = Welcome onboarding, 1 = Creator editor
+  const [tempConfig, setTempConfig] = useState({ ...avatarConfig });
+  const [newName, setNewName] = useState(user?.name || '');
+
+  useEffect(() => {
+    if (user?.name && infoModalType !== 'editProfile') {
+      setNewName(user.name);
+    }
+  }, [user?.name, infoModalType]);
+
+  // Prevent background scrolling when modals are open
+  useEffect(() => {
+    const isAnyModalActive = isModalOpen || !!infoModalType || showDeleteModal;
+    if (isAnyModalActive) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isModalOpen, infoModalType, showDeleteModal]);
+
+  const handleSaveName = async () => {
+    if (!newName.trim() || newName.trim() === user?.name) {
+      setInfoModalType(null);
+      return;
+    }
+    const toastId = toast.loading('Updating name...');
+    try {
+      const token = localStorage.getItem('userToken');
+      if (token) {
+        const apiBase = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/auth`;
+        const res = await fetch(`${apiBase}/profile`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ name: newName.trim() })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || 'Failed to update name');
+        }
+      }
+
+      // Update local storage and context
+      const currentInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+      const updatedInfo = { ...currentInfo, name: newName.trim() };
+      localStorage.setItem('userInfo', JSON.stringify(updatedInfo));
+      if (setUser) setUser({ ...user, name: newName.trim() });
+      
+      toast.success('Name updated successfully!', { id: toastId });
+      setInfoModalType(null);
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message || 'Failed to update name.', { id: toastId });
+    }
+  };
+
 
   // Custom Image Upload State
   const [uploadedImage, setUploadedImage] = useState(() => {
@@ -516,43 +575,50 @@ export default function ProfilePage() {
   return (
     <div className="bg-surface md:bg-surface min-h-screen relative pb-24 w-full font-sans overflow-x-hidden selection:bg-gold/10 animate-fade-in select-none">
       
-      {/* 1. Dark Header Background (Mobile Only) */}
-      <div className="absolute top-0 left-0 right-0 h-[320px] z-0 pointer-events-none overflow-hidden rounded-b-[40px] bg-gradient-to-b from-[#0B132B] to-[#1a2542] md:hidden shadow-lg">
-        {/* Soft abstract blobs */}
-        <div className="absolute -top-10 -left-10 w-64 h-64 bg-white/5 rounded-full mix-blend-overlay filter blur-3xl opacity-60"></div>
-        <div className="absolute top-10 -right-10 w-64 h-64 bg-orange-400/10 rounded-full mix-blend-overlay filter blur-3xl opacity-60"></div>
+      {/* 1. Light Header Background (Mobile Only) */}
+      <div 
+        className="absolute top-0 left-0 right-0 h-[230px] z-0 pointer-events-none bg-gradient-to-br from-blue-50 via-indigo-50/80 to-blue-100 md:hidden shadow-sm border-b border-white/50" 
+        style={{ borderBottomLeftRadius: '50% 15%', borderBottomRightRadius: '50% 15%' }}
+      >
       </div>
 
       {/* 2. Page Content Overlaid */}
       <div className="relative z-10 pt-4 px-4 space-y-4 max-w-7xl mx-auto w-full md:px-6 lg:px-8 md:py-8">
         
         {/* Navigation Bar (Mobile Only) */}
-        <div className="flex items-center justify-between md:hidden">
+        <div className="flex justify-between items-center md:hidden pt-2 px-2 pb-8 relative z-20">
           <button 
-            onClick={() => navigate('/')}
-            className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 text-white hover:bg-white/20 active:scale-95 transition-all cursor-pointer shadow-sm"
+            onClick={() => navigate(-1)}
+            className="text-[#02006c] hover:text-[#0B132B] active:scale-95 transition-all cursor-pointer p-2 bg-white/40 rounded-full shadow-sm backdrop-blur-sm mt-2 ml-2 border border-white/50"
           >
-            <ChevronLeft className="w-5 h-5" />
+             <ChevronLeft className="w-5 h-5" />
           </button>
-          
           <button 
-            onClick={() => navigate('/account')}
-            className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 text-white hover:bg-white/20 active:scale-95 transition-all cursor-pointer shadow-sm"
+            onClick={() => setInfoModalType('editProfile')}
+            className="text-[#02006c] hover:text-[#0B132B] active:scale-95 transition-all cursor-pointer p-2 bg-white/40 rounded-full shadow-sm backdrop-blur-sm mt-2 mr-2 border border-white/50"
           >
-             <Edit2 className="w-4 h-4" />
+             <Edit2 className="w-5 h-5" />
           </button>
         </div>
 
         {/* Desktop title header */}
-        <h2 className="hidden md:block text-2xl font-black text-[#02006c] uppercase tracking-wide border-b border-white/10 pb-3 mb-6">
-          My Account Dashboard
-        </h2>
+        <div className="hidden md:flex items-center gap-3 border-b border-slate-200 pb-3 mb-6">
+          <button 
+            onClick={() => navigate(-1)}
+            className="p-1.5 hover:bg-slate-100 rounded-full transition-colors cursor-pointer text-[#02006c]"
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+          <h2 className="text-2xl font-black text-[#02006c] uppercase tracking-wide">
+            My Account Dashboard
+          </h2>
+        </div>
 
         {/* Responsive Grid layout */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
           
           {/* LEFT COLUMN: User Card, Avatar creation banner & Log out controls (Mobile-first, 4 cols on desktop) */}
-          <div className="md:col-span-5 lg:col-span-4 bg-surface md:border md:border-slate-150/50 md:rounded-2xl md:p-6 md:shadow-3xs space-y-6">
+          <div className="md:col-span-5 lg:col-span-4 bg-transparent md:bg-surface md:border md:border-slate-150/50 md:rounded-2xl md:p-6 md:shadow-3xs space-y-6">
             
             {/* Desktop orange card background banner overlay */}
             <div className="hidden md:block relative bg-[#0B132B] rounded-2xl p-6 text-center text-white overflow-hidden shadow-sm">
@@ -576,40 +642,23 @@ export default function ProfilePage() {
                         <OptimizedImage src={avtarImage} alt="Profile Avatar" type="default" className="w-full h-full" />
                       )}
                     </div>
-                    {/* Camera */}
-                    <div 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        fileInputRef.current.click();
-                      }}
-                      className="absolute -bottom-1 -right-1 p-2 bg-[#0B132B] border border-white rounded-full shadow-sm text-white hover:bg-gold transition-colors"
-                    >
-                      <Camera className="w-3.5 h-3.5 fill-current" />
-                    </div>
                   </div>
                 </div>
 
                 <h3 className="text-lg font-black mt-3 font-syne tracking-wide drop-shadow-md">
                   {mockUser.name}
                 </h3>
-                <div className="flex items-center gap-1 mt-1.5 bg-surface/20 border border-white/20 px-3.5 py-0.5 rounded-full">
-                  <Sparkles className="w-3 h-3 text-amber-300 fill-amber-300 animate-pulse" />
-                  <span className="text-[9px] text-white font-extrabold tracking-wider uppercase">
-                    {mockUser.tier || 'Gold Tier Gifter'}
-                  </span>
-                </div>
               </div>
             </div>
 
             {/* Mobile User Card (Only on mobile) */}
-            <div className="flex flex-col items-center text-center mt-2 mb-6 relative md:hidden">
+            <div className="flex flex-col items-center text-center -mt-16 mb-4 relative md:hidden">
               <div 
                 onClick={handleOpenCreator}
-                className="relative group cursor-pointer"
+                className="relative group cursor-pointer z-10"
               >
-                <div className="absolute -inset-2 rounded-full bg-white/5 animate-pulse opacity-50 blur-md"></div>
-                <div className="relative p-1.5 bg-white/10 backdrop-blur-sm rounded-full shadow-xl border border-white/20 transition-transform duration-300 group-hover:scale-105">
-                  <div className="w-24 h-24 rounded-full border-2 border-white/50 overflow-hidden bg-surface flex items-center justify-center relative">
+                <div className="relative p-1 bg-white rounded-full shadow-xl transition-transform duration-300 group-hover:scale-105">
+                  <div className="w-[110px] h-[110px] rounded-full overflow-hidden bg-surface flex items-center justify-center relative">
                     {uploadedImage ? (
                       <OptimizedImage src={uploadedImage} alt="Uploaded Profile" type="default" className="w-full h-full object-cover" />
                     ) : avatarConfig ? (
@@ -619,93 +668,11 @@ export default function ProfilePage() {
                     )}
                   </div>
                   
-                  <div 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      fileInputRef.current.click();
-                    }}
-                    className="absolute bottom-0 right-0 p-2.5 bg-gradient-to-r from-orange-400 to-orange-500 border-2 border-[#1a2542] rounded-full shadow-lg text-white hover:scale-110 transition-transform cursor-pointer"
-                  >
-                    <Camera className="w-3.5 h-3.5 fill-current" />
-                  </div>
-                  <input 
-                    type="file" 
-                    ref={fileInputRef}
-                    onChange={handleImageUpload}
-                    onClick={(e) => e.stopPropagation()}
-                    accept="image/*"
-                    className="hidden"
-                  />
                 </div>
               </div>
-
-              <h3 className="text-2xl font-black text-white mt-4 font-syne tracking-wide drop-shadow-md">
+              <h3 className="text-2xl font-black text-[#02006c] mt-3 font-syne tracking-wide">
                 {mockUser.name}
               </h3>
-              <div className="flex items-center gap-1.5 mt-2 bg-white/10 backdrop-blur-sm border border-white/20 px-4 py-1.5 rounded-full shadow-sm">
-                <Sparkles className="w-3.5 h-3.5 text-orange-300 fill-orange-300" />
-                <span className="text-[10px] text-white font-extrabold tracking-widest uppercase shadow-sm">
-                  {mockUser.tier || 'Gold Tier Gifter'}
-                </span>
-              </div>
-            </div>
-
-            {/* Action Grid (Orders, Wishlist, Coupons, Help Center) */}
-            <div className="grid grid-cols-2 gap-3">
-              <div 
-                onClick={() => navigate('/orders')}
-                className="bg-[#0B132B] rounded-xl h-[52px] px-3.5 flex items-center gap-3 shadow-md border border-white/10 hover:bg-[#1a2542] transition-all cursor-pointer group"
-              >
-                <Package className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
-                <span className="text-[13px] font-bold text-white whitespace-nowrap">Orders</span>
-              </div>
-
-              <div 
-                onClick={() => navigate('/wishlist')}
-                className="bg-[#0B132B] rounded-xl h-[52px] px-3.5 flex items-center gap-3 shadow-md border border-white/10 hover:bg-[#1a2542] transition-all cursor-pointer group"
-              >
-                <Heart className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
-                <span className="text-[13px] font-bold text-white whitespace-nowrap">My Picks</span>
-              </div>
-
-              <div 
-                onClick={() => navigate('/coupons')}
-                className="bg-[#0B132B] rounded-xl h-[52px] px-3.5 flex items-center gap-3 shadow-md border border-white/10 hover:bg-[#1a2542] transition-all cursor-pointer group"
-              >
-                <Gift className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
-                <span className="text-[13px] font-bold text-white whitespace-nowrap">Coupons</span>
-              </div>
-
-              <div 
-                onClick={() => navigate('/support')}
-                className="bg-[#0B132B] rounded-xl h-[52px] px-3.5 flex items-center gap-3 shadow-md border border-white/10 hover:bg-[#1a2542] transition-all cursor-pointer group"
-              >
-                <Headphones className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
-                <span className="text-[13px] font-bold text-white whitespace-nowrap">Help Center</span>
-              </div>
-            </div>
-
-            {/* Avatar Creator Prompter banner */}
-            <div 
-              onClick={handleOpenCreator}
-              className="relative overflow-hidden rounded-2xl p-4 bg-gold/10 border border-gold/20 cursor-pointer group hover:bg-gold/10 transition-colors duration-300 shadow-3xs"
-            >
-              <div className="absolute -right-4 -top-4 w-24 h-24 bg-gold/10 rounded-full blur-xl"></div>
-              
-              <div className="relative z-10 flex items-center justify-between">
-                <div className="space-y-1">
-                  <h4 className="text-xs font-black uppercase tracking-wider font-syne text-[#0B132B] flex items-center gap-1.5">
-                    Customize Avatar
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                  </h4>
-                  <p className="text-[9px] font-extrabold text-orange-450 uppercase tracking-widest leading-none">
-                    Design your look
-                  </p>
-                </div>
-                <div className="w-8 h-8 bg-surface rounded-full flex items-center justify-center text-gold border border-gold/20 shadow-sm group-hover:bg-gold/10 transition-colors">
-                  <ChevronRight className="w-4 h-4 stroke-[2.5] group-hover:translate-x-0.5 transition-transform" />
-                </div>
-              </div>
             </div>
 
             {/* Logout and Delete Actions on Desktop Left Column */}
@@ -748,6 +715,42 @@ export default function ProfilePage() {
           {/* RIGHT COLUMN: Settings Options & feedback info list (Mobile-first, 8 cols on desktop) */}
           <div className="md:col-span-7 lg:col-span-8 space-y-6">
             
+            {/* My Activity Box */}
+            <div className="bg-surface rounded-2xl p-4 md:p-6 shadow-3xs border border-white/10">
+              <h3 className="text-sm font-black text-[#02006c] uppercase tracking-wide px-1 mb-4 border-b border-white/10 pb-2">
+                My Activity
+              </h3>
+              
+              <div className="space-y-1.5">
+                {[
+                  { label: "Orders", desc: "Track, return, or buy things again", icon: Package, color: "bg-blue-100/60 text-blue-600", path: "/orders" },
+                  { label: "My Picks", desc: "View your saved items and wishlist", icon: Heart, color: "bg-pink-100/60 text-pink-500", path: "/wishlist" },
+                  { label: "Coupons", desc: "Manage your discounts and offers", icon: Gift, color: "bg-purple-100/60 text-purple-600", path: "/coupons" }
+                ].map((opt, idx) => {
+                  const Icon = opt.icon;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => { if (opt.path) navigate(opt.path); }}
+                      className="w-full flex items-center justify-between p-3.5 rounded-xl hover:bg-slate-50 active:scale-[0.98] transition-all duration-300 text-left cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-4 min-w-0 flex-1">
+                        <div className={`w-11 h-11 ${opt.color} rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-105 shadow-3xs`}>
+                          <Icon className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-sm font-black text-[#02006c] block leading-tight">{opt.label}</span>
+                          <span className="text-[10px] text-slate-400 font-semibold block truncate mt-1 leading-none tracking-wide">{opt.desc}</span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-[#0B132B] group-hover:translate-x-1 transition-all" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+
             {/* Account settings options box */}
             <div className="bg-surface rounded-2xl p-4 md:p-6 shadow-3xs border border-white/10">
               <h3 className="text-sm font-black text-[#02006c] uppercase tracking-wide px-1 mb-4 border-b border-white/10 pb-2">
@@ -779,30 +782,7 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Trust Stamps Stamp list banner */}
-            <div className="bg-surface rounded-2xl p-4 md:p-6 shadow-3xs border border-white/10">
-              <h3 className="text-sm font-black text-[#02006c] uppercase tracking-wide px-1 mb-4 border-b border-white/10 pb-2">
-                Aramish Guarantee
-              </h3>
-              
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {VALUE_PROPS.map((prop) => (
-                  <div 
-                    key={prop.id} 
-                    className="flex flex-col items-center justify-center rounded-xl bg-surface border border-white/10 p-4 shadow-3xs hover:border-[#0B132B] transition-all duration-300 cursor-pointer"
-                  >
-                    <div className="w-10 h-10 bg-surface text-[#02006c] rounded-xl flex items-center justify-center mb-2 shadow-3xs">
-                      {prop.id === 1 && <Truck className="w-5 h-5 stroke-[2]" />}
-                      {prop.id === 2 && <RotateCcw className="w-5 h-5 stroke-[2]" />}
-                      {prop.id === 3 && <ShieldCheck className="w-5 h-5 stroke-[2]" />}
-                      {prop.id === 4 && <Tag className="w-5 h-5 stroke-[2]" />}
-                    </div>
-                    <h5 className="text-[10px] font-black text-[#02006c] leading-tight text-center">{prop.title}</h5>
-                    <p className="text-[8px] text-slate-400 font-semibold leading-normal mt-1.5 text-center">{prop.desc}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
+
 
             {/* Feedback & Info links */}
             <div className="bg-surface rounded-2xl shadow-3xs border border-white/10 overflow-hidden">
@@ -1261,6 +1241,89 @@ export default function ProfilePage() {
           )}
         </motion.div>
       )}
+      </AnimatePresence>
+
+      {/* Edit Profile Modal */}
+      <AnimatePresence>
+        {infoModalType === 'editProfile' && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-[#0a0927]/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
+          >
+            <motion.div 
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="bg-surface rounded-t-[32px] sm:rounded-[32px] w-full max-w-md overflow-hidden flex flex-col shadow-2xl border-t border-white/10"
+            >
+              <div className="px-6 py-4 flex items-center justify-between border-b border-black/5 bg-[#f0f4ff]">
+                <h3 className="text-lg font-black text-[#02006c]">Edit Profile</h3>
+                <button onClick={() => setInfoModalType(null)} className="p-2 bg-white rounded-full shadow-sm cursor-pointer hover:bg-slate-50 transition-colors"><X className="w-4 h-4 text-slate-500" /></button>
+              </div>
+              
+              <div className="p-6 space-y-6 bg-white">
+                <div className="flex flex-col items-center gap-4 border-b border-black/5 pb-6">
+                  <div className="relative p-1 bg-white rounded-full shadow-md">
+                    <div className="w-[100px] h-[100px] rounded-full overflow-hidden bg-surface flex items-center justify-center relative">
+                      {uploadedImage ? (
+                        <OptimizedImage src={uploadedImage} alt="Uploaded" type="default" className="w-full h-full object-cover" />
+                      ) : avatarConfig ? (
+                        <DynamicAvatar config={avatarConfig} size="w-full h-full object-cover" />
+                      ) : (
+                        <OptimizedImage src={avtarImage} alt="Avatar" type="default" className="w-full h-full object-cover" />
+                      )}
+                    </div>
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current.click();
+                      }}
+                      className="absolute bottom-0 right-0 p-2.5 bg-[#02006c] border-2 border-white rounded-full shadow-md text-white hover:scale-110 transition-transform cursor-pointer"
+                    >
+                      <Camera className="w-4 h-4 fill-current" />
+                    </div>
+                    <input 
+                      type="file" 
+                      ref={fileInputRef}
+                      onChange={handleImageUpload}
+                      onClick={(e) => e.stopPropagation()}
+                      accept="image/*"
+                      className="hidden"
+                    />
+                  </div>
+                  
+                  <div 
+                    onClick={() => { setInfoModalType(null); handleOpenCreator(); }}
+                    className="w-full max-w-[200px] py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full shadow-sm text-center cursor-pointer active:scale-95 transition-all text-white font-bold text-xs uppercase tracking-wide flex items-center justify-center gap-2 hover:from-blue-700 hover:to-indigo-700"
+                  >
+                    <Sparkles className="w-4 h-4" /> Customize Avatar
+                  </div>
+                </div>
+
+                <div className="space-y-3 pb-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Username</label>
+                  <div className="flex gap-2">
+                    <input 
+                      value={newName} 
+                      onChange={(e) => setNewName(e.target.value)} 
+                      className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-[#02006c] focus:outline-none focus:border-[#02006c] focus:bg-white transition-all"
+                      placeholder="Enter username"
+                    />
+                    <button 
+                      onClick={handleSaveName}
+                      className="bg-[#02006c] hover:bg-[#0B132B] text-white rounded-xl px-5 font-bold text-sm shadow-sm active:scale-95 transition-all flex items-center justify-center cursor-pointer"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
     </div>

@@ -64,11 +64,29 @@ const updateSubCategoryChip = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Subcategory chip not found' });
     }
 
-    if (categoryId !== undefined) chip.categoryId = categoryId;
-    if (subCategoryName !== undefined) {
-      chip.subCategoryName = subCategoryName;
-      chip.id = `${chip.categoryId}-${subCategoryName.toLowerCase().replace(/\s+/g, '-')}`;
+    // Determine target ID if parent category or subcategory name is changing
+    let newId = chip.id;
+    const targetCategoryId = categoryId !== undefined ? categoryId : chip.categoryId;
+    const targetSubCategoryName = subCategoryName !== undefined ? subCategoryName : chip.subCategoryName;
+
+    if (categoryId !== undefined || subCategoryName !== undefined) {
+      newId = `${targetCategoryId}-${targetSubCategoryName.toLowerCase().replace(/\s+/g, '-')}`;
     }
+
+    // If ID is changing, ensure it doesn't collide with an existing subcategory
+    if (newId !== chip.id) {
+      const existing = await SubCategoryChip.findOne({ id: newId });
+      if (existing) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `Subcategory "${targetSubCategoryName}" already exists under the selected parent category.` 
+        });
+      }
+      chip.id = newId;
+    }
+
+    if (categoryId !== undefined) chip.categoryId = categoryId;
+    if (subCategoryName !== undefined) chip.subCategoryName = subCategoryName;
     if (active !== undefined) chip.active = (active === false || active === 'false') ? false : true;
     if (order !== undefined) chip.order = Number(order);
 

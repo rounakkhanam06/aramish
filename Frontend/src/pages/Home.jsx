@@ -274,7 +274,13 @@ export default function Home() {
             <path d="M16 10a4 4 0 0 1-8 0" />
           </svg>
         );
-      case 'beauty':
+      case 'mens-footwear':
+        return (
+          <svg viewBox="0 0 24 24" className="w-5 h-5 fill-none stroke-current" stroke={strokeColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20.38 3.46L16 6a2 2 0 0 1-2-2V2H10v2a2 2 0 0 1-2 2L3.62 3.46a2 2 0 0 0-2.38.88l-1 1.5a2 2 0 0 0 .38 2.56L4 10v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10l3.38-2.6a2 2 0 0 0 .38-2.56l-1-1.5a2 2 0 0 0-2.38-.88z" />
+          </svg>
+        );
+      case 'women':
         return (
           <svg viewBox="0 0 24 24" className="w-5 h-5 fill-none stroke-current" stroke={strokeColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M7 9 A 2 2 0 0 1 9 7 H 15 A 2 2 0 0 1 17 9 V 20 A 2 2 0 0 1 15 22 H 9 A 2 2 0 0 1 7 20 Z" />
@@ -283,33 +289,7 @@ export default function Home() {
             <line x1="10" y1="17" x2="14" y2="17" />
           </svg>
         );
-      case 'gifting':
-        return (
-          <svg viewBox="0 0 24 24" className="w-5 h-5 fill-none stroke-current" stroke={strokeColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 12 20 22 4 22 4 12" />
-            <rect x="2" y="7" width="20" height="5" />
-            <line x1="12" y1="22" x2="12" y2="7" />
-            <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
-            <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
-          </svg>
-        );
-      case 'electronics':
-        return (
-          <svg viewBox="0 0 24 24" className="w-5 h-5 fill-none stroke-current" stroke={strokeColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-            <line x1="8" y1="21" x2="16" y2="21" />
-            <line x1="12" y1="17" x2="12" y2="21" />
-          </svg>
-        );
-      case 'jewellery':
-        return (
-          <svg viewBox="0 0 24 24" className="w-5 h-5 fill-none stroke-current" stroke={strokeColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M6 3h12l4 6-10 12L2 9z" />
-            <path d="M11 3 8 9l4 12 4-12-3-6" />
-            <path d="M2 9h20" />
-          </svg>
-        );
-      case 'toys':
+      case 'kids':
         return (
           <svg viewBox="0 0 24 24" className="w-5 h-5 fill-none stroke-current" stroke={strokeColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="8" width="18" height="13" rx="3" />
@@ -321,21 +301,25 @@ export default function Home() {
             <circle cx="12" cy="3" r="1.5" />
           </svg>
         );
-      case 'stationery':
+      case 'brands':
         return (
           <svg viewBox="0 0 24 24" className="w-5 h-5 fill-none stroke-current" stroke={strokeColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2 L20 20 H4 Z" />
-            <line x1="2" y1="16" x2="22" y2="16" />
-            <rect x="10" y="8" width="4" height="4" rx="0.5" />
+            <path d="M6 3h12l4 6-10 12L2 9z" />
+            <path d="M11 3 8 9l4 12 4-12-3-6" />
+            <path d="M2 9h20" />
           </svg>
         );
-      case 'fashion':
+      case 'new-launch':
         return (
           <svg viewBox="0 0 24 24" className="w-5 h-5 fill-none stroke-current" stroke={strokeColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20.38 3.46L16 6a2 2 0 0 1-2-2V2H10v2a2 2 0 0 1-2 2L3.62 3.46a2 2 0 0 0-2.38.88l-1 1.5a2 2 0 0 0 .38 2.56L4 10v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10l3.38-2.6a2 2 0 0 0 .38-2.56l-1-1.5a2 2 0 0 0-2.38-.88z" />
+            <polyline points="20 12 20 22 4 22 4 12" />
+            <rect x="2" y="7" width="20" height="5" />
+            <line x1="12" y1="22" x2="12" y2="7" />
+            <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
+            <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
           </svg>
         );
-      case 'electrical':
+      case 'trendy':
         return (
           <svg viewBox="0 0 24 24" className="w-5 h-5 fill-none stroke-current" stroke={strokeColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -789,7 +773,7 @@ export default function Home() {
 
                 {/* Tabs */}
                 <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 md:overflow-visible">
-                  {['All', 'Newest', 'Popular', 'Clothes', 'Beauty', 'Gifts', 'Electronics', 'Toys'].map((tab) => (
+                  {['All', 'Newest', 'Popular', "Men's", 'Women', 'Kids', 'Brands', 'Trendy'].map((tab) => (
                     <button 
                       key={tab}
                       onClick={() => setActiveFlashTab(tab)}

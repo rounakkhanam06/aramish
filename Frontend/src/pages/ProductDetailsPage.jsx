@@ -439,11 +439,18 @@ export default function ProductDetailsPage() {
     }
     const cartItem = {
        ...product,
+       id: product._id || product.id,
        price: displayPrice,
        originalPrice: displayOriginalPrice,
        selectedColor,
        selectedSize,
-       variantSku: activeVariant?.sku || product.sku
+       variantSku: activeVariant?.sku || product.sku,
+       attributes: {
+         ...(product.attributes || {}),
+         ...(selectedColor && selectedColor !== 'N/A' ? { Color: selectedColor } : {}),
+         ...(selectedSize ? { Size: selectedSize } : {})
+       },
+       image: displayImages[0] || product.image || (product.images && product.images[0])
     };
     addToCart(cartItem);
     setToastMessage('Item added to cart!');
@@ -457,13 +464,22 @@ export default function ProductDetailsPage() {
     }
     const cartItem = {
        ...product,
+       id: product._id || product.id,
        price: displayPrice,
        originalPrice: displayOriginalPrice,
        selectedColor,
        selectedSize,
-       variantSku: activeVariant?.sku || product.sku
+       variantSku: activeVariant?.sku || product.sku,
+       attributes: {
+         ...(product.attributes || {}),
+         ...(selectedColor && selectedColor !== 'N/A' ? { Color: selectedColor } : {}),
+         ...(selectedSize ? { Size: selectedSize } : {})
+       },
+       image: displayImages[0] || product.image || (product.images && product.images[0])
     };
-    const itemInCart = cart.find(item => item.id === product.id && item.selectedColor === selectedColor && item.selectedSize === selectedSize);
+    const targetSku = activeVariant?.sku || product.sku;
+    const targetId = product._id || product.id;
+    const itemInCart = cart.find(item => item.id === targetId && (item.variationSku || '') === (targetSku || ''));
     if (!itemInCart) {
       addToCart(cartItem);
     }
@@ -488,15 +504,10 @@ export default function ProductDetailsPage() {
           <input 
             type="text" 
             placeholder="Search for products" 
-            className="w-full bg-transparent outline-none text-sm text-slate-700"
-            value={localSearchQuery}
-            onChange={(e) => setLocalSearchQuery(e.target.value.trimStart())}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && localSearchQuery.trim() !== '') {
-                setSearchQuery(localSearchQuery);
-                navigate('/categories');
-              }
-            }}
+            className="w-full bg-transparent outline-none text-sm text-slate-700 cursor-pointer"
+            value=""
+            readOnly
+            onClick={() => navigate('/search')}
           />
         </div>
 
@@ -511,7 +522,7 @@ export default function ProductDetailsPage() {
       </header>
 
       {/* Main Content wrapper */}
-      <div className={`max-w-7xl mx-auto w-full px-0 md:px-6 lg:px-8 md:py-8 pb-28 md:pb-8 grid grid-cols-1 md:grid-cols-12 gap-8 items-start ${(!displayStock || displayStock <= 0) ? 'grayscale opacity-90' : ''}`}>
+      <div className={`max-w-7xl mx-auto w-full px-0 md:px-6 lg:px-8 md:py-8 pb-6 md:pb-8 grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-8 items-start ${(!displayStock || displayStock <= 0) ? 'grayscale opacity-90' : ''}`}>
         
         {/* Left Column: Image Gallery on desktop */}
         <div className="md:col-span-7 bg-surface p-0 md:p-6 md:rounded-2xl md:border md:border-white/10 md:shadow-xs space-y-6">
@@ -787,7 +798,7 @@ export default function ProductDetailsPage() {
           )}
 
           {/* Delivery Details Section */}
-          <div className="pb-4 border-b border-white/10">
+          <div className="pb-0 border-b-0 md:pb-4 md:border-b md:border-white/10">
             <h3 className="font-bold text-sm text-[#02006c] mb-3">Delivery Details</h3>
             <div className="bg-surface border border-white/10 rounded-xl p-3 flex flex-col gap-2">
               <div className="flex items-center gap-2">
@@ -864,7 +875,7 @@ export default function ProductDetailsPage() {
         </div>
 
         {/* Bottom Area (Specs & Reviews & Similar Products) - Spans full 12 columns */}
-        <div className="col-span-1 md:col-span-12 grid grid-cols-1 md:grid-cols-12 gap-8 mt-4">
+        <div className="col-span-1 md:col-span-12 grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-8 mt-0 md:mt-4">
           
           {/* Specifications, Highlights & Details - col-span-7 */}
           <div className="md:col-span-7 space-y-6">

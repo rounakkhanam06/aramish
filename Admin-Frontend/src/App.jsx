@@ -25,6 +25,7 @@ function App() {
         
         {/* Redirect root to admin panel */}
         <Route path="/" element={<Navigate to="/admin" replace />} />
+        <Route path="*" element={<Navigate to="/admin" replace />} />
 
 
       </Routes>

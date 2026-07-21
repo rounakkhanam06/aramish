@@ -225,7 +225,7 @@ export default function OrderDetailsPage() {
       }
     };
     checkExistingReturn();
-  }, [id, globalOrder]);
+  }, [id, globalOrder?.status]);
 
   const handleReturnToggleItem = (item) => {
     setReturnSelectedItems(prev => {
@@ -613,12 +613,16 @@ export default function OrderDetailsPage() {
 
               <div className="flex flex-col gap-3">
                 {orderItems.map((item, idx) => (
-                  <div key={item.id || idx} className="flex gap-4 items-center p-3 bg-surface rounded-xl border border-white/10">
+                  <div 
+                    key={item.id || idx} 
+                    onClick={() => navigate(`/product/${item.id}`)}
+                    className="flex gap-4 items-center p-3 bg-surface rounded-xl border border-white/10 cursor-pointer hover:bg-slate-50 transition-colors"
+                  >
                     <div className="w-14 h-14 bg-surface rounded-lg p-1.5 flex-shrink-0 flex items-center justify-center overflow-hidden border border-slate-150 shadow-3xs relative">
                        <OptimizedImage src={item.image} alt={item.name} type="product" className="absolute inset-0 p-0.5 object-contain mix-blend-multiply" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs md:text-sm text-slate-800 line-clamp-1 font-bold">
+                      <p className="text-xs md:text-sm text-slate-800 line-clamp-1 font-bold group-hover:text-amber-600 transition-colors">
                         {item.name}
                       </p>
                       <p className="text-[11px] text-slate-500 mt-1 font-semibold">
@@ -688,7 +692,7 @@ export default function OrderDetailsPage() {
                   className="w-full py-3.5 text-xs font-black text-amber-600 hover:bg-amber-50 active:bg-amber-100 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider"
                 >
                   <RotateCcw className="w-4 h-4" />
-                  Request Return / Refund
+                  Request Return / Exchange
                 </button>
               )}
 

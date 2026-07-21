@@ -45,6 +45,7 @@ export default function CartPage() {
   
   const [isQtyModalOpen, setIsQtyModalOpen] = useState(false);
   const [qtyModalItemId, setQtyModalItemId] = useState(null);
+  const [qtyModalItemSku, setQtyModalItemSku] = useState(null);
   const [customQtyInput, setCustomQtyInput] = useState('');
 
   // Fetch addresses from DB
@@ -110,7 +111,7 @@ export default function CartPage() {
   const handleApplyCustomQty = () => {
     const qty = parseInt(customQtyInput);
     if (!isNaN(qty) && qty > 0) {
-      updateQuantity(qtyModalItemId, qty);
+      updateQuantity(qtyModalItemId, qty, qtyModalItemSku);
       setIsQtyModalOpen(false);
       setCustomQtyInput('');
     } else {
@@ -308,10 +309,11 @@ export default function CartPage() {
                             onChange={(e) => {
                               if (e.target.value === "more") {
                                 setQtyModalItemId(item.id);
+                                setQtyModalItemSku(item.variationSku);
                                 setCustomQtyInput(item.quantity > 3 ? item.quantity.toString() : '');
                                 setIsQtyModalOpen(true);
                               } else if (e.target.value !== "custom") {
-                                updateQuantity(item.id, parseInt(e.target.value));
+                                updateQuantity(item.id, parseInt(e.target.value), item.variationSku);
                               }
                             }}
                           >
@@ -328,6 +330,23 @@ export default function CartPage() {
                       <div className="flex-1 flex flex-col justify-between">
                         <div>
                           <h3 className="text-xs md:text-sm font-bold text-slate-800 leading-snug pr-2">{item.name}</h3>
+                          
+                          {/* Variant Attributes */}
+                          {((item.selectedColor && item.selectedColor !== 'N/A') || item.selectedSize) && (
+                            <div className="flex flex-wrap gap-1.5 mt-1.5 mb-1">
+                              {item.selectedColor && item.selectedColor !== 'N/A' && (
+                                <span className="text-[9px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-extrabold uppercase border border-slate-200/50">
+                                  Color: {item.selectedColor}
+                                </span>
+                              )}
+                              {item.selectedSize && (
+                                <span className="text-[9px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-extrabold uppercase border border-slate-200/50">
+                                  Size: {item.selectedSize}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
                           <p className="text-[10px] md:text-xs text-slate-400 mt-1 font-semibold">{item.desc || "Pack of 1, Standard Fit"}</p>
                           
                           {/* Rating */}
@@ -355,7 +374,7 @@ export default function CartPage() {
                     {/* Actions */}
                     <div className="flex border-t border-white/10 mt-4 pt-2.5">
                       <button 
-                        onClick={() => removeFromCart(item.id)} 
+                        onClick={() => removeFromCart(item.id, item.variationSku)} 
                         className="flex-1 flex items-center justify-center gap-1.5 text-slate-500 hover:text-red-500 hover:bg-red-50 py-1.5 rounded-lg text-xs font-black transition-colors cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" /> Remove

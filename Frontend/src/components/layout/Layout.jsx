@@ -52,9 +52,11 @@ export default function Layout({ children }) {
   // which forces React to unmount+remount the scroll container on every route change.
 
   const isLoginPage = location.pathname.toLowerCase().startsWith('/login');
+  const isSearchPage = location.pathname.toLowerCase().startsWith('/search');
   
   // Mobile-specific visibility logic
   const hideNavbarMobile = isLoginPage || 
+                           isSearchPage ||
                            location.pathname.toLowerCase().startsWith('/studio') ||
                            location.pathname.toLowerCase().startsWith('/profile') || 
                            location.pathname.toLowerCase().startsWith('/categories') || 
@@ -81,6 +83,7 @@ export default function Layout({ children }) {
                            location.pathname.toLowerCase().startsWith('/review-order');
 
   const hideMobileNavMobile = isLoginPage || 
+                              isSearchPage ||
                               location.pathname.toLowerCase().startsWith('/studio') || 
                               location.pathname.toLowerCase().startsWith('/profile') || 
                               location.pathname.toLowerCase().startsWith('/review-order') || 
@@ -99,10 +102,10 @@ export default function Layout({ children }) {
                               location.pathname.toLowerCase().startsWith('/privacy');
 
   // Desktop/Tablet overrides:
-  // - Show Top Navbar on all pages except login
+  // - Show Top Navbar on all pages except login, studio, and search
   // - Hide Bottom MobileNav on all pages
   const isStudioPage = location.pathname.toLowerCase().startsWith('/studio');
-  const hideNavbar = isMobile ? hideNavbarMobile : (isLoginPage || isStudioPage);
+  const hideNavbar = isMobile ? hideNavbarMobile : (isLoginPage || isStudioPage || isSearchPage);
   const hideMobileNav = isMobile ? hideMobileNavMobile : true;
 
   const [pullDistance, setPullDistance] = useState(0);

@@ -32,6 +32,8 @@ const SavedAddressesPage = lazy(() => import('./pages/SavedAddressesPage'));
 const TrackOrderPage     = lazy(() => import('./pages/TrackOrderPage'));
 const OrderDetailsPage   = lazy(() => import('./pages/OrderDetailsPage'));
 const BrandPage          = lazy(() => import('./pages/BrandPage'));
+const SearchPage         = lazy(() => import('./pages/SearchPage'));
+const NotFoundPage       = lazy(() => import('./pages/NotFoundPage'));
 
 // Minimal route-level loading skeleton (shown while a page chunk loads)
 const PageSkeleton = () => (
@@ -116,6 +118,8 @@ function AppContent() {
         <Route path="/track-order/:orderId" element={<TrackOrderPage />} />
         <Route path="/order-details/:orderId" element={<OrderDetailsPage />} />
         <Route path="/brand/:brandId" element={<BrandPage />} />
+        <Route path="/search" element={<SearchPage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
       </Suspense>
     </Layout>

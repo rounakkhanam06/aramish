@@ -584,6 +584,24 @@ exports.updateOrderStatus = async (req, res) => {
     const targetStatus = status || order.status;
     const targetPaymentStatus = paymentStatus || order.paymentStatus;
 
+    // Prevent processing unpaid/failed Online orders
+    const advancedStatuses = ['Processing', 'Shipped', 'Out for Delivery', 'Delivered'];
+    if (order.paymentMethod === 'Online' && advancedStatuses.includes(targetStatus)) {
+      if (targetPaymentStatus === 'Pending') {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot change status to '${targetStatus}' because online payment is still Pending.`
+        });
+      }
+      if (targetPaymentStatus === 'Failed') {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot change status to '${targetStatus}' because online payment Failed.`
+        });
+      }
+    }
+
+    // Generic fallback for COD Delivered/Failed
     if (targetStatus === 'Delivered' && targetPaymentStatus === 'Failed') {
       return res.status(400).json({
         success: false,

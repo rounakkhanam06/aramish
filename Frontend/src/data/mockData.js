@@ -61,14 +61,12 @@ import catGifting from '../assets/CategorySection/Category7-removebg-preview.web
 
 export const CATEGORIES = [
   { id: 'for-you', name: 'For You', icon: 'ShoppingBag', image: catForYou },
-  { id: 'beauty', name: 'Beauty', icon: 'Sparkles', image: catBeauty },
-  { id: 'gifting', name: 'Gifting', icon: 'Gift', image: catGifting },
-  { id: 'electronics', name: 'Electronics', icon: 'Monitor', image: catElectronics },
-  { id: 'jewellery', name: 'Jewellery', icon: 'Gem', image: catJewellery },
-  { id: 'toys', name: 'Toys', icon: 'Gamepad2', image: catToys },
-  { id: 'stationery', name: 'Stationery', icon: 'PenTool', image: catStationery },
-  { id: 'fashion', name: 'Fashion', icon: 'Shirt', image: catFashion },
-  { id: 'electrical', name: 'Electrical', icon: 'Zap', image: elec11 },
+  { id: 'mens-footwear', name: "Men's Footwear", icon: 'Shirt', image: catBeauty },
+  { id: 'kids', name: 'Kids', icon: 'Gamepad2', image: catToys },
+  { id: 'women', name: 'Women', icon: 'Sparkles', image: catJewellery },
+  { id: 'brands', name: 'Brands', icon: 'Monitor', image: catElectronics },
+  { id: 'new-launch', name: 'New Launch', icon: 'Gift', image: catStationery },
+  { id: 'trendy', name: 'Trendy', icon: 'Zap', image: catFashion },
 ];
 
 import banner1 from '../assets/Banner/footwear1.png';

@@ -6,6 +6,7 @@ import { requestFcmToken, messaging } from '../firebase';
 import { onMessage } from 'firebase/messaging';
 import analytics from '../utils/analytics';
 import { formatDiscount } from '../utils/discountHelper';
+import { getImageUrl } from '../utils/imageHelper';
 
 const AppContext = createContext();
 
@@ -94,6 +95,10 @@ export const AppProvider = ({ children }) => {
       if (!p) return null;
       const variant = item.variationSku && p.variations ? p.variations.find(v => v.sku === item.variationSku) : null;
       const itemPrice = variant ? (variant.price || p.sellingPrice) : p.sellingPrice;
+      const attributes = item.attributes || {};
+      const colorVal = typeof attributes.get === 'function' ? attributes.get('Color') : attributes.Color;
+      const sizeVal = typeof attributes.get === 'function' ? attributes.get('Size') : attributes.Size;
+
       return {
         id: p._id || p.id,
         name: p.name,
@@ -103,13 +108,26 @@ export const AppProvider = ({ children }) => {
         discount: formatDiscount(p.discountLabel, p.mrp, itemPrice, 'minus'),
         rating: p.rating || 0,
         type: (p.category || '').toLowerCase(),
-        image: p.images && p.images[0] ? p.images[0] : '',
+        image: (() => {
+          if (variant && variant.images && variant.images.length > 0) {
+            return getImageUrl(variant.images[0]);
+          }
+          if (colorVal && p.variations) {
+            const colorVariantWithImage = p.variations.find(v => v.color === colorVal && v.images && v.images.length > 0);
+            if (colorVariantWithImage) {
+              return getImageUrl(colorVariantWithImage.images[0]);
+            }
+          }
+          return p.images && p.images[0] ? getImageUrl(p.images[0]) : '';
+        })(),
         brandName: 'Aramish',
         sales: p.sales || 0,
         quantity: item.quantity,
         weight: p.shippingSpecs?.weight || 0.5,
         variationSku: item.variationSku || null,
-        attributes: item.attributes || {}
+        selectedColor: colorVal || null,
+        selectedSize: sizeVal || null,
+        attributes: typeof attributes.toObject === 'function' ? attributes.toObject() : attributes
       };
     }).filter(Boolean);
   };
@@ -382,7 +400,12 @@ export const AppProvider = ({ children }) => {
                   'Content-Type': 'application/json',
                   'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ productId: item.id, quantity: item.quantity })
+                body: JSON.stringify({ 
+                  productId: item.id, 
+                  quantity: item.quantity,
+                  variationSku: item.variationSku || null,
+                  attributes: item.attributes || {}
+                })
               })
             ));
           } catch (syncErr) {
@@ -583,7 +606,12 @@ export const AppProvider = ({ children }) => {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({ productId: product.id, quantity: 1 })
+          body: JSON.stringify({ 
+            productId: product.id || product._id, 
+            quantity: 1, 
+            variationSku: product.variantSku || null,
+            attributes: product.attributes || {}
+          })
         });
         const data = await res.json();
         if (data.success && data.data && data.data.items) {
@@ -595,10 +623,15 @@ export const AppProvider = ({ children }) => {
       }
     } else {
       setCart((prevCart) => {
-        const existingItem = prevCart.find((item) => item.id === product.id);
+        const existingItem = prevCart.find((item) => 
+          item.id === product.id && 
+          (item.variationSku || '') === (product.variantSku || '')
+        );
         if (existingItem) {
           return prevCart.map((item) =>
-            item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+            (item.id === product.id && (item.variationSku || '') === (product.variantSku || ''))
+              ? { ...item, quantity: item.quantity + 1 }
+              : item
           );
         }
         return [...prevCart, { ...product, quantity: 1, weight: product.shippingSpecs?.weight || 0.5 }];
@@ -606,12 +639,16 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  const removeFromCart = async (productId) => {
+  const removeFromCart = async (productId, variationSku = null) => {
     analytics.trackRemoveFromCart(productId);
     if (user && user.id) {
       try {
         const token = localStorage.getItem('userToken');
-        const res = await fetch(`${API_BASE}/cart/${productId}`, {
+        const url = new URL(`${API_BASE}/cart/${productId}`);
+        if (variationSku) {
+          url.searchParams.append('variationSku', variationSku);
+        }
+        const res = await fetch(url.toString(), {
           method: 'DELETE',
           headers: {
             'Authorization': `Bearer ${token}`
@@ -626,11 +663,13 @@ export const AppProvider = ({ children }) => {
         console.error("Error removing from cart:", err);
       }
     } else {
-      setCart((prevCart) => prevCart.filter((item) => item.id !== productId));
+      setCart((prevCart) => prevCart.filter((item) => 
+        !(item.id === productId && (item.variationSku || '') === (variationSku || ''))
+      ));
     }
   };
 
-  const updateQuantity = async (productId, qty) => {
+  const updateQuantity = async (productId, qty, variationSku = null) => {
     if (user && user.id) {
       try {
         const token = localStorage.getItem('userToken');
@@ -640,7 +679,7 @@ export const AppProvider = ({ children }) => {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({ productId, quantity: qty })
+          body: JSON.stringify({ productId, quantity: qty, variationSku })
         });
         const data = await res.json();
         if (data.success && data.data && data.data.items) {
@@ -654,7 +693,7 @@ export const AppProvider = ({ children }) => {
       setCart((prevCart) =>
         prevCart
           .map((item) => {
-            if (item.id === productId) {
+            if (item.id === productId && (item.variationSku || '') === (variationSku || '')) {
               return { ...item, quantity: qty };
             }
             return item;

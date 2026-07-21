@@ -15,7 +15,7 @@ export default function Footer() {
               <span className="text-white font-extrabold text-lg tracking-tight">Aramish <span className="text-[#0B132B]">World</span></span>
             </div>
             <p className="text-xs leading-relaxed max-w-sm">
-              Aramish is your premium online gifting destination, offering beautifully curated teddy bears, RC cars, pendants, and customized gift bundles that surprise, delight, and express your deepest feelings.
+              Aramish is your premium online footwear destination, offering beautifully curated men's, women's, and kids' shoes, top brands, and trendy new launches that elevate your style.
             </p>
           </div>
 
@@ -24,10 +24,10 @@ export default function Footer() {
             <div className="space-y-3">
               <h4 className="text-white font-bold uppercase tracking-wider text-[10px]">Categories</h4>
               <ul className="space-y-2 text-slate-400 font-medium">
-                <li><a href="#/categories?cat=gifting" className="hover:text-[#0B132B] transition-colors">Gift Hampers</a></li>
-                <li><a href="#/categories?cat=toys" className="hover:text-[#0B132B] transition-colors">Teddy Bears & Plush</a></li>
-                <li><a href="#/categories?cat=electronics" className="hover:text-[#0B132B] transition-colors">RC Toys & Gadgets</a></li>
-                <li><a href="#/categories?cat=jewellery" className="hover:text-[#0B132B] transition-colors">Sterling Pendants</a></li>
+                <li><a href="#/categories?cat=mens-footwear" className="hover:text-[#0B132B] transition-colors">Men's Footwear</a></li>
+                <li><a href="#/categories?cat=women" className="hover:text-[#0B132B] transition-colors">Women's Shoes</a></li>
+                <li><a href="#/categories?cat=kids" className="hover:text-[#0B132B] transition-colors">Kids</a></li>
+                <li><a href="#/categories?cat=brands" className="hover:text-[#0B132B] transition-colors">Top Brands</a></li>
               </ul>
             </div>
             <div className="space-y-3">

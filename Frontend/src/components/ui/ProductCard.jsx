@@ -89,13 +89,13 @@ function ProductCard({ product }) {
 
   return (
     <div 
-      onClick={() => navigate(`/product/${product.id}`)}
+      onClick={() => navigate(`/product/${product._id || product.id}`)}
       className={`flex flex-col group cursor-pointer w-full bg-surface rounded-xl shadow-xs hover:shadow-md border border-white/10 overflow-hidden transition-shadow duration-300 ${product.stock === 0 ? 'opacity-70 grayscale' : ''}`}
     >
       {/* Image container */}
       <div className={`relative aspect-square w-full bg-surface overflow-hidden flex items-center justify-center ${product.stock === 0 ? 'grayscale' : ''}`}>
         <OptimizedImage
-          src={product.image}
+          src={product.image || (product.images && product.images[0]) || ''}
           alt={product.name}
           type="product"
           objectFit="contain"
@@ -129,7 +129,7 @@ function ProductCard({ product }) {
           }}
           className="absolute top-2 right-2 w-7 h-7 bg-surface/90 hover:bg-surface text-slate-600 rounded-full flex items-center justify-center shadow-sm z-10 transition-all hover:scale-110 active:scale-95 cursor-pointer"
         >
-          <Heart className={`w-3.5 h-3.5 ${isInWishlist(product.id) ? 'fill-[#FF4500] text-[#FF4500]' : 'text-slate-600'}`} />
+          <Heart className={`w-3.5 h-3.5 ${isInWishlist(product._id || product.id) ? 'fill-[#FF4500] text-[#FF4500]' : 'text-slate-600'}`} />
         </button>
 
         {/* Bottom Left Rating Pill */}
@@ -179,4 +179,4 @@ function ProductCard({ product }) {
 }
 
 // Only re-render when the product id or stock/wishlist state changes
-export default memo(ProductCard, (prev, next) => prev.product.id === next.product.id && prev.product.stock === next.product.stock);
+export default memo(ProductCard, (prev, next) => (prev.product._id || prev.product.id) === (next.product._id || next.product.id) && prev.product.stock === next.product.stock);

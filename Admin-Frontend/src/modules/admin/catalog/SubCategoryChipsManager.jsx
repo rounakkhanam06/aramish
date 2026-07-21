@@ -257,7 +257,7 @@ const SubCategoryChipsManager = () => {
         setImageFile(null);
         setImagePreview('');
       } else {
-        toast.error(data.message || 'Failed to update subcategory chip');
+        toast.info(data.message || 'Failed to update subcategory chip');
       }
     } catch (err) {
       console.error(err);
@@ -301,7 +301,7 @@ const SubCategoryChipsManager = () => {
         setImageFile(null);
         setImagePreview('');
       } else {
-        toast.error(data.message || 'Failed to add subcategory chip');
+        toast.info(data.message || 'Failed to add subcategory chip');
       }
     } catch (err) {
       console.error(err);

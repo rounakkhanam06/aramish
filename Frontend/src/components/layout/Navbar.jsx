@@ -9,23 +9,14 @@ import { cachedFetch } from '../../utils/apiCache';
 
 const getCategoryIcon = (catId) => {
   const id = String(catId).toLowerCase();
-  if (id.includes('beauty') || id.includes('care') || id.includes('cosmetics')) {
-    return <Sparkles className="w-3.5 h-3.5" />;
+  if (id.includes('men') || id.includes('women') || id.includes('kid') || id.includes('fashion') || id.includes('shoe') || id.includes('wear')) {
+    return <User className="w-3.5 h-3.5" />;
   }
-  if (id.includes('gift')) {
-    return <Gift className="w-3.5 h-3.5" />;
-  }
-  if (id.includes('elect') || id.includes('gadget') || id.includes('phone') || id.includes('wearable')) {
+  if (id.includes('brand')) {
     return <Compass className="w-3.5 h-3.5" />;
   }
-  if (id.includes('jewel') || id.includes('gold') || id.includes('silver') || id.includes('gem')) {
+  if (id.includes('new') || id.includes('launch') || id.includes('trend')) {
     return <Sparkles className="w-3.5 h-3.5" />;
-  }
-  if (id.includes('toy') || id.includes('game') || id.includes('play')) {
-    return <Gamepad2 className="w-3.5 h-3.5" />;
-  }
-  if (id.includes('fash') || id.includes('cloth') || id.includes('wear') || id.includes('shoe') || id.includes('sneaker')) {
-    return <User className="w-3.5 h-3.5" />;
   }
   return <Compass className="w-3.5 h-3.5" />;
 };
@@ -176,6 +167,18 @@ export default function Navbar() {
       fetchAddresses();
     }
   }, [user, isLocationModalOpen]);
+
+  // Prevent background scrolling when location modal is open
+  useEffect(() => {
+    if (isLocationModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isLocationModalOpen]);
 
   const filteredAddresses = savedAddresses.filter(addr => 
     addr.name.toLowerCase().includes(addressSearchQuery.toLowerCase()) || 
@@ -378,19 +381,10 @@ export default function Navbar() {
               <input
                 type="text"
                 placeholder="Search products..."
-                className="w-full bg-transparent text-sm text-[#02006c] outline-none placeholder-slate-400 font-semibold"
+                className="w-full bg-transparent text-sm text-[#02006c] outline-none placeholder-slate-400 font-semibold cursor-pointer"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value.trimStart())}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    if (searchQuery.trim() !== '') {
-                      analytics.trackSearch(searchQuery);
-                    }
-                    if (window.location.pathname !== '/categories') {
-                      navigate('/categories');
-                    }
-                  }
-                }}
+                readOnly
+                onClick={() => navigate('/search')}
               />
               {/* Voice search Mic option inside input capsule */}
               <div className="flex items-center gap-2 ml-2.5">
@@ -442,20 +436,11 @@ export default function Navbar() {
             <Search className="w-4.5 h-4.5 text-slate-500 mr-2.5 flex-shrink-0" />
             <input
               type="text"
-              placeholder="Search for teddy bears, rc cars, customized gifts..."
-              className="w-full bg-transparent text-sm text-[#02006c] outline-none placeholder-slate-400 font-semibold"
+              placeholder="Search for sneakers, boots, formal shoes..."
+              className="w-full bg-transparent text-sm text-[#02006c] outline-none placeholder-slate-400 font-semibold cursor-pointer"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value.trimStart())}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  if (searchQuery.trim() !== '') {
-                    analytics.trackSearch(searchQuery);
-                  }
-                  if (window.location.pathname !== '/categories') {
-                    navigate('/categories');
-                  }
-                }
-              }}
+              readOnly
+              onClick={() => navigate('/search')}
             />
             {/* Action buttons inside search */}
             <div className="flex items-center gap-2 ml-2 flex-shrink-0">

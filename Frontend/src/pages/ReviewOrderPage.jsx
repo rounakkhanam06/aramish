@@ -571,7 +571,7 @@ export default function ReviewOrderPage() {
                     </div>
                     {cart.length > 1 && (
                       <button 
-                        onClick={() => removeFromCart(item.id)}
+                        onClick={() => removeFromCart(item.id, item.variationSku)}
                         className="absolute top-2 right-2 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors cursor-pointer"
                         title="Remove item"
                       >
