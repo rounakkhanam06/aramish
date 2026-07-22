@@ -479,7 +479,7 @@ export default function ProductDetailsPage() {
   } else if (activeVariant?.images?.length > 0) {
       displayImages = activeVariant.images.map(getImageUrl);
   } else if (product?.images?.length > 0) {
-      displayImages = product.images;
+      displayImages = product.images.map(getImageUrl);
   } else {
       displayImages = [product?.image];
   }
