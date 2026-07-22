@@ -35,12 +35,17 @@ const BrandPage          = lazy(() => import('./pages/BrandPage'));
 const SearchPage         = lazy(() => import('./pages/SearchPage'));
 const NotFoundPage       = lazy(() => import('./pages/NotFoundPage'));
 
-// Minimal route-level loading skeleton (shown while a page chunk loads)
+// Premium fullscreen route-level loading spinner (shown while a page chunk loads)
 const PageSkeleton = () => (
-  <div className="flex-grow flex items-center justify-center min-h-[60vh]">
-    <div className="flex flex-col items-center gap-3">
-      <div className="w-10 h-10 rounded-full border-4 border-gold/20 border-t-[#0B132B] animate-spin" />
-      <p className="text-[11px] text-slate-400 font-medium">Loading…</p>
+  <div className="fixed inset-0 z-[9999] bg-[#F8F9FD]/60 backdrop-blur-md flex flex-col items-center justify-center">
+    <div className="flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-300">
+      <div className="relative flex items-center justify-center">
+        <div className="w-16 h-16 rounded-full border-4 border-slate-200 border-t-[#0B132B] animate-spin" />
+        <div className="absolute w-8 h-8 rounded-full bg-[#0B132B]/10 animate-ping" />
+      </div>
+      <p className="text-xs font-extrabold text-[#0B132B] tracking-widest uppercase font-sans animate-pulse">
+        Loading...
+      </p>
     </div>
   </div>
 );

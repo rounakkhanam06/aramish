@@ -21,6 +21,7 @@ export default function ProductDetailsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [isSizeChartOpen, setIsSizeChartOpen] = useState(false);
+  const [activeChartTab, setActiveChartTab] = useState('dimensions');
   const [localSearchQuery, setLocalSearchQuery] = useState('');
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [similarProducts, setSimilarProducts] = useState([]);
@@ -354,7 +355,8 @@ export default function ProductDetailsPage() {
             technicalSpecs: p.technicalSpecs || {},
             manufacturerInfo: p.manufacturerInfo || '',
             shippingSpecs: p.shippingSpecs || {},
-            variations: p.variations || []
+            variations: p.variations || [],
+            sizeChart: p.sizeChart || null
           };
           
           if (normalised.variations.length > 0) {
@@ -1300,7 +1302,7 @@ export default function ProductDetailsPage() {
       </div>
 
       {/* Size Chart Modal */}
-      {['tee', 'pants', 'blouse', 'outfit'].includes(product.type) && isSizeChartOpen && (
+      {isSizeChartOpen && (
         <div className="fixed inset-0 z-[100] bg-surface flex flex-col animate-fade-in font-sans">
           {/* Header */}
           <div className="flex items-center gap-3 p-4 border-b border-white/10 sticky top-0 bg-surface">
@@ -1316,79 +1318,119 @@ export default function ProductDetailsPage() {
               <h3 className="font-bold text-slate-900 text-sm">{product.name}</h3>
             </div>
 
-            {/* Table */}
-            <div className="bg-surface overflow-x-auto">
-              <table className="w-full text-center text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-white/10">
-                    <th className="p-3 font-bold text-slate-800">Size</th>
-                    <th className="p-3 font-bold text-slate-800">Chest</th>
-                    <th className="p-3 font-bold text-slate-800">Brand Size</th>
-                    <th className="p-3 font-bold text-slate-800">Shoulder</th>
-                    <th className="p-3 font-bold text-slate-800">Length</th>
-                    <th className="p-3 font-bold text-slate-800">Sleeve Length</th>
-                    <th className="p-3 font-bold text-slate-800">Waist</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700">
-                  <tr>
-                    <td className="p-3 font-black text-black">M</td>
-                    <td className="p-3 whitespace-nowrap">35.5 - 37</td>
-                    <td className="p-3">M</td>
-                    <td className="p-3">14</td>
-                    <td className="p-3">23</td>
-                    <td className="p-3">6</td>
-                    <td className="p-3">34</td>
-                  </tr>
-                  <tr>
-                    <td className="p-3 font-black text-black">L</td>
-                    <td className="p-3 whitespace-nowrap">37.5 - 39</td>
-                    <td className="p-3">L</td>
-                    <td className="p-3">15</td>
-                    <td className="p-3">23.5</td>
-                    <td className="p-3">6.5</td>
-                    <td className="p-3">36</td>
-                  </tr>
-                  <tr>
-                    <td className="p-3 font-black text-black">XL</td>
-                    <td className="p-3 whitespace-nowrap">39.5 - 41</td>
-                    <td className="p-3">XL</td>
-                    <td className="p-3">16</td>
-                    <td className="p-3">24</td>
-                    <td className="p-3">7</td>
-                    <td className="p-3">38</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            {product.sizeChart ? (
+              <>
+                {/* Dynamic Table */}
+                {product.sizeChart.headers && product.sizeChart.rows && (
+                  <div className="bg-surface overflow-x-auto">
+                    <table className="w-full text-center text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-white/10">
+                          {product.sizeChart.headers.map((h, i) => (
+                            <th key={i} className="p-3 font-bold text-slate-800">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {product.sizeChart.rows.map((row, i) => (
+                          <tr key={i}>
+                            {row.map((cell, j) => (
+                              <td key={j} className={`p-3 ${j === 0 ? 'font-black text-black' : 'whitespace-nowrap'}`}>{cell}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                
+                {/* Dynamic Guidelines */}
+                {product.sizeChart.howToMeasure && (
+                  <div className="bg-surface p-4 pb-12 mt-1 h-full">
+                    <h4 className="font-bold text-slate-900 text-sm mb-3">Measurement Guidelines:</h4>
+                    <p className="text-sm text-slate-800 whitespace-pre-wrap leading-snug">
+                      {product.sizeChart.howToMeasure}
+                    </p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {/* Fallback Table */}
+                <div className="bg-surface overflow-x-auto">
+                  <table className="w-full text-center text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/10">
+                        <th className="p-3 font-bold text-slate-800">Size</th>
+                        <th className="p-3 font-bold text-slate-800">Chest</th>
+                        <th className="p-3 font-bold text-slate-800">Brand Size</th>
+                        <th className="p-3 font-bold text-slate-800">Shoulder</th>
+                        <th className="p-3 font-bold text-slate-800">Length</th>
+                        <th className="p-3 font-bold text-slate-800">Sleeve Length</th>
+                        <th className="p-3 font-bold text-slate-800">Waist</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                      <tr>
+                        <td className="p-3 font-black text-black">M</td>
+                        <td className="p-3 whitespace-nowrap">35.5 - 37</td>
+                        <td className="p-3">M</td>
+                        <td className="p-3">14</td>
+                        <td className="p-3">23</td>
+                        <td className="p-3">6</td>
+                        <td className="p-3">34</td>
+                      </tr>
+                      <tr>
+                        <td className="p-3 font-black text-black">L</td>
+                        <td className="p-3 whitespace-nowrap">37.5 - 39</td>
+                        <td className="p-3">L</td>
+                        <td className="p-3">15</td>
+                        <td className="p-3">23.5</td>
+                        <td className="p-3">6.5</td>
+                        <td className="p-3">36</td>
+                      </tr>
+                      <tr>
+                        <td className="p-3 font-black text-black">XL</td>
+                        <td className="p-3 whitespace-nowrap">39.5 - 41</td>
+                        <td className="p-3">XL</td>
+                        <td className="p-3">16</td>
+                        <td className="p-3">24</td>
+                        <td className="p-3">7</td>
+                        <td className="p-3">38</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
 
-            {/* Measurement Guidelines */}
-            <div className="bg-surface p-4 pb-12 mt-1 h-full">
-              <h4 className="font-bold text-slate-900 text-sm mb-3">Measurement Guidelines:</h4>
-              <p className="text-sm text-slate-800 mb-2 leading-snug">
-                <span className="font-bold">Measuring T Shirt Size</span> Not sure about your t shirt size? Follow these simple steps to figure it out:
-              </p>
-              <ul className="text-sm text-slate-800 space-y-2 leading-snug">
-                <li><span className="font-bold">Shoulder</span> - Measure the shoulder at the back, from edge to edge with arms relaxed on both sides</li>
-                <li><span className="font-bold">Chest</span> - Measure around the body under the arms at the fullest part of the chest with your arms relaxed at both sides.</li>
-                <li><span className="font-bold">Sleeve</span> - Measure from the shoulder seam through the outer arm to the cuff/hem</li>
-                <li><span className="font-bold">Neck</span> - Measured horizontally across the neck Length - Measure from the highest point of the shoulder seam to the bottom hem of the garment's</li>
-              </ul>
-              
-              <div className="mt-6 flex justify-center bg-surface rounded-lg p-3 max-w-[280px] mx-auto border border-white/10">
-                <svg viewBox="0 0 200 150" className="w-full h-auto text-slate-800" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M60,40 Q100,20 140,40 L180,90 L160,110 L140,90 L140,150 L60,150 L60,90 L40,110 L20,90 Z" />
-                  <path strokeDasharray="4 4" d="M100,30 L100,150" stroke="#0B132B" />
-                  <path strokeDasharray="4 4" d="M60,90 L140,90" stroke="#0B132B" />
-                  <path strokeDasharray="4 4" d="M60,40 L140,40" stroke="#0B132B" />
-                  <path strokeDasharray="4 4" d="M40,65 L80,65" stroke="#0B132B" />
-                  <text x="90" y="20" fontSize="8" fill="currentColor" stroke="none">NECK</text>
-                  <text x="130" y="35" fontSize="8" fill="currentColor" stroke="none">SHOULDER</text>
-                  <text x="95" y="100" fontSize="8" fill="currentColor" stroke="none">CHEST</text>
-                  <text x="25" y="125" fontSize="8" fill="currentColor" stroke="none">SLEEVE</text>
-                </svg>
-              </div>
-            </div>
+                {/* Fallback Measurement Guidelines */}
+                <div className="bg-surface p-4 pb-12 mt-1 h-full">
+                  <h4 className="font-bold text-slate-900 text-sm mb-3">Measurement Guidelines:</h4>
+                  <p className="text-sm text-slate-800 mb-2 leading-snug">
+                    <span className="font-bold">Measuring T Shirt Size</span> Not sure about your t shirt size? Follow these simple steps to figure it out:
+                  </p>
+                  <ul className="text-sm text-slate-800 space-y-2 leading-snug">
+                    <li><span className="font-bold">Shoulder</span> - Measure the shoulder at the back, from edge to edge with arms relaxed on both sides</li>
+                    <li><span className="font-bold">Chest</span> - Measure around the body under the arms at the fullest part of the chest with your arms relaxed at both sides.</li>
+                    <li><span className="font-bold">Sleeve</span> - Measure from the shoulder seam through the outer arm to the cuff/hem</li>
+                    <li><span className="font-bold">Neck</span> - Measured horizontally across the neck Length - Measure from the highest point of the shoulder seam to the bottom hem of the garment's</li>
+                  </ul>
+                  
+                  <div className="mt-6 flex justify-center bg-surface rounded-lg p-3 max-w-[280px] mx-auto border border-white/10">
+                    <svg viewBox="0 0 200 150" className="w-full h-auto text-slate-800" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M60,40 Q100,20 140,40 L180,90 L160,110 L140,90 L140,150 L60,150 L60,90 L40,110 L20,90 Z" />
+                      <path strokeDasharray="4 4" d="M100,30 L100,150" stroke="#0B132B" />
+                      <path strokeDasharray="4 4" d="M60,90 L140,90" stroke="#0B132B" />
+                      <path strokeDasharray="4 4" d="M60,40 L140,40" stroke="#0B132B" />
+                      <path strokeDasharray="4 4" d="M40,65 L80,65" stroke="#0B132B" />
+                      <text x="90" y="20" fontSize="8" fill="currentColor" stroke="none">NECK</text>
+                      <text x="130" y="35" fontSize="8" fill="currentColor" stroke="none">SHOULDER</text>
+                      <text x="95" y="100" fontSize="8" fill="currentColor" stroke="none">CHEST</text>
+                      <text x="25" y="125" fontSize="8" fill="currentColor" stroke="none">SLEEVE</text>
+                    </svg>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -95,6 +95,7 @@ const AddProduct = () => {
 
   // Flags state
   const [flags, setFlags] = useState({ topSection: false, crazyDeals: false, flashSale: false });
+  const [systemSettings, setSystemSettings] = useState(null);
 
   // Organization state
   const [brandName, setBrandName] = useState('Generic');
@@ -239,6 +240,20 @@ const AddProduct = () => {
       }
     };
     fetchCategoriesAndSubcategories();
+
+    const fetchSettings = async () => {
+      try {
+        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        const res = await fetch(`${apiBase}/admin/settings`);
+        const data = await res.json();
+        if (res.ok && data.success && data.settings) {
+          setSystemSettings(data.settings);
+        }
+      } catch (err) {
+        console.error('Failed to fetch system settings:', err);
+      }
+    };
+    fetchSettings();
   }, []);
 
   // Resolve category slug to _id if needed once categories list is loaded
@@ -1081,9 +1096,21 @@ const AddProduct = () => {
             <SectionTitle icon={Tag} color="bg-orange-50 text-orange-500">Product Flags</SectionTitle>
 
             {[
-              { key: 'topSection', label: 'Featured Collection', desc: 'Show in the Featured Collection grid' },
-              { key: 'crazyDeals', label: 'Crazy Deals', desc: 'Feature in the crazy deals list' },
-              { key: 'flashSale', label: 'New Arrivals', desc: 'Include in the New Arrivals active list' },
+              {
+                key: 'topSection',
+                label: systemSettings?.featuredCollectionHeaderName || 'Featured Collection',
+                desc: `Show in the ${systemSettings?.featuredCollectionHeaderName || 'Featured Collection'} grid`
+              },
+              {
+                key: 'crazyDeals',
+                label: systemSettings?.crazyDealsHeaderName || 'Crazy Deals',
+                desc: `Feature in the ${systemSettings?.crazyDealsHeaderName || 'Crazy Deals'} list`
+              },
+              {
+                key: 'flashSale',
+                label: systemSettings?.newArrivalsHeaderName || 'New Arrivals',
+                desc: `Include in the ${systemSettings?.newArrivalsHeaderName || 'New Arrivals'} active list`
+              },
             ].map(flag => (
               <div key={flag.key} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
                 <div>

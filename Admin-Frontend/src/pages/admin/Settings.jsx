@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  User, Shield, Lock, Save, CheckCircle2, ChevronRight, AlertCircle, Camera, Eye, EyeOff, Coins
+  User, Shield, Lock, Save, CheckCircle2, ChevronRight, AlertCircle, Camera, Eye, EyeOff, Coins, Tag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '../../utils/toast';
@@ -31,6 +31,19 @@ const Settings = () => {
   const [minimumRedeemCoins, setMinimumRedeemCoins] = useState(500);
   const [maximumRedeemPerOrder, setMaximumRedeemPerOrder] = useState(10000);
 
+  // Homepage Deals states
+  const [crazyDealsHeaderName, setCrazyDealsHeaderName] = useState('Crazy Deals');
+  const [showCrazyDealsTimer, setShowCrazyDealsTimer] = useState(true);
+  const [crazyDealsDuration, setCrazyDealsDuration] = useState(9930);
+
+  const [featuredCollectionHeaderName, setFeaturedCollectionHeaderName] = useState('Featured Collection');
+  const [showFeaturedCollectionTimer, setShowFeaturedCollectionTimer] = useState(false);
+  const [featuredCollectionDuration, setFeaturedCollectionDuration] = useState(7200);
+
+  const [newArrivalsHeaderName, setNewArrivalsHeaderName] = useState('New Arrivals');
+  const [showNewArrivalsTimer, setShowNewArrivalsTimer] = useState(true);
+  const [newArrivalsDuration, setNewArrivalsDuration] = useState(9930);
+
   // Security Form States
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -45,6 +58,7 @@ const Settings = () => {
     { id: 'Profile', icon: User, label: 'My Profile' },
     { id: 'Business', icon: Shield, label: 'Business & Tax' },
     { id: 'Coins', icon: Coins, label: 'Coins & Wallet' },
+    { id: 'Deals', icon: Tag, label: 'Homepage Sections' },
     { id: 'Security', icon: Lock, label: 'Login & Security' },
   ];
 
@@ -86,6 +100,16 @@ const Settings = () => {
         setCoinsPerRupee(s.coinsPerRupee ?? 100);
         setMinimumRedeemCoins(s.minimumRedeemCoins ?? 500);
         setMaximumRedeemPerOrder(s.maximumRedeemPerOrder ?? 10000);
+
+        setCrazyDealsHeaderName(s.crazyDealsHeaderName ?? 'Crazy Deals');
+        setShowCrazyDealsTimer(s.showCrazyDealsTimer ?? true);
+        setCrazyDealsDuration(s.crazyDealsDuration ?? 9930);
+        setFeaturedCollectionHeaderName(s.featuredCollectionHeaderName ?? 'Featured Collection');
+        setShowFeaturedCollectionTimer(s.showFeaturedCollectionTimer ?? false);
+        setFeaturedCollectionDuration(s.featuredCollectionDuration ?? 7200);
+        setNewArrivalsHeaderName(s.newArrivalsHeaderName ?? 'New Arrivals');
+        setShowNewArrivalsTimer(s.showNewArrivalsTimer ?? true);
+        setNewArrivalsDuration(s.newArrivalsDuration ?? 9930);
       }
     } catch (err) {
       console.error(err);
@@ -220,6 +244,36 @@ const Settings = () => {
 
         if (settingsRes.ok && settingsData.success) {
           toast.success('Coin & Wallet settings updated successfully!');
+          setSaved(true);
+          setTimeout(() => setSaved(false), 2500);
+          fetchData();
+        } else {
+          toast.error(settingsData.message || 'Failed to update settings');
+        }
+      } else if (activeSection === 'Deals') {
+        // Save Homepage Deals Config
+        const settingsRes = await fetch(`${apiBase}/admin/settings`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            crazyDealsHeaderName,
+            showCrazyDealsTimer,
+            crazyDealsDuration: Number(crazyDealsDuration),
+            featuredCollectionHeaderName,
+            showFeaturedCollectionTimer,
+            featuredCollectionDuration: Number(featuredCollectionDuration),
+            newArrivalsHeaderName,
+            showNewArrivalsTimer,
+            newArrivalsDuration: Number(newArrivalsDuration)
+          })
+        });
+        const settingsData = await settingsRes.json();
+
+        if (settingsRes.ok && settingsData.success) {
+          toast.success('Homepage Sections settings updated successfully!');
           setSaved(true);
           setTimeout(() => setSaved(false), 2500);
           fetchData();
@@ -549,6 +603,121 @@ const Settings = () => {
                           className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
                           required 
                         />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeSection === 'Deals' && (
+                  <div className="space-y-8 animate-in fade-in duration-300">
+                    {/* Crazy Deals */}
+                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
+                      <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Crazy Deals Config</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Header Name</label>
+                          <input 
+                            type="text" 
+                            value={crazyDealsHeaderName}
+                            onChange={e => setCrazyDealsHeaderName(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl py-3.5 px-4 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
+                            required 
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Timer Duration (Seconds)</label>
+                          <input 
+                            type="number" 
+                            value={crazyDealsDuration}
+                            onChange={e => setCrazyDealsDuration(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl py-3.5 px-4 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
+                            required 
+                          />
+                        </div>
+                        <div className="flex items-center gap-3 col-span-2 pt-2">
+                          <input 
+                            type="checkbox" 
+                            id="showCrazyDealsTimer" 
+                            checked={showCrazyDealsTimer}
+                            onChange={e => setShowCrazyDealsTimer(e.target.checked)}
+                            className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-50"
+                          />
+                          <label htmlFor="showCrazyDealsTimer" className="text-xs font-bold text-slate-700 select-none">Show Countdown Timer</label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Featured Collection */}
+                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
+                      <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Featured Collection Config</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Header Name</label>
+                          <input 
+                            type="text" 
+                            value={featuredCollectionHeaderName}
+                            onChange={e => setFeaturedCollectionHeaderName(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl py-3.5 px-4 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
+                            required 
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Timer Duration (Seconds)</label>
+                          <input 
+                            type="number" 
+                            value={featuredCollectionDuration}
+                            onChange={e => setFeaturedCollectionDuration(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl py-3.5 px-4 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
+                            required 
+                          />
+                        </div>
+                        <div className="flex items-center gap-3 col-span-2 pt-2">
+                          <input 
+                            type="checkbox" 
+                            id="showFeaturedCollectionTimer" 
+                            checked={showFeaturedCollectionTimer}
+                            onChange={e => setShowFeaturedCollectionTimer(e.target.checked)}
+                            className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-50"
+                          />
+                          <label htmlFor="showFeaturedCollectionTimer" className="text-xs font-bold text-slate-700 select-none">Show Countdown Timer</label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* New Arrivals */}
+                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-4">
+                      <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">New Arrivals Config</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Header Name</label>
+                          <input 
+                            type="text" 
+                            value={newArrivalsHeaderName}
+                            onChange={e => setNewArrivalsHeaderName(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl py-3.5 px-4 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
+                            required 
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Timer Duration (Seconds)</label>
+                          <input 
+                            type="number" 
+                            value={newArrivalsDuration}
+                            onChange={e => setNewArrivalsDuration(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl py-3.5 px-4 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
+                            required 
+                          />
+                        </div>
+                        <div className="flex items-center gap-3 col-span-2 pt-2">
+                          <input 
+                            type="checkbox" 
+                            id="showNewArrivalsTimer" 
+                            checked={showNewArrivalsTimer}
+                            onChange={e => setShowNewArrivalsTimer(e.target.checked)}
+                            className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-50"
+                          />
+                          <label htmlFor="showNewArrivalsTimer" className="text-xs font-bold text-slate-700 select-none">Show Countdown Timer</label>
+                        </div>
                       </div>
                     </div>
                   </div>

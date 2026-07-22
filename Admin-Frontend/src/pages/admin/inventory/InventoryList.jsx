@@ -47,6 +47,7 @@ export default function InventoryList() {
   const navigate = useNavigate();
   const [dbProducts, setDbProducts] = useState([]);
   const [categories, setCategories] = useState([{ id: 'All', name: 'All' }]);
+  const [systemSettings, setSystemSettings] = useState(null);
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
@@ -253,6 +254,20 @@ export default function InventoryList() {
       }
     };
     fetchCategories();
+
+    const fetchSettings = async () => {
+      try {
+        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        const res = await fetch(`${apiBase}/admin/settings`);
+        const data = await res.json();
+        if (res.ok && data.success && data.settings) {
+          setSystemSettings(data.settings);
+        }
+      } catch (err) {
+        console.error('Failed to fetch system settings:', err);
+      }
+    };
+    fetchSettings();
   }, []);
 
   // Show only database products
@@ -280,11 +295,11 @@ export default function InventoryList() {
       const matchStatus = statusFilter === 'All' || p.status === statusFilter;
       
       let matchFlag = true;
-      if (flagFilter === 'Top Selection') {
+      if (flagFilter === 'Top Selection' || flagFilter === (systemSettings?.featuredCollectionHeaderName || 'Featured Collection')) {
         matchFlag = p.flags?.topSection === true;
-      } else if (flagFilter === 'Crazy Deals') {
+      } else if (flagFilter === 'Crazy Deals' || flagFilter === (systemSettings?.crazyDealsHeaderName || 'Crazy Deals')) {
         matchFlag = p.flags?.crazyDeals === true;
-      } else if (flagFilter === 'Flash Sale') {
+      } else if (flagFilter === 'Flash Sale' || flagFilter === (systemSettings?.newArrivalsHeaderName || 'New Arrivals')) {
         matchFlag = p.flags?.flashSale === true;
       }
       
@@ -629,7 +644,12 @@ export default function InventoryList() {
               onChange={e => setFlagFilter(e.target.value)}
               className="appearance-none bg-slate-50 border border-slate-100 rounded-xl py-3 pl-4 pr-10 text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-orange-50 transition-all cursor-pointer"
             >
-              {['All Deals', 'Top Selection', 'Crazy Deals', 'Flash Sale'].map(f => <option key={f}>{f}</option>)}
+              {[
+                'All Deals',
+                systemSettings?.featuredCollectionHeaderName || 'Featured Collection',
+                systemSettings?.crazyDealsHeaderName || 'Crazy Deals',
+                systemSettings?.newArrivalsHeaderName || 'New Arrivals'
+              ].map(f => <option key={f}>{f}</option>)}
             </select>
             <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>

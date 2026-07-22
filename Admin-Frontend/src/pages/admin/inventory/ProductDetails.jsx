@@ -41,6 +41,7 @@ const ProductDetails = () => {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeImage, setActiveImage] = useState('');
+  const [systemSettings, setSystemSettings] = useState(null);
 
   useEffect(() => {
     const fetchProduct = async () => {
@@ -68,6 +69,20 @@ const ProductDetails = () => {
     };
     
     fetchProduct();
+
+    const fetchSettings = async () => {
+      try {
+        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        const res = await fetch(`${apiBase}/admin/settings`);
+        const data = await res.json();
+        if (res.ok && data.success && data.settings) {
+          setSystemSettings(data.settings);
+        }
+      } catch (err) {
+        console.error('Failed to fetch system settings:', err);
+      }
+    };
+    fetchSettings();
   }, [id, navigate]);
 
   if (loading) {
@@ -273,19 +288,25 @@ const ProductDetails = () => {
 
               <div className="space-y-2 pt-2 border-t border-slate-50">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-600">Top Section</span>
+                  <span className="text-sm font-medium text-slate-600">
+                    {systemSettings?.featuredCollectionHeaderName || 'Featured Collection'}
+                  </span>
                   <span className={`text-xs font-bold px-2 py-1 rounded ${product.flags?.topSection ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                     {product.flags?.topSection ? 'Yes' : 'No'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-600">Crazy Deals</span>
+                  <span className="text-sm font-medium text-slate-600">
+                    {systemSettings?.crazyDealsHeaderName || 'Crazy Deals'}
+                  </span>
                   <span className={`text-xs font-bold px-2 py-1 rounded ${product.flags?.crazyDeals ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                     {product.flags?.crazyDeals ? 'Yes' : 'No'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-600">Flash Sale</span>
+                  <span className="text-sm font-medium text-slate-600">
+                    {systemSettings?.newArrivalsHeaderName || 'New Arrivals'}
+                  </span>
                   <span className={`text-xs font-bold px-2 py-1 rounded ${product.flags?.flashSale ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                     {product.flags?.flashSale ? 'Yes' : 'No'}
                   </span>

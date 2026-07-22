@@ -12,7 +12,7 @@ import { formatDiscount } from '../utils/discountHelper';
 
 export default function Home() {
   const navigate = useNavigate();
-  const { searchQuery, toggleWishlist, isInWishlist, user } = useApp();
+  const { searchQuery, toggleWishlist, isInWishlist, user, systemSettings } = useApp();
   const [activeBanner, setActiveBanner] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('for-you');
@@ -239,14 +239,36 @@ export default function Home() {
     }
   }, [activeBanner, activeBannersList.length]);
 
-  // 1. Live Countdown Timer State for Crazy Deals (ticking down from 2h 45m 30s)
-  const [timeLeft, setTimeLeft] = useState(9930); // 9930 seconds = 02 hours, 45 minutes, 30 seconds
+  // Live Countdown Timer States dynamically driven by systemSettings
+  const crazyDealsDefault = systemSettings?.crazyDealsDuration ?? 9930;
+  const featuredCollectionDefault = systemSettings?.featuredCollectionDuration ?? 7200;
+  const newArrivalsDefault = systemSettings?.newArrivalsDuration ?? 9930;
+
+  const [crazyTimeLeft, setCrazyTimeLeft] = useState(crazyDealsDefault);
+  const [featuredTimeLeft, setFeaturedTimeLeft] = useState(featuredCollectionDefault);
+  const [arrivalsTimeLeft, setArrivalsTimeLeft] = useState(newArrivalsDefault);
+
+  // Sync state if systemSettings changes (e.g. settings loaded asynchronously)
+  useEffect(() => {
+    setCrazyTimeLeft(crazyDealsDefault);
+  }, [crazyDealsDefault]);
+
+  useEffect(() => {
+    setFeaturedTimeLeft(featuredCollectionDefault);
+  }, [featuredCollectionDefault]);
+
+  useEffect(() => {
+    setArrivalsTimeLeft(newArrivalsDefault);
+  }, [newArrivalsDefault]);
+
   useEffect(() => {
     const timer = setInterval(() => {
-      setTimeLeft((prev) => (prev > 0 ? prev - 1 : 9930));
+      setCrazyTimeLeft((prev) => (prev > 0 ? prev - 1 : crazyDealsDefault));
+      setFeaturedTimeLeft((prev) => (prev > 0 ? prev - 1 : featuredCollectionDefault));
+      setArrivalsTimeLeft((prev) => (prev > 0 ? prev - 1 : newArrivalsDefault));
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [crazyDealsDefault, featuredCollectionDefault, newArrivalsDefault]);
 
   const formatTime = (seconds) => {
     const hrs = Math.floor(seconds / 3600);
@@ -259,7 +281,9 @@ export default function Home() {
     };
   };
 
-  const { hrs, mins, secs } = formatTime(timeLeft);
+  const crazyTime = formatTime(crazyTimeLeft);
+  const featuredTime = formatTime(featuredTimeLeft);
+  const arrivalsTime = formatTime(arrivalsTimeLeft);
 
   // Custom Category Inline SVG Renderer to match reference drawings
   const renderCategoryIcon = (id, isActive) => {
@@ -603,7 +627,7 @@ export default function Home() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-xl md:text-2xl font-extrabold text-[#02006c] font-sans">
-                    Crazy Deals
+                    {systemSettings?.crazyDealsHeaderName || 'Crazy Deals'}
                   </span>
                   <span className="text-[10px] md:text-xs text-slate-400 font-bold bg-surface px-2 py-0.5 rounded-md">
                     (Like, really crazy!)
@@ -618,13 +642,15 @@ export default function Home() {
               </div>
 
               {/* Ticking Countdown Timer */}
-              <div className="flex items-center gap-1 text-[13px] md:text-sm font-black text-[#0B132B] tracking-wide -mt-1 font-sans">
-                <span className="bg-gold/10 px-1.5 py-0.5 rounded-md border border-gold/20">{hrs}</span>
-                <span className="animate-pulse">:</span>
-                <span className="bg-gold/10 px-1.5 py-0.5 rounded-md border border-gold/20">{mins}</span>
-                <span className="animate-pulse">:</span>
-                <span className="bg-gold/10 px-1.5 py-0.5 rounded-md border border-gold/20">{secs}</span>
-              </div>
+              {systemSettings?.showCrazyDealsTimer !== false && (
+                <div className="flex items-center gap-1 text-[13px] md:text-sm font-black text-[#0B132B] tracking-wide -mt-1 font-sans">
+                  <span className="bg-gold/10 px-1.5 py-0.5 rounded-md border border-gold/20">{crazyTime.hrs}</span>
+                  <span className="animate-pulse">:</span>
+                  <span className="bg-gold/10 px-1.5 py-0.5 rounded-md border border-gold/20">{crazyTime.mins}</span>
+                  <span className="animate-pulse">:</span>
+                  <span className="bg-gold/10 px-1.5 py-0.5 rounded-md border border-gold/20">{crazyTime.secs}</span>
+                </div>
+              )}
 
               {/* Responsive Container */}
               {filteredDeals.length > 0 ? (
@@ -692,9 +718,20 @@ export default function Home() {
                 
                 {/* Header Row */}
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xl md:text-2xl font-extrabold text-[#02006c] font-sans">
-                    FEATURED COLLECTION
-                  </h3>
+                  <div className="flex flex-col gap-1">
+                    <h3 className="text-xl md:text-2xl font-extrabold text-[#02006c] font-sans">
+                      {systemSettings?.featuredCollectionHeaderName || 'FEATURED COLLECTION'}
+                    </h3>
+                    {systemSettings?.showFeaturedCollectionTimer === true && (
+                      <div className="flex items-center gap-1 text-[11px] md:text-xs font-bold text-[#0B132B] font-sans">
+                        <span className="bg-gold/10 border border-gold/20 px-1.5 py-0.5 rounded-md">{featuredTime.hrs}</span>
+                        <span className="text-slate-300">:</span>
+                        <span className="bg-gold/10 border border-gold/20 px-1.5 py-0.5 rounded-md">{featuredTime.mins}</span>
+                        <span className="text-slate-300">:</span>
+                        <span className="bg-gold/10 border border-gold/20 px-1.5 py-0.5 rounded-md">{featuredTime.secs}</span>
+                      </div>
+                    )}
+                  </div>
                   <button 
                     onClick={() => navigate('/top-selection')}
                     className="bg-surface border border-white/10 text-[#02006c] w-8 h-8 rounded-xl flex items-center justify-center shadow-3xs cursor-pointer hover:bg-surface hover:scale-105 transition-all"
@@ -758,17 +795,21 @@ export default function Home() {
               <div className="space-y-4">
                 {/* Header */}
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xl md:text-2xl font-extrabold text-[#02006c] font-sans">New Arrivals</h3>
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] md:text-xs text-slate-400 font-bold mr-1">Closing in:</span>
-                    <div className="flex items-center gap-1 text-[11px] md:text-xs font-bold text-[#0B132B] font-sans">
-                      <span className="bg-gold/10 border border-gold/20 px-1.5 py-0.5 rounded-md">{hrs}</span>
-                      <span className="text-slate-300">:</span>
-                      <span className="bg-gold/10 border border-gold/20 px-1.5 py-0.5 rounded-md">{mins}</span>
-                      <span className="text-slate-300">:</span>
-                      <span className="bg-gold/10 border border-gold/20 px-1.5 py-0.5 rounded-md">{secs}</span>
+                  <h3 className="text-xl md:text-2xl font-extrabold text-[#02006c] font-sans">
+                    {systemSettings?.newArrivalsHeaderName || 'New Arrivals'}
+                  </h3>
+                  {systemSettings?.showNewArrivalsTimer !== false && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] md:text-xs text-slate-400 font-bold mr-1">Closing in:</span>
+                      <div className="flex items-center gap-1 text-[11px] md:text-xs font-bold text-[#0B132B] font-sans">
+                        <span className="bg-gold/10 border border-gold/20 px-1.5 py-0.5 rounded-md">{arrivalsTime.hrs}</span>
+                        <span className="text-slate-300">:</span>
+                        <span className="bg-gold/10 border border-gold/20 px-1.5 py-0.5 rounded-md">{arrivalsTime.mins}</span>
+                        <span className="text-slate-300">:</span>
+                        <span className="bg-gold/10 border border-gold/20 px-1.5 py-0.5 rounded-md">{arrivalsTime.secs}</span>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Tabs */}

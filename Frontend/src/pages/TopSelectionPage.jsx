@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import OptimizedImage from '../components/ui/OptimizedImage';
+import { useApp } from '../context/AppContext';
 import { cachedFetch } from '../utils/apiCache';
 import { getImageUrl } from '../utils/imageHelper';
 
 export default function TopSelectionPage() {
   const navigate = useNavigate();
+  const { systemSettings } = useApp();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,7 +35,9 @@ export default function TopSelectionPage() {
     <div className="min-h-screen bg-surface flex flex-col pb-20 animate-fade-in">
       {/* Header */}
       <div className="bg-surface px-4 py-4 flex items-center justify-between shadow-sm z-50 sticky top-0">
-        <h1 className="text-[#02006c] text-[17px] font-bold tracking-wide uppercase font-sans">Featured Collection</h1>
+        <h1 className="text-[#02006c] text-[17px] font-bold tracking-wide uppercase font-sans">
+          {systemSettings?.featuredCollectionHeaderName || 'Featured Collection'}
+        </h1>
         <button onClick={() => navigate(-1)} className="p-1 hover:bg-surface rounded-full transition-colors border border-white/10">
           <ArrowLeft className="w-5 h-5 text-[#02006c]" />
         </button>

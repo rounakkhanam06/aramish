@@ -494,9 +494,10 @@ const getProductById = async (req, res) => {
     const SubCategoryChip = require('../Models/SubCategoryChip');
 
     let categoryLabel = product.category;
+    let cat = null;
     if (product.category) {
       const isObjectId = mongoose.isValidObjectId(product.category);
-      const cat = await CategoryChip.findOne({
+      cat = await CategoryChip.findOne({
         $or: [
           { id: product.category },
           ...(isObjectId ? [{ _id: product.category }] : [])
@@ -525,7 +526,8 @@ const getProductById = async (req, res) => {
       ...product,
       categoryName: categoryLabel,
       subCategoryName: subCategoryLabel,
-      brandName: product.brandId ? product.brandId.name : (product.brandName || 'Generic')
+      brandName: product.brandId ? product.brandId.name : (product.brandName || 'Generic'),
+      sizeChart: cat ? cat.sizeChart : null
     };
 
     res.status(200).json({ success: true, product: enrichedProduct });

@@ -19,7 +19,7 @@ const getCategoryChips = async (req, res) => {
 // @access  Private (Admin)
 const createCategoryChip = async (req, res) => {
   try {
-    const { categoryName, active, order } = req.body;
+    const { categoryName, active, order, sizeChart } = req.body;
     if (!categoryName) {
       return res.status(400).json({ success: false, message: 'Category Name is required' });
     }
@@ -35,12 +35,22 @@ const createCategoryChip = async (req, res) => {
       image = getImageUrl(req.file.url);
     }
 
+    let parsedSizeChart = null;
+    if (sizeChart) {
+      try {
+        parsedSizeChart = typeof sizeChart === 'string' ? JSON.parse(sizeChart) : sizeChart;
+      } catch (err) {
+        console.error('Failed to parse sizeChart in createCategoryChip:', err);
+      }
+    }
+
     const newChip = new CategoryChip({
       id,
       categoryName,
       image,
       active: (active === false || active === 'false') ? false : true,
-      order: order ? Number(order) : 1
+      order: order ? Number(order) : 1,
+      sizeChart: parsedSizeChart
     });
 
     await newChip.save();
@@ -56,7 +66,7 @@ const createCategoryChip = async (req, res) => {
 // @access  Private (Admin)
 const updateCategoryChip = async (req, res) => {
   try {
-    const { categoryName, active, order } = req.body;
+    const { categoryName, active, order, sizeChart } = req.body;
     const chip = await CategoryChip.findOne({ id: req.params.id });
 
     if (!chip) {
@@ -66,6 +76,14 @@ const updateCategoryChip = async (req, res) => {
     if (categoryName !== undefined) chip.categoryName = categoryName;
     if (active !== undefined) chip.active = (active === false || active === 'false') ? false : true;
     if (order !== undefined) chip.order = Number(order);
+
+    if (sizeChart !== undefined) {
+      try {
+        chip.sizeChart = typeof sizeChart === 'string' ? JSON.parse(sizeChart) : sizeChart;
+      } catch (err) {
+        console.error('Failed to parse sizeChart in updateCategoryChip:', err);
+      }
+    }
 
     if (req.file) {
       chip.image = getImageUrl(req.file.url);

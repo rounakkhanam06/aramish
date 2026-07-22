@@ -21,6 +21,10 @@ const categoryChipSchema = new mongoose.Schema({
   order: {
     type: Number,
     default: 1
+  },
+  sizeChart: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
   }
 }, { timestamps: true });
 

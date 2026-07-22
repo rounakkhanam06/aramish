@@ -9,7 +9,7 @@ import { formatDiscount } from '../utils/discountHelper';
 
 export default function CrazyDealsPage() {
   const navigate = useNavigate();
-  const { toggleWishlist, isInWishlist, user } = useApp();
+  const { toggleWishlist, isInWishlist, user, systemSettings } = useApp();
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -57,7 +57,9 @@ export default function CrazyDealsPage() {
           <ArrowLeft className="w-5 h-5 text-orange-900" />
         </button>
         <div className="flex flex-col">
-          <h2 className="text-xl font-black text-[#0B132B] tracking-tight leading-none mb-1">CRAZY DEALS</h2>
+          <h2 className="text-xl font-black text-[#0B132B] tracking-tight leading-none mb-1">
+            {systemSettings?.crazyDealsHeaderName?.toUpperCase() || 'CRAZY DEALS'}
+          </h2>
           <p className="text-[10px] text-orange-800 font-medium leading-none">Up to 50% Off! Don't miss out.</p>
         </div>
       </div>

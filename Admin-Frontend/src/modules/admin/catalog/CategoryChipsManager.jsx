@@ -11,11 +11,168 @@ import { getImageUrl } from '../../../utils/imageHelper';
 
 const BANNER_TABS = ['Home', 'Fashion', 'Beauty', 'Toys', 'Electronics', 'Jewellery', 'Art. Jewellery', '1g Gold', 'Cosmetics'];
 
-const EMPTY_CAT = { categoryName: '', image: '', active: true };
+const EMPTY_CAT = { categoryName: '', image: '', active: true, sizeChart: null };
 
+// Define SizeChartModal component
+const SizeChartModal = ({ isOpen, onClose, sizeChart, onSave }) => {
+  const [headers, setHeaders] = useState(sizeChart?.headers || ['Size', 'Foot Length (cm)', 'Foot Width (cm)']);
+  const [rows, setRows] = useState(sizeChart?.rows || [
+    ['IND-6', '25', '10.1'],
+    ['IND-7', '26', '10.2'],
+    ['IND-8', '27', '10.4'],
+    ['IND-9', '28', '10.5'],
+    ['IND-10', '29', '10.6']
+  ]);
+  const [howToMeasure, setHowToMeasure] = useState(sizeChart?.howToMeasure || '');
+
+  const addColumn = () => {
+    const colName = prompt('Enter column header name:');
+    if (colName) {
+      setHeaders([...headers, colName]);
+      setRows(rows.map(row => [...row, '']));
+    }
+  };
+
+  const removeColumn = (index) => {
+    if (headers.length <= 1) {
+      toast.error('At least one column is required!');
+      return;
+    }
+    setHeaders(headers.filter((_, i) => i !== index));
+    setRows(rows.map(row => row.filter((_, i) => i !== index)));
+  };
+
+  const addRow = () => {
+    setRows([...rows, Array(headers.length).fill('')]);
+  };
+
+  const removeRow = (index) => {
+    setRows(rows.filter((_, i) => i !== index));
+  };
+
+  const updateCell = (rowIndex, colIndex, val) => {
+    const updated = [...rows];
+    updated[rowIndex][colIndex] = val;
+    setRows(updated);
+  };
+
+  const handleSave = () => {
+    onSave({ headers, rows, howToMeasure });
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[10000] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-xl flex flex-col max-h-[85vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200 text-left">
+        
+        {/* Modal Header */}
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">Configure Size Chart</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">Customize dimensions, headers, and measurement instructions</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-lg transition-all">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-6 overflow-y-auto space-y-6 flex-grow">
+          {/* Table Editor */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Dimension Table Grid</span>
+              <div className="flex gap-2">
+                <button onClick={addColumn} className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all">
+                  + Add Column
+                </button>
+                <button onClick={addRow} className="px-3 py-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all">
+                  + Add Row
+                </button>
+              </div>
+            </div>
+
+            <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-100/80 border-b border-slate-200">
+                    {headers.map((h, i) => (
+                      <th key={i} className="p-3 text-[10px] font-black text-slate-600 uppercase tracking-wider min-w-[120px]">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>{h}</span>
+                          <button onClick={() => removeColumn(i)} className="text-red-400 hover:text-red-600 p-0.5 rounded transition-all" title="Remove Column">
+                            <X size={10} />
+                          </button>
+                        </div>
+                      </th>
+                    ))}
+                    <th className="p-3 text-[10px] font-black text-slate-600 uppercase tracking-wider w-[60px] text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, rowIndex) => (
+                    <tr key={rowIndex} className="border-b border-slate-200 bg-white last:border-0 hover:bg-slate-50/50">
+                      {row.map((cell, colIndex) => (
+                        <td key={colIndex} className="p-2">
+                          <input
+                            type="text"
+                            value={cell}
+                            onChange={e => updateCell(rowIndex, colIndex, e.target.value)}
+                            className="w-full border border-slate-200 rounded px-2.5 py-1 text-[11px] font-bold text-slate-800 focus:border-blue-500 outline-none"
+                            placeholder="Value"
+                          />
+                        </td>
+                      ))}
+                      <td className="p-2 text-center">
+                        <button onClick={() => removeRow(rowIndex)} className="text-red-400 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-all">
+                          <Trash2 size={12} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {rows.length === 0 && (
+                    <tr>
+                      <td colSpan={headers.length + 1} className="p-6 text-center text-xs font-semibold text-slate-400 uppercase">
+                        No rows added. Click "+ Add Row" to begin.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* How to Measure Textarea */}
+          <div className="space-y-2">
+            <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block">How to Measure (Instructions)</label>
+            <textarea
+              value={howToMeasure}
+              onChange={e => setHowToMeasure(e.target.value)}
+              placeholder="e.g. Draw your foot outline on paper and measure heel-to-toe length..."
+              className="w-full min-h-[100px] border border-slate-200 rounded-xl p-3 text-[12px] font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-white"
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
+          <button onClick={onClose} className="px-4 py-2 bg-white border border-slate-200 text-slate-500 hover:bg-slate-50 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">
+            Cancel
+          </button>
+          <button onClick={handleSave} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">
+            Apply Size Chart
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+};
 
 // Define CategoryForm OUTSIDE of CategoryChipsManager to prevent recreating the component on every state change (which causes loss of focus/keyboard re-rendering).
-const CategoryForm = ({ onSave, onCancel, label, formData, setFormData, imagePreview, setImageFile, setImagePreview }) => (
+const CategoryForm = ({ onSave, onCancel, label, formData, setFormData, imagePreview, setImageFile, setImagePreview, onOpenSizeChart, hasSizeChart }) => (
   <motion.div
     initial={{ opacity: 0, y: -10 }}
     animate={{ opacity: 1, y: 0 }}
@@ -59,16 +216,30 @@ const CategoryForm = ({ onSave, onCancel, label, formData, setFormData, imagePre
         </div>
       </div>
     </div>
-    <label className="flex items-center gap-2 cursor-pointer">
-      <input
-        type="checkbox"
-        checked={formData.active}
-        onChange={e => setFormData(p => ({ ...p, active: e.target.checked }))}
-        className="accent-blue-500 w-4 h-4"
-      />
-      <span className="text-[11px] font-bold text-slate-600">Visible in app</span>
-    </label>
-    <div className="flex gap-2">
+    <div className="flex items-center justify-between pt-1">
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={formData.active}
+          onChange={e => setFormData(p => ({ ...p, active: e.target.checked }))}
+          className="accent-blue-500 w-4 h-4"
+        />
+        <span className="text-[11px] font-bold text-slate-600">Visible in app</span>
+      </label>
+
+      <button
+        type="button"
+        onClick={onOpenSizeChart}
+        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all ${
+          hasSizeChart
+            ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100 shadow-sm'
+            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm'
+        }`}
+      >
+        {hasSizeChart ? '✓ Size Chart Configured' : '⚙ Configure Size Chart'}
+      </button>
+    </div>
+    <div className="flex gap-2 pt-1">
       <button onClick={onSave} className="px-4 py-2 bg-blue-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5">
         <Save size={12} /> Save
       </button>
@@ -85,6 +256,7 @@ const CategoryChipsManager = () => {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState(EMPTY_CAT);
   const [saved, setSaved] = useState(false);
+  const [isSizeChartModalOpen, setIsSizeChartModalOpen] = useState(false);
 
   // File Upload State
   const [imageFile, setImageFile] = useState(null);
@@ -191,7 +363,7 @@ const CategoryChipsManager = () => {
 
   const handleEdit = (cat) => {
     setEditingId(cat.id);
-    setFormData({ categoryName: cat.categoryName, image: cat.image, active: cat.active });
+    setFormData({ categoryName: cat.categoryName, image: cat.image, active: cat.active, sizeChart: cat.sizeChart || null });
     setImagePreview(cat.image || '');
     setImageFile(null);
     setIsAdding(false);
@@ -201,12 +373,16 @@ const CategoryChipsManager = () => {
     if (!formData.categoryName) return;
     const token = localStorage.getItem('adminToken');
     if (!token) return;
-
     try {
       const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       const bodyFormData = new FormData();
       bodyFormData.append('categoryName', formData.categoryName);
       bodyFormData.append('active', formData.active);
+      if (formData.sizeChart) {
+        bodyFormData.append('sizeChart', JSON.stringify(formData.sizeChart));
+      } else {
+        bodyFormData.append('sizeChart', '');
+      }
       if (imageFile) {
         bodyFormData.append('image', imageFile);
       }
@@ -247,6 +423,9 @@ const CategoryChipsManager = () => {
       bodyFormData.append('categoryName', formData.categoryName);
       bodyFormData.append('active', formData.active);
       bodyFormData.append('order', categories.length + 1);
+      if (formData.sizeChart) {
+        bodyFormData.append('sizeChart', JSON.stringify(formData.sizeChart));
+      }
       if (imageFile) {
         bodyFormData.append('image', imageFile);
       }
@@ -369,6 +548,8 @@ const CategoryChipsManager = () => {
               imagePreview={imagePreview}
               setImageFile={setImageFile}
               setImagePreview={setImagePreview}
+              onOpenSizeChart={() => setIsSizeChartModalOpen(true)}
+              hasSizeChart={!!formData.sizeChart}
             />
           )}
         </AnimatePresence>
@@ -395,6 +576,8 @@ const CategoryChipsManager = () => {
                     imagePreview={imagePreview}
                     setImageFile={setImageFile}
                     setImagePreview={setImagePreview}
+                    onOpenSizeChart={() => setIsSizeChartModalOpen(true)}
+                    hasSizeChart={!!formData.sizeChart}
                   />
                 ) : (
                   <div className={`bg-white border rounded-xl p-3.5 flex items-center gap-4 shadow-sm hover:shadow-md hover:border-blue-100 transition-all group ${!cat.active ? 'opacity-60 border-slate-100' : 'border-slate-100'}`}>
@@ -455,6 +638,12 @@ const CategoryChipsManager = () => {
           </p>
         </div>
       </div>
+      <SizeChartModal
+        isOpen={isSizeChartModalOpen}
+        onClose={() => setIsSizeChartModalOpen(false)}
+        sizeChart={formData.sizeChart}
+        onSave={(chart) => setFormData(p => ({ ...p, sizeChart: chart }))}
+      />
       <ConfirmModal
         isOpen={confirmOpen}
         onClose={() => setConfirmOpen(false)}

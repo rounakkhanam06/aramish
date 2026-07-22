@@ -16,7 +16,16 @@ const systemConfigSchema = new mongoose.Schema({
   coinConversionEnabled: { type: Boolean, default: true },
   coinsPerRupee: { type: Number, default: 100 },
   minimumRedeemCoins: { type: Number, default: 500 },
-  maximumRedeemPerOrder: { type: Number, default: 10000 }
+  maximumRedeemPerOrder: { type: Number, default: 10000 },
+  crazyDealsHeaderName: { type: String, default: 'Crazy Deals' },
+  showCrazyDealsTimer: { type: Boolean, default: true },
+  crazyDealsDuration: { type: Number, default: 9930 },
+  featuredCollectionHeaderName: { type: String, default: 'Featured Collection' },
+  showFeaturedCollectionTimer: { type: Boolean, default: false },
+  featuredCollectionDuration: { type: Number, default: 7200 },
+  newArrivalsHeaderName: { type: String, default: 'New Arrivals' },
+  showNewArrivalsTimer: { type: Boolean, default: true },
+  newArrivalsDuration: { type: Number, default: 9930 }
 }, { timestamps: true });
 
 module.exports = mongoose.model('SystemConfig', systemConfigSchema);

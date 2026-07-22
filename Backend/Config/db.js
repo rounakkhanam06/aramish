@@ -5,7 +5,7 @@ const connectDB = async () => {
     const conn = await mongoose.connect(process.env.MONGODB_URL, {
       maxPoolSize: 20,           // Up from default 5
       minPoolSize: 5,
-      serverSelectionTimeoutMS: 5000, // Fail fast if db is down
+      serverSelectionTimeoutMS: 30000, // Increased to prevent intermittent timeout failures
       socketTimeoutMS: 45000,
       heartbeatFrequencyMS: 10000,
       retryWrites: true,
