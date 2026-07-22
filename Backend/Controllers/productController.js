@@ -17,6 +17,21 @@ const parseJsonField = (field, defaultVal = {}) => {
   }
 };
 
+const ensureProductFallbackImage = (product) => {
+  if (!product) return product;
+  const hasValidImages = product.images && product.images.filter(img => img && img.trim() !== '' && img !== 'undefined').length > 0;
+  if (!hasValidImages && product.variations && product.variations.length > 0) {
+    const firstVarWithImg = product.variations.find(v => v.images && v.images.length > 0);
+    if (firstVarWithImg) {
+      product.images = [firstVarWithImg.images[0]];
+    }
+  }
+  if (product.variations) {
+    delete product.variations;
+  }
+  return product;
+};
+
 const resolveCategoryAndSubcategory = async (categoryInput, subCategoryInput) => {
   if (!categoryInput) return { categoryId: categoryInput, subCategoryId: subCategoryInput };
   
@@ -553,7 +568,7 @@ const fetchDynamicTopBuys = async () => {
       _id: { $in: productIds }, 
       status: 'Approved' 
     })
-    .select('name brandName mrp sellingPrice discountLabel images rating sales category subCategory description flags stock')
+    .select('name brandName mrp sellingPrice discountLabel images rating sales category subCategory description flags stock variations')
     .lean();
     
     products.sort((a, b) => {
@@ -571,7 +586,7 @@ const fetchDynamicTopBuys = async () => {
       status: 'Approved',
       _id: { $nin: existingIds }
     })
-    .select('name brandName mrp sellingPrice discountLabel images rating sales category subCategory description flags stock')
+    .select('name brandName mrp sellingPrice discountLabel images rating sales category subCategory description flags stock variations')
     .sort({ sales: -1 })
     .limit(remainingCount)
     .lean();
@@ -579,7 +594,7 @@ const fetchDynamicTopBuys = async () => {
     products = [...products, ...fallbackProducts];
   }
 
-  return products;
+  return products.map(ensureProductFallbackImage);
 };
 
 const getTopBuys = async (req, res) => {
@@ -649,7 +664,7 @@ const getHomepageData = async (req, res) => {
       SubCategoryChip.find({}).lean(),
       Banner.find({}).sort({ createdAt: -1 }).lean(),
       Product.find({ status: 'Approved' })
-        .select('-highlights -technicalSpecs -description -variations -shippingSpecs')
+        .select('-highlights -technicalSpecs -description -shippingSpecs')
         .sort({ createdAt: -1 })
         .lean(),
       fetchDynamicTopBuys(),
@@ -663,13 +678,16 @@ const getHomepageData = async (req, res) => {
       image: b.logo
     }));
 
+    const processedProducts = products.map(ensureProductFallbackImage);
+    const processedTopBuys = topBuys.map(ensureProductFallbackImage);
+
     res.status(200).json({
       success: true,
       chips,
       subchips,
       banners,
-      products,
-      topBuys,
+      products: processedProducts,
+      topBuys: processedTopBuys,
       trendingBrands
     });
   } catch (error) {
@@ -840,11 +858,13 @@ const getCombinedCatalog = async (req, res) => {
       countPromise
     ]);
 
+    const processedProducts = products.map(ensureProductFallbackImage);
+
     res.status(200).json({
       success: true,
       chips: parsedPage === 1 ? chips : undefined,
       subchips: parsedPage === 1 ? subchips : undefined,
-      products,
+      products: processedProducts,
       totalProducts,
       totalPages: Math.ceil(totalProducts / parsedLimit),
       currentPage: parsedPage,
