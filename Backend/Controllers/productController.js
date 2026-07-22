@@ -213,10 +213,11 @@ const createProduct = async (req, res) => {
     }
 
     // Fallback: If global product has no images, but a variation does, use it
-    if (imageUrls.length === 0 && variations && variations.length > 0) {
+    const hasValidImages = imageUrls.filter(img => img && img.trim() !== '' && img !== 'undefined').length > 0;
+    if (!hasValidImages && variations && variations.length > 0) {
       const firstVarWithImg = variations.find(v => v.images && v.images.length > 0);
       if (firstVarWithImg) {
-        imageUrls.push(firstVarWithImg.images[0]);
+        imageUrls = [firstVarWithImg.images[0]];
       }
     }
 
@@ -398,7 +399,8 @@ const updateProduct = async (req, res) => {
     product.images = updatedImages;
 
     // Fallback: If global product has no images, but a variation does, use it
-    if ((!product.images || product.images.length === 0) && product.variations && product.variations.length > 0) {
+    const hasValidImages = product.images && product.images.filter(img => img && img.trim() !== '' && img !== 'undefined').length > 0;
+    if (!hasValidImages && product.variations && product.variations.length > 0) {
       const firstVarWithImg = product.variations.find(v => v.images && v.images.length > 0);
       if (firstVarWithImg) {
         product.images = [firstVarWithImg.images[0]];
