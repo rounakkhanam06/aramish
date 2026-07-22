@@ -631,10 +631,7 @@ export default function Navbar() {
 
             {/* Right-aligned links */}
             <div className="flex items-center gap-5 text-[#64748B]">
-              <button onClick={() => navigate('/studio')} className="hover:text-[#0B132B] transition-colors cursor-pointer flex items-center gap-1 font-bold">
-                <Camera className="w-3.5 h-3.5 text-[#0B132B]" />
-                Studio (Reels)
-              </button>
+
               <button onClick={() => navigate('/refer')} className="hover:text-[#0B132B] transition-colors cursor-pointer flex items-center gap-1 font-bold">
                 <Gift className="w-3.5 h-3.5 text-teal-600" />
                 Refer & Earn

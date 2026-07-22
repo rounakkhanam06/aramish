@@ -46,7 +46,27 @@ export default function CartPage() {
   const [isQtyModalOpen, setIsQtyModalOpen] = useState(false);
   const [qtyModalItemId, setQtyModalItemId] = useState(null);
   const [qtyModalItemSku, setQtyModalItemSku] = useState(null);
-  const [customQtyInput, setCustomQtyInput] = useState('');
+  const isAnyModalOpen = isAddressModalOpen || isQtyModalOpen;
+
+  useEffect(() => {
+    if (isAnyModalOpen) {
+      const scrollContainer = document.getElementById('main-scroll-container');
+      const originalBodyOverflow = document.body.style.overflow;
+      const originalContainerOverflow = scrollContainer ? scrollContainer.style.overflow : '';
+
+      document.body.style.overflow = 'hidden';
+      if (scrollContainer) {
+        scrollContainer.style.overflow = 'hidden';
+      }
+
+      return () => {
+        document.body.style.overflow = originalBodyOverflow;
+        if (scrollContainer) {
+          scrollContainer.style.overflow = originalContainerOverflow;
+        }
+      };
+    }
+  }, [isAnyModalOpen]);
 
   // Fetch addresses from DB
   const fetchAddresses = async () => {
@@ -243,7 +263,7 @@ export default function CartPage() {
   return (
     <div className="flex-grow flex flex-col bg-surface pb-40 md:pb-12 relative font-sans select-none">
       {/* Header - Kept identical to original Aramish theme per request (Mobile Only) */}
-      <header className="sticky top-0 bg-gold/10 border-b border-gold/20 px-4 py-3 flex items-center justify-between z-45 shadow-sm md:hidden">
+      <header className="sticky top-0 bg-white border-b border-gold/20 px-4 py-3 flex items-center justify-between z-45 shadow-sm md:hidden">
         <div className="flex items-center gap-3">
           <button 
             onClick={() => navigate(-1)}

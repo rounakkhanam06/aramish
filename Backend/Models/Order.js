@@ -18,6 +18,7 @@ const orderSchema = new mongoose.Schema({
       quantity: { type: Number, required: true },
       image: { type: String },
       variationSku: { type: String, default: null },
+      article: { type: String, default: null },
       attributes: { type: Map, of: String, default: {} }
     }
   ],
@@ -55,7 +56,13 @@ const orderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Pending', 'Processing', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled', 'Return Requested', 'Refunded', 'Partially Refunded'],
+    enum: [
+      'Pending', 'Processing', 'Shipped', 'Out for Delivery', 'Delivered',
+      'Cancelled', 'Return Requested', 'Refunded', 'Partially Refunded',
+      'Exchange Requested', 'Exchange Approved', 'Pickup Scheduled',
+      'Old Item Picked Up', 'Replacement Dispatched', 'Exchange Completed',
+      'Exchange Rejected', 'Exchange Cancelled', 'Exchange Failed', 'Manual Review'
+    ],
     default: 'Pending'
   },
   couponCode: {

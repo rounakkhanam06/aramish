@@ -150,6 +150,8 @@ app.use('/logistics', require('./Router/shiprocketRoutes'));
 app.use('/admin/notifications', require('./Router/notificationRoutes'));
 app.use('/notifications', require('./Router/notificationRoutes'));
 app.use('/returns', require('./Router/returnRoutes'));
+app.use('/exchanges', require('./Router/exchangeRoutes'));
+
 
 // Health check with DB connection check
 app.get('/health', async (req, res) => {

@@ -67,7 +67,7 @@ exports.createOrder = async (req, res) => {
         if (!variant) {
           throw new Error(`Variation "${item.variationSku}" of "${product.name}" not found.`);
         }
-        itemPrice = variant.price || product.sellingPrice;
+        itemPrice = (!variant.useDefaultPricing && variant.sellingPrice !== undefined) ? variant.sellingPrice : product.sellingPrice;
         availableStock = variant.stock;
       }
 
@@ -82,6 +82,7 @@ exports.createOrder = async (req, res) => {
         quantity: qty,
         image: item.image || (product.images && product.images[0]) || '',
         variationSku: item.variationSku || null,
+        article: product.article || null,
         attributes: item.attributes || {}
       });
     }
@@ -615,11 +616,22 @@ exports.updateOrderStatus = async (req, res) => {
         'Processing': ['Shipped', 'Cancelled'],
         'Shipped': ['Out for Delivery', 'Cancelled'],
         'Out for Delivery': ['Delivered', 'Cancelled'],
-        'Delivered': ['Return Requested', 'Refunded', 'Partially Refunded'],
+        'Delivered': ['Return Requested', 'Refunded', 'Partially Refunded', 'Exchange Requested'],
         'Return Requested': ['Cancelled', 'Refunded', 'Partially Refunded'],
         'Cancelled': [],
         'Refunded': [],
-        'Partially Refunded': []
+        'Partially Refunded': [],
+        // Exchange FSM
+        'Exchange Requested': ['Exchange Approved', 'Exchange Rejected'],
+        'Exchange Approved': ['Pickup Scheduled', 'Exchange Cancelled', 'Exchange Failed', 'Manual Review'],
+        'Pickup Scheduled': ['Old Item Picked Up', 'Exchange Failed', 'Manual Review'],
+        'Old Item Picked Up': ['Replacement Dispatched', 'Exchange Failed', 'Manual Review'],
+        'Replacement Dispatched': ['Exchange Completed', 'Exchange Failed', 'Manual Review'],
+        'Exchange Completed': [],
+        'Exchange Rejected': [],
+        'Exchange Cancelled': [],
+        'Exchange Failed': ['Manual Review'],
+        'Manual Review': ['Exchange Approved', 'Exchange Cancelled', 'Exchange Failed', 'Exchange Completed']
       };
 
       const allowed = validTransitions[order.status];

@@ -34,6 +34,11 @@ const productSchema = new mongoose.Schema({
     type: String,
     unique: true
   },
+  article: {
+    type: String,
+    required: true,
+    unique: true
+  },
   highlights: {
     type: Map,
     of: String

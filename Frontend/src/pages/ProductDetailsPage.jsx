@@ -25,6 +25,8 @@ export default function ProductDetailsPage() {
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [similarProducts, setSimilarProducts] = useState([]);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [showHeader, setShowHeader] = useState(true);
+  const lastScrollY = useRef(0);
   
   // Video Reels States
   const [productReels, setProductReels] = useState([]);
@@ -34,6 +36,29 @@ export default function ProductDetailsPage() {
   const [reelVideoFile, setReelVideoFile] = useState(null);
   const [isUploadingReel, setIsUploadingReel] = useState(false);
   const [isEligibleToReview, setIsEligibleToReview] = useState(false);
+  const [selectedReviewMedia, setSelectedReviewMedia] = useState(null);
+
+  const isAnyModalOpen = isSizeChartOpen || Boolean(fullscreenImage) || isShareModalOpen || isUploadReelOpen || Boolean(selectedReviewMedia);
+
+  useEffect(() => {
+    if (isAnyModalOpen) {
+      const scrollContainer = document.getElementById('main-scroll-container');
+      const originalBodyOverflow = document.body.style.overflow;
+      const originalContainerOverflow = scrollContainer ? scrollContainer.style.overflow : '';
+
+      document.body.style.overflow = 'hidden';
+      if (scrollContainer) {
+        scrollContainer.style.overflow = 'hidden';
+      }
+
+      return () => {
+        document.body.style.overflow = originalBodyOverflow;
+        if (scrollContainer) {
+          scrollContainer.style.overflow = originalContainerOverflow;
+        }
+      };
+    }
+  }, [isAnyModalOpen]);
 
   const fetchProductReels = async () => {
     try {
@@ -80,6 +105,38 @@ export default function ProductDetailsPage() {
     fetchProductReels();
     fetchReviewEligibility();
   }, [id, user]);
+
+  useEffect(() => {
+    const scrollContainer = document.getElementById('main-scroll-container');
+
+    const handleScroll = () => {
+      const currentScrollY = Math.max(
+        window.scrollY || 0,
+        document.documentElement.scrollTop || 0,
+        scrollContainer ? scrollContainer.scrollTop : 0
+      );
+      if (currentScrollY > 5) {
+        setShowHeader(false);
+      } else {
+        setShowHeader(true);
+      }
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    document.addEventListener('scroll', handleScroll, { passive: true });
+    if (scrollContainer) {
+      scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    }
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      document.removeEventListener('scroll', handleScroll);
+      if (scrollContainer) {
+        scrollContainer.removeEventListener('scroll', handleScroll);
+      }
+    };
+  }, []);
 
   const handleUploadReel = async (e) => {
     e.preventDefault();
@@ -139,8 +196,6 @@ export default function ProductDetailsPage() {
   const [isReviewsOpen, setIsReviewsOpen] = useState(true);
   const [activeDetailTab, setActiveDetailTab] = useState('specifications');
   
-  // Review Media Viewer State
-  const [selectedReviewMedia, setSelectedReviewMedia] = useState(null);
   const videoRef = useRef(null);
   useEffect(() => {
     if (selectedReviewMedia?.type === 'video' && videoRef.current) {
@@ -417,12 +472,12 @@ export default function ProductDetailsPage() {
   if (activeVariant && !activeVariant.useDefaultPricing && displayOriginalPrice && displayPrice) {
       displayDiscount = formatDiscount('', displayOriginalPrice, displayPrice, 'off');
   }
-  const colorVariantWithImage = product?.variations?.find(v => v.color === selectedColor && v.images && v.images.length > 0);
+  const colorVariantWithImage = product?.variations?.find(v => v.color?.toLowerCase() === selectedColor?.toLowerCase() && v.images && v.images.length > 0);
   let displayImages = [];
-  if (activeVariant?.images?.length > 0) {
-      displayImages = activeVariant.images.map(getImageUrl);
-  } else if (colorVariantWithImage?.images?.length > 0) {
+  if (colorVariantWithImage?.images?.length > 0) {
       displayImages = colorVariantWithImage.images.map(getImageUrl);
+  } else if (activeVariant?.images?.length > 0) {
+      displayImages = activeVariant.images.map(getImageUrl);
   } else if (product?.images?.length > 0) {
       displayImages = product.images;
   } else {
@@ -494,7 +549,7 @@ export default function ProductDetailsPage() {
     <div className="flex flex-col min-h-screen bg-surface font-sans relative pb-[80px] md:pb-12 animate-fade-in select-none">
       
       {/* Sticky Header (Mobile Only) */}
-      <header className="bg-surface sticky top-0 z-50 flex items-center justify-between px-3 py-2 shadow-sm md:hidden">
+      <header className={`bg-surface sticky top-0 z-50 flex items-center justify-between px-3 py-2 shadow-sm md:hidden transition-transform duration-300 ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}>
         <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-slate-700">
           <ArrowLeft className="w-6 h-6" />
         </button>
@@ -669,25 +724,25 @@ export default function ProductDetailsPage() {
         </div>
 
         {/* Right Column: Info & Specs on desktop */}
-        <div className="md:col-span-5 bg-surface p-4 md:p-6 md:rounded-2xl md:border md:border-white/10 md:shadow-xs space-y-4 md:sticky md:top-28">
+        <div className="md:col-span-5 bg-surface p-4 md:p-6 md:rounded-2xl md:border md:border-white/10 md:shadow-xs space-y-3 md:sticky md:top-28">
           {/* Brand & Name */}
-          <div className="border-b border-white/10 pb-3">
-            <span className="text-xs uppercase tracking-widest text-slate-400 font-extrabold block mb-1">
+          <div className="pb-1">
+            <span className="text-xs uppercase tracking-widest text-slate-400 font-extrabold block mb-0.5">
               {product.brandName}
             </span>
-            <h1 className="text-base md:text-xl font-bold text-[#02006c] leading-tight">
+            <h1 className="text-base md:text-xl font-extrabold text-[#02006c] leading-tight">
               {product.name}
             </h1>
           </div>
 
           {/* Variant Selectors */}
-          <div className="pb-3 border-b border-white/10 space-y-3">
+          <div className="pb-2 border-b border-white/10 space-y-3">
             {uniqueColors.length > 0 && (
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-1.5">
                   <span className="font-bold text-xs text-[#02006c]">Selected Color: <span className="font-normal text-slate-700">{selectedColor}</span></span>
                 </div>
-                <div className="flex gap-2.5 flex-wrap">
+                <div className="flex gap-2 flex-wrap">
                   {uniqueColors.map((color) => {
                     const isSelected = selectedColor === color;
                     const colorVariant = product.variations.find(v => v.color === color);
@@ -705,18 +760,23 @@ export default function ProductDetailsPage() {
                         onClick={() => {
                            setSelectedColor(color);
                            setActiveImageIndex(0);
+                           // Reset scroll position of image slider
+                           const slider = document.getElementById('product-image-slider');
+                           if (slider) {
+                             slider.scrollTo({ left: 0, behavior: 'instant' });
+                           }
                            // auto-select first available size for this color
                            const sizes = product.variations.filter(v => v.color === color).map(v => v.size).filter(Boolean);
                            if (sizes.length > 0 && !sizes.includes(selectedSize)) {
                                setSelectedSize(sizes[0]);
                            }
                         }}
-                        className={`rounded-xl border-2 flex items-center justify-center text-xs font-bold transition-all cursor-pointer overflow-hidden bg-white
+                        className={`rounded-lg border flex items-center justify-center text-xs font-bold transition-all cursor-pointer overflow-hidden bg-white
                           ${isSelected ? 'border-[#0B132B] shadow-sm scale-[1.02]' : 'border-slate-200 hover:border-slate-400 opacity-80 hover:opacity-100'}
-                          ${colorImg ? 'w-16 h-20 p-1' : 'px-4 py-2 text-slate-700'}
+                          ${colorImg ? 'w-11 h-14 p-0.5' : 'px-3 py-1.5 text-slate-700'}
                         `}
                       >
-                        {colorImg ? <img src={colorImg} alt={color} className="w-full h-full object-cover rounded-lg" /> : color}
+                        {colorImg ? <img src={colorImg} alt={color} className="w-full h-full object-cover rounded-md" /> : color}
                       </button>
                     );
                   })}
@@ -726,17 +786,17 @@ export default function ProductDetailsPage() {
 
             {sizesForSelectedColor.length > 0 && (
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-1.5">
                   <span className="font-bold text-xs text-[#02006c]">Select Size</span>
                   <button 
                     onClick={() => setIsSizeChartOpen(true)}
-                    className="text-[#0B132B] font-bold text-[11px] cursor-pointer hover:underline"
+                    className="text-[#0B132B] font-bold text-[10px] cursor-pointer hover:underline"
                   >
                     Size Chart
                   </button>
                 </div>
                 
-                <div className="flex gap-2.5 flex-wrap">
+                <div className="flex gap-2 flex-wrap">
                   {sizesForSelectedColor.map((size) => {
                     const isSelected = selectedSize === size;
                     // check if this specific variant is out of stock
@@ -748,7 +808,7 @@ export default function ProductDetailsPage() {
                         key={size}
                         disabled={isOutOfStock}
                         onClick={() => setSelectedSize(size)}
-                        className={`w-11 h-11 rounded-xl border flex items-center justify-center text-xs font-bold transition-all relative overflow-hidden cursor-pointer
+                        className={`w-10 h-10 rounded-lg border flex items-center justify-center text-xs font-bold transition-all relative overflow-hidden cursor-pointer
                           ${isSelected ? 'border-[#0B132B] text-[#0B132B] bg-[#0B132B]/5' : 
                             isOutOfStock ? 'border-dashed border-white/10 text-slate-300 bg-surface cursor-not-allowed' : 
                             'border-white/10 text-slate-700 hover:border-slate-400'
@@ -766,13 +826,13 @@ export default function ProductDetailsPage() {
           </div>
 
           {/* Pricing */}
-          <div className="border-b border-white/10 pb-4 flex items-center justify-between mt-4">
+          <div className="border-b border-white/10 pb-3 flex items-center justify-between">
             <div>
               <div className="flex items-baseline gap-2">
                 <span className="text-[#0B132B] font-bold text-lg">{displayDiscount}</span>
                 <span className="text-2xl md:text-3xl font-black text-[#02006c] tracking-tight">₹{displayPrice}</span>
               </div>
-              <p className="text-xs text-slate-400 line-through mt-1">MRP ₹{displayOriginalPrice}</p>
+              <p className="text-xs text-slate-400 line-through mt-0.5">MRP ₹{displayOriginalPrice}</p>
             </div>
             <div>
               {displayStock === 0 ? (
@@ -786,6 +846,8 @@ export default function ProductDetailsPage() {
               ) : null}
             </div>
           </div>
+
+
 
           {/* Product Description */}
           {product.desc && (
@@ -892,14 +954,14 @@ export default function ProductDetailsPage() {
               </div>
               
               {isHighlightsOpen && (
-                <div className="mt-4 grid grid-cols-2 gap-y-4 gap-x-6 animate-fade-in border-t border-white/10 pt-4">
+                <div className="mt-3 grid grid-cols-2 gap-y-2 gap-x-6 animate-fade-in border-t border-white/10 pt-3">
                   {(() => {
                     const validHighlights = product.highlights 
                       ? Object.entries(product.highlights).filter(([key, val]) => val !== undefined && val !== null && val !== '' && val !== '-' && val !== '0' && val !== 0)
                       : [];
                     if (validHighlights.length > 0) {
                       return validHighlights.map(([key, val]) => (
-                        <div key={key} className="flex flex-col border-b border-white/10 pb-2">
+                        <div key={key} className="flex flex-col border-b border-white/10 pb-1">
                           <span className="text-[11px] text-slate-400 mb-0.5 capitalize font-extrabold">{key}</span>
                           <span className="text-xs font-bold text-slate-800">{val}</span>
                         </div>
@@ -954,7 +1016,7 @@ export default function ProductDetailsPage() {
 
                   {activeDetailTab === 'specifications' && (
                     <div className="animate-fade-in">
-                      <div className="grid grid-cols-2 gap-y-4 gap-x-6">
+                      <div className="grid grid-cols-2 gap-y-2 gap-x-6">
                         {(() => {
                           const validSpecs = product.technicalSpecs 
                             ? Object.entries(product.technicalSpecs).filter(([key, val]) => val !== undefined && val !== null && val !== '' && val !== '-' && val !== '0' && val !== 0)
@@ -981,7 +1043,7 @@ export default function ProductDetailsPage() {
 
                           if (validSpecs.length > 0) {
                             return validSpecs.map(([key, val]) => (
-                              <div key={key} className="flex flex-col border-b border-white/10 pb-2">
+                              <div key={key} className="flex flex-col border-b border-white/10 pb-1">
                                 <span className="text-[11px] text-slate-400 mb-0.5 capitalize font-extrabold">{key}</span>
                                 <span className="text-xs font-bold text-slate-800">{val}</span>
                               </div>
@@ -989,11 +1051,11 @@ export default function ProductDetailsPage() {
                           } else {
                             return (
                               <>
-                                <div className="flex flex-col border-b border-white/10 pb-2">
+                                <div className="flex flex-col border-b border-white/10 pb-1">
                                   <span className="text-[11px] text-slate-400 mb-0.5 font-extrabold">Brand</span>
                                   <span className="text-xs font-bold text-slate-800">{product.brandName || 'Generic'}</span>
                                 </div>
-                                <div className="flex flex-col border-b border-white/10 pb-2">
+                                <div className="flex flex-col border-b border-white/10 pb-1">
                                   <span className="text-[11px] text-slate-400 mb-0.5 font-extrabold">Type</span>
                                   <span className="text-xs font-bold text-slate-800">Premium quality product</span>
                                 </div>
@@ -1214,9 +1276,9 @@ export default function ProductDetailsPage() {
         <div className="flex gap-2 h-12">
           <button 
             onClick={handleAddToCart}
-            disabled={!product.stock || product.stock <= 0}
+            disabled={!displayStock || displayStock <= 0}
             className={`flex-1 rounded font-bold text-[13px] flex items-center justify-center transition-colors
-              ${(!product.stock || product.stock <= 0) 
+              ${(!displayStock || displayStock <= 0) 
                 ? 'bg-white border border-slate-200 text-slate-400 cursor-not-allowed opacity-60' 
                 : 'bg-white border border-[#02006c] text-[#02006c] active:bg-slate-50'
               }`}
@@ -1225,14 +1287,14 @@ export default function ProductDetailsPage() {
           </button>
           <button 
             onClick={handleBuyNow}
-            disabled={!product.stock || product.stock <= 0}
+            disabled={!displayStock || displayStock <= 0}
             className={`flex-1 rounded font-bold text-[13px] flex items-center justify-center transition-colors
-              ${(!product.stock || product.stock <= 0) 
+              ${(!displayStock || displayStock <= 0) 
                 ? 'bg-surface text-slate-400 cursor-not-allowed opacity-60' 
                 : 'bg-[#0B132B] text-white active:bg-gold shadow-sm'
               }`}
           >
-            {(!product.stock || product.stock <= 0) ? 'Out of Stock' : `Buy at ₹${product.price}`}
+            {(!displayStock || displayStock <= 0) ? 'Out of Stock' : `Buy at ₹${displayPrice}`}
           </button>
         </div>
       </div>

@@ -136,6 +136,7 @@ const createProduct = async (req, res) => {
       stock,
       discountLabel,
       sku,
+      article,
       gstCategory,
       hsnCode,
       brandName,
@@ -148,6 +149,10 @@ const createProduct = async (req, res) => {
 
     if (!name || !category || sellingPrice === undefined || mrp === undefined) {
       return res.status(400).json({ success: false, message: 'Name, Category, MRP, and Selling Price are required' });
+    }
+
+    if (!article) {
+      return res.status(400).json({ success: false, message: 'Article Number is required' });
     }
 
     if (Number(mrp) < Number(sellingPrice)) {
@@ -235,6 +240,7 @@ const createProduct = async (req, res) => {
       stock: stock ? Number(stock) : 1,
       discountLabel,
       sku: sku || `SKU-${Date.now()}`,
+      article,
       highlights: parseJsonField(req.body.highlights),
       technicalSpecs: parseJsonField(req.body.technicalSpecs),
       shippingSpecs: parseJsonField(req.body.shippingSpecs),
@@ -256,6 +262,10 @@ const createProduct = async (req, res) => {
   } catch (error) {
     console.error('Create Product Error:', error);
     if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0];
+      if (field === 'article') {
+        return res.status(400).json({ success: false, message: 'Article Number must be unique' });
+      }
       return res.status(400).json({ success: false, message: 'SKU must be unique' });
     }
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
@@ -294,7 +304,7 @@ const updateProduct = async (req, res) => {
 
     const fields = [
       'name', 'category', 'subCategory', 'description', 'sellingPrice',
-      'mrp', 'stock', 'discountLabel', 'sku', 'gstCategory', 'hsnCode',
+      'mrp', 'stock', 'discountLabel', 'sku', 'article', 'gstCategory', 'hsnCode',
       'manufacturerInfo', 'status'
     ];
 
@@ -339,20 +349,37 @@ const updateProduct = async (req, res) => {
         return res.status(400).json({ success: false, message: 'At least one variant is required.' });
       }
       for (let i = 0; i < variations.length; i++) {
-          const v = variations[i];
+        const v = variations[i];
         if ((!v.color && !v.size) || v.stock === undefined || v.stock === '' || !v.sku) {
             return res.status(400).json({ success: false, message: `At least Color or Size, plus Stock and SKU are required for variant ${i+1}.` });
         }
-          if (!v.useDefaultPricing) {
-              if (v.mrp === undefined || v.mrp === '' || v.sellingPrice === undefined || v.sellingPrice === '') {
-                  return res.status(400).json({ success: false, message: `Variant MRP and Selling Price are required for variant ${v.sku} if default pricing is disabled.` });
-              }
-              if (Number(v.mrp) < Number(v.sellingPrice)) {
-                  return res.status(400).json({ success: false, message: `Variant MRP cannot be less than Variant Selling Price for variant ${v.sku}.` });
-              }
-          }
+        if (!v.useDefaultPricing) {
+            if (v.mrp === undefined || v.mrp === '' || v.sellingPrice === undefined || v.sellingPrice === '') {
+                return res.status(400).json({ success: false, message: `Variant MRP and Selling Price are required for variant ${v.sku} if default pricing is disabled.` });
+            }
+            if (Number(v.mrp) < Number(v.sellingPrice)) {
+                return res.status(400).json({ success: false, message: `Variant MRP cannot be less than Variant Selling Price for variant ${v.sku}.` });
+            }
+        }
       }
+
+      // Process variant images on the raw array before assigning to product.variations
+      for (let i = 0; i < variations.length; i++) {
+        const v = variations[i];
+        let newVImages = [];
+        if (req.processedFiles) {
+          const vFiles = req.processedFiles.filter(f => f.fieldname === `variantImages_${i}`);
+          if (vFiles.length > 0) {
+             newVImages = vFiles.map(f => getImageUrl(f.url));
+          }
+        }
+        const existingVariantImages = req.body[`variantImagesExisting_${i}`];
+        const existingVImages = existingVariantImages ? parseJsonField(existingVariantImages, []) : [];
+        v.images = [...existingVImages, ...newVImages];
+      }
+
       product.variations = variations;
+      product.markModified('variations');
     }
 
     // Process Images
@@ -370,23 +397,6 @@ const updateProduct = async (req, res) => {
 
     product.images = updatedImages;
 
-    // Process variant images if variations were updated
-    if (product.variations && product.variations.length > 0) {
-      for (let i = 0; i < product.variations.length; i++) {
-        const v = product.variations[i];
-        let newVImages = [];
-        if (req.processedFiles) {
-          const vFiles = req.processedFiles.filter(f => f.fieldname === `variantImages_${i}`);
-          if (vFiles.length > 0) {
-             newVImages = vFiles.map(f => getImageUrl(f.url));
-          }
-        }
-        const existingVariantImages = req.body[`variantImagesExisting_${i}`];
-        const existingVImages = existingVariantImages ? parseJsonField(existingVariantImages, []) : [];
-        v.images = [...existingVImages, ...newVImages];
-      }
-    }
-
     // Fallback: If global product has no images, but a variation does, use it
     if ((!product.images || product.images.length === 0) && product.variations && product.variations.length > 0) {
       const firstVarWithImg = product.variations.find(v => v.images && v.images.length > 0);
@@ -399,6 +409,13 @@ const updateProduct = async (req, res) => {
     res.status(200).json({ success: true, message: 'Product updated successfully', product });
   } catch (error) {
     console.error('Update Product Error:', error);
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0];
+      if (field === 'article') {
+        return res.status(400).json({ success: false, message: 'Article Number must be unique' });
+      }
+      return res.status(400).json({ success: false, message: 'SKU must be unique' });
+    }
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 };

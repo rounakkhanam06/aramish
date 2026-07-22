@@ -806,7 +806,13 @@ const Orders = () => {
                       />
                       <div className="flex-1 min-w-0">
                         <h4 className="text-sm font-bold text-slate-900 truncate">{item.name}</h4>
-                        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5">₹{item.price.toLocaleString()} x {item.quantity}</p>
+                        {item.article && (
+                          <p className="text-xs text-slate-600 font-semibold mt-0.5">Article: <span className="text-blue-600 font-bold">{item.article}</span></p>
+                        )}
+                        {item.variationSku && (
+                          <p className="text-[10px] text-slate-500 mt-0.5">SKU: {item.variationSku}</p>
+                        )}
+                        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">₹{item.price.toLocaleString()} x {item.quantity}</p>
                       </div>
                       <p className="text-sm font-black text-slate-900 font-roboto">₹{(item.price * item.quantity).toLocaleString()}</p>
                     </div>

@@ -5,8 +5,8 @@ import { Lock, Mail, Eye, EyeOff, ShieldCheck, Loader2 } from 'lucide-react';
 const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/admin/auth`;
 
 const Auth = () => {
-  const [email, setEmail] = useState('admin@gmail.com');
-  const [password, setPassword] = useState('123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);

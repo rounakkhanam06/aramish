@@ -94,7 +94,8 @@ export const AppProvider = ({ children }) => {
       const p = item.productId;
       if (!p) return null;
       const variant = item.variationSku && p.variations ? p.variations.find(v => v.sku === item.variationSku) : null;
-      const itemPrice = variant ? (variant.price || p.sellingPrice) : p.sellingPrice;
+      const itemPrice = variant && !variant.useDefaultPricing ? variant.sellingPrice : p.sellingPrice;
+      const itemOriginalPrice = variant && !variant.useDefaultPricing ? variant.mrp : p.mrp;
       const attributes = item.attributes || {};
       const colorVal = typeof attributes.get === 'function' ? attributes.get('Color') : attributes.Color;
       const sizeVal = typeof attributes.get === 'function' ? attributes.get('Size') : attributes.Size;
@@ -104,8 +105,8 @@ export const AppProvider = ({ children }) => {
         name: p.name,
         desc: p.description || '',
         price: itemPrice,
-        originalPrice: p.mrp || p.sellingPrice,
-        discount: formatDiscount(p.discountLabel, p.mrp, itemPrice, 'minus'),
+        originalPrice: itemOriginalPrice,
+        discount: formatDiscount(p.discountLabel, itemOriginalPrice, itemPrice, 'minus'),
         rating: p.rating || 0,
         type: (p.category || '').toLowerCase(),
         image: (() => {
@@ -123,6 +124,7 @@ export const AppProvider = ({ children }) => {
         brandName: 'Aramish',
         sales: p.sales || 0,
         quantity: item.quantity,
+        stock: variant ? variant.stock : (p.stock !== undefined ? p.stock : 0),
         weight: p.shippingSpecs?.weight || 0.5,
         variationSku: item.variationSku || null,
         selectedColor: colorVal || null,

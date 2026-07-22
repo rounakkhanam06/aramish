@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Copy, CheckCircle2, Star, MapPin, Receipt, Download, ChevronDown, PenLine, X, Package, Image as ImageIcon, Video, RotateCcw, AlertCircle, Loader2, Check } from 'lucide-react';
+import { ArrowLeft, Copy, CheckCircle2, Star, MapPin, Receipt, Download, ChevronDown, PenLine, X, Package, Image as ImageIcon, Video, RotateCcw, AlertCircle, Loader2, Check, ArrowLeftRight, ArrowRight, Home, Truck } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import toast from '../utils/toast';
@@ -171,10 +171,16 @@ export default function OrderDetailsPage() {
     date: orderData.createdAt ? new Date(orderData.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : orderData.date,
     items: orderData.items ? orderData.items.map(item => ({
       id: item.productId || item.id,
+      productId: item.productId || item.id || null,
       name: item.name,
       price: item.price,
       quantity: item.quantity,
-      image: item.image
+      image: item.image,
+      variationSku: item.variationSku || null,
+      attributes: {
+        size: item.attributes instanceof Map ? (item.attributes.get('Size') || item.attributes.get('size') || '') : (item.attributes?.Size || item.attributes?.size || ''),
+        color: item.attributes instanceof Map ? (item.attributes.get('Color') || item.attributes.get('color') || '') : (item.attributes?.Color || item.attributes?.color || '')
+      }
     })) : [],
     total: orderData.total,
     status: orderData.status,
@@ -200,7 +206,148 @@ export default function OrderDetailsPage() {
   const [existingReturn, setExistingReturn] = useState(null);
   const [checkingReturn, setCheckingReturn] = useState(false);
 
+  // Exchange states
+  const [existingExchange, setExistingExchange] = useState(null);
+  const [checkingExchange, setCheckingExchange] = useState(false);
+  const hasActiveExchange = existingExchange && (
+    !['Failed', 'Rejected', 'Cancelled'].includes(existingExchange.status) || 
+    (existingExchange.status === 'Failed' && (existingExchange.retryCount || 0) < 3)
+  );
+  const hasFailedExchange = existingExchange && (
+    ['Rejected', 'Cancelled'].includes(existingExchange.status) || 
+    (existingExchange.status === 'Failed' && (existingExchange.retryCount || 0) >= 3)
+  );
+  const [showExchangeSheet, setShowExchangeSheet] = useState(false);
+  const [exchangeStep, setExchangeStep] = useState(1); // 1=reason, 2=variant
+  const [exchangeReason, setExchangeReason] = useState('');
+  const [exchangeComments, setExchangeComments] = useState('');
+  const [exchangeSelectedVariant, setExchangeSelectedVariant] = useState(null);
+  const [submittingExchange, setSubmittingExchange] = useState(false);
+  const [exchangeProduct, setExchangeProduct] = useState(null);
+  const [fetchingProduct, setFetchingProduct] = useState(false);
+  const EXCHANGE_REASONS = ['Size Issue', 'Color Issue', 'Wrong Item Received', 'Defective Product', 'Changed Mind', 'Other'];
+
   const RETURN_REASONS = ['Damaged Product', 'Wrong Item Sent', 'Defective Unit', 'Not As Described', 'Size/Fit Issue', 'Changed Mind', 'Other'];
+
+  const getStepInfo = (stepStatuses) => {
+    if (!existingExchange) return { completed: false, dateText: 'Pending' };
+    const entry = existingExchange.timeline?.find(e => stepStatuses.includes(e.status));
+    if (!entry) return { completed: false, dateText: 'Pending' };
+
+    const date = new Date(entry.timestamp);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    let dateText = '';
+    if (date.toDateString() === today.toDateString()) {
+      dateText = 'Today';
+    } else if (date.toDateString() === yesterday.toDateString()) {
+      dateText = 'Yesterday';
+    } else if (date.toDateString() === tomorrow.toDateString()) {
+      dateText = 'Tomorrow';
+    } else {
+      dateText = date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    }
+
+    return { completed: true, dateText };
+  };
+
+  const getActiveStepIndex = () => {
+    if (!existingExchange) return -1;
+    const s = existingExchange.status;
+    if (s === 'Requested') return 0;
+    if (s === 'Approved') return 1;
+    if (['Pickup Scheduled', 'Old Item Picked Up'].includes(s)) return 2;
+    if (s === 'Replacement Dispatched') return 3;
+    if (s === 'Completed') return 4;
+    return -1;
+  };
+
+  const getHeaderTitle = () => {
+    if (!existingExchange) return '';
+    const s = existingExchange.status;
+    const rc = existingExchange.retryCount || 0;
+    if (s === 'Failed') {
+      return rc < 3 ? 'Exchange delayed' : 'Exchange could not be completed';
+    }
+    if (s === 'Manual Review') return "We're reviewing your exchange";
+    if (s === 'Completed') return 'Exchange completed';
+    if (s === 'Rejected') return 'Exchange rejected';
+    if (s === 'Cancelled') return 'Exchange cancelled';
+    return 'Exchange in progress';
+  };
+
+  const getHeaderSubtitle = () => {
+    if (!existingExchange) return '';
+    const s = existingExchange.status;
+    const rc = existingExchange.retryCount || 0;
+    if (s === 'Failed') {
+      return rc < 3 
+        ? "We're facing a temporary issue while processing your replacement."
+        : "Unfortunately, we couldn't process your exchange. If you're still within the exchange window, you can submit a new exchange request.";
+    }
+    if (s === 'Manual Review') {
+      return "Your replacement is taking longer than expected. Our team is reviewing the issue and will update you shortly.";
+    }
+    if (s === 'Rejected') return existingExchange.rejectionReason || 'Your request was rejected.';
+    return 'Track your replacement request';
+  };
+
+  const getHeaderBadgeClass = () => {
+    if (!existingExchange) return '';
+    const s = existingExchange.status;
+    if (s === 'Failed' || s === 'Rejected') return 'bg-red-500/10 text-red-500 border-red-500/20';
+    if (s === 'Manual Review') return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
+    if (s === 'Completed') return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
+    return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+  };
+
+  const getHeaderBadgeText = () => {
+    if (!existingExchange) return '';
+    const s = existingExchange.status;
+    if (s === 'Failed') return 'Delayed';
+    if (s === 'Manual Review') return 'Checking';
+    if (s === 'Completed') return 'Completed';
+    if (s === 'Rejected') return 'Rejected';
+    if (s === 'Cancelled') return 'Cancelled';
+    return 'In progress';
+  };
+
+  const steps = [
+    {
+      title: 'Exchange requested',
+      description: 'We have received your exchange request.',
+      statuses: ['Requested'],
+      icon: CheckCircle2
+    },
+    {
+      title: 'Exchange approved',
+      description: 'Your replacement request has been approved and stock has been reserved.',
+      statuses: ['Approved'],
+      icon: Package
+    },
+    {
+      title: 'Pickup scheduled',
+      description: 'Our courier partner will collect your old item.',
+      statuses: ['Pickup Scheduled', 'Old Item Picked Up'],
+      icon: MapPin
+    },
+    {
+      title: 'Replacement on the way',
+      description: 'Your replacement item has been dispatched.',
+      statuses: ['Replacement Dispatched'],
+      icon: Truck
+    },
+    {
+      title: 'Exchange completed',
+      description: 'You received the replacement item successfully.',
+      statuses: ['Completed'],
+      icon: Home
+    }
+  ];
 
   // Check if a return request already exists for this order
   useEffect(() => {
@@ -226,6 +373,120 @@ export default function OrderDetailsPage() {
     };
     checkExistingReturn();
   }, [id, globalOrder?.status]);
+
+  // Check existing exchange for this order
+  useEffect(() => {
+    const checkExistingExchange = async () => {
+      if (!globalOrder || globalOrder.status === 'Pending' || globalOrder.status === 'Processing') return;
+      const token = localStorage.getItem('userToken');
+      if (!token) return;
+      try {
+        setCheckingExchange(true);
+        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        const res = await fetch(`${apiBase}/exchanges/by-order/${id}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (res.ok && data.success && data.exchangeRequest) {
+          setExistingExchange(data.exchangeRequest);
+        }
+      } catch (err) {
+        console.error('Check existing exchange error:', err);
+      } finally {
+        setCheckingExchange(false);
+      }
+    };
+    checkExistingExchange();
+  }, [id, globalOrder?.status]);
+
+  const handleSubmitExchange = async () => {
+    if (!exchangeReason) { toast.info('Select a reason for exchange'); return; }
+    if (!exchangeSelectedVariant) { toast.info('Select a replacement size/color'); return; }
+    const token = localStorage.getItem('userToken');
+    if (!token) { toast.error('Please login'); return; }
+    const orderItem = globalOrder?.items?.[0];
+    if (!orderItem) { toast.error('Order item not found'); return; }
+    try {
+      setSubmittingExchange(true);
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetch(`${apiBase}/exchanges`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          orderId: id,
+          originalItem: {
+            productId: orderItem.productId,
+            variationSku: orderItem.variationSku || null,
+            name: orderItem.name,
+            price: orderItem.price,
+            image: orderItem.image || '',
+            color: orderItem.attributes?.color || '',
+            size: orderItem.attributes?.size || '',
+            quantity: 1
+          },
+          requestedVariant: {
+            productId: orderItem.productId,
+            sku: exchangeSelectedVariant.sku,
+            color: exchangeSelectedVariant.color,
+            size: exchangeSelectedVariant.size,
+            image: (exchangeSelectedVariant.images && exchangeSelectedVariant.images[0]) || exchangeProduct.images?.[0] || '',
+            price: exchangeSelectedVariant.sellingPrice || exchangeProduct.sellingPrice || 0
+          },
+          reason: exchangeReason,
+          comments: exchangeComments
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success('Exchange request submitted!');
+        setShowExchangeSheet(false);
+        setExistingExchange(data.exchangeRequest);
+        fetchOrderDetails(false);
+      } else {
+        toast.error(data.message || 'Exchange request failed');
+      }
+    } catch (err) {
+      toast.error('Could not submit exchange request');
+    } finally {
+      setSubmittingExchange(false);
+    }
+  };
+
+  const fetchExchangeProduct = async (productId) => {
+    if (!productId) {
+      console.warn('fetchExchangeProduct called without productId');
+      return;
+    }
+    try {
+      setFetchingProduct(true);
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const url = `${apiBase}/admin/catalog/products/${productId}`;
+      console.log('Fetching exchange product options from:', url);
+      const res = await fetch(url);
+      console.log('Response status:', res.status);
+      const data = await res.json();
+      console.log('Response data:', data);
+      if (res.ok && data.success) {
+        setExchangeProduct(data.product);
+      } else {
+        console.error('Failed to load product. Success:', data.success, 'Message:', data.message);
+      }
+    } catch (err) {
+      console.error('Error fetching exchange product:', err);
+    } finally {
+      setFetchingProduct(false);
+    }
+  };
+
+  const handleOpenExchangeSheet = () => {
+    const item = globalOrder?.items?.[0];
+    if (item?.productId) fetchExchangeProduct(item.productId);
+    setExchangeStep(1);
+    setExchangeReason('');
+    setExchangeComments('');
+    setExchangeSelectedVariant(null);
+    setShowExchangeSheet(true);
+  };
 
   const handleReturnToggleItem = (item) => {
     setReturnSelectedItems(prev => {
@@ -645,10 +906,17 @@ export default function OrderDetailsPage() {
             <div className="bg-surface rounded-2xl border border-white/10 shadow-3xs overflow-hidden">
               <div className="p-5 border-b border-slate-105 flex items-center justify-between">
                  <div>
-                   <h2 className={`text-base font-black ${isDelivered ? 'text-green-700' : 'text-[#0B132B]'} mb-1`}>
-                     {isDelivered ? `Delivered, ${globalOrder?.date || 'Apr 13'}` : (globalOrder?.etd ? `Estimated Delivery: ${globalOrder.etd}` : 'Processing Order')}
+                   <h2 className={`text-base font-black ${existingExchange ? 'text-[#02006c]' : (isDelivered ? 'text-green-700' : 'text-[#0B132B]')} mb-1`}>
+                     {existingExchange 
+                       ? getHeaderTitle() 
+                       : (isDelivered ? `Delivered, ${globalOrder?.date || 'Apr 13'}` : (globalOrder?.etd ? `Estimated Delivery: ${globalOrder.etd}` : 'Processing Order'))}
                    </h2>
-                   {isDelivered ? (
+                   {existingExchange ? (
+                      <div className="flex items-center gap-1.5 text-xs text-slate-455">
+                        <div className="w-1.5 h-1.5 bg-[#02006c] rounded-full animate-pulse"></div>
+                        {getHeaderSubtitle()}
+                      </div>
+                    ) : isDelivered ? (
                       <div className="flex items-center gap-1.5 text-xs text-slate-455">
                         <div className="w-3.5 h-3.5 border border-slate-400 rounded-full flex items-center justify-center text-[9px] font-bold">i</div>
                         {returnWindowExpiry.expired 
@@ -670,32 +938,68 @@ export default function OrderDetailsPage() {
                       </div>
                     )}
                  </div>
-                 <div className={`${isDelivered ? 'bg-green-600' : 'bg-[#0B132B]'} rounded-full w-8 h-8 flex items-center justify-center shadow-sm`}>
-                   {isDelivered ? (
+                 <div className={`${existingExchange ? 'bg-[#02006c]' : (isDelivered ? 'bg-green-600' : 'bg-[#0B132B]')} rounded-full w-8 h-8 flex items-center justify-center shadow-sm`}>
+                   {existingExchange ? (
+                     <ArrowLeftRight className="w-4 h-4 text-white" />
+                   ) : isDelivered ? (
                      <CheckCircle2 className="w-4 h-4 text-white" />
                    ) : (
                      <Package className="w-4 h-4 text-white" />
                    )}
                  </div>
               </div>
-              <button 
-                onClick={() => navigate(`/track-order/${id}`)}
-                className="w-full py-3.5 text-xs font-black text-[#0B132B] hover:bg-gold/10 active:bg-gold/10 transition-colors border-b border-white/10 uppercase tracking-wider"
-              >
-                {isDelivered ? 'See all updates' : 'Track your order'}
-              </button>
-
-              {/* Return Request Section */}
-              {isDelivered && !existingReturn && !checkingReturn && (
+              {(!existingExchange || (
+                !['Rejected', 'Cancelled'].includes(existingExchange.status) &&
+                !(existingExchange.status === 'Failed' && (existingExchange.retryCount || 0) >= 3)
+              )) && (
                 <button 
-                  onClick={() => setShowReturnSheet(true)}
-                  className="w-full py-3.5 text-xs font-black text-amber-600 hover:bg-amber-50 active:bg-amber-100 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider"
+                  onClick={() => navigate(`/track-order/${id}`)}
+                  className="w-full py-3.5 text-xs font-black text-[#0B132B] hover:bg-gold/10 active:bg-gold/10 transition-colors border-b border-white/10 uppercase tracking-wider"
                 >
-                  <RotateCcw className="w-4 h-4" />
-                  Request Return / Exchange
+                  {existingExchange ? 'See all updates' : (isDelivered ? 'See all updates' : 'Track your order')}
                 </button>
               )}
 
+              {/* Contact Support Button (Shown when there is an exchange) */}
+              {existingExchange && (
+                <button 
+                  onClick={() => navigate('/support')}
+                  className="w-full py-3.5 text-xs font-black text-[#0B132B] hover:bg-[#0B132B]/5 active:bg-[#0B132B]/10 transition-colors flex items-center justify-center gap-2 border-b border-white/10 uppercase tracking-wider cursor-pointer"
+                >
+                  Contact Support
+                </button>
+              )}
+
+              {/* Return Request Button */}
+              {isDelivered && !existingReturn && !checkingReturn && !hasActiveExchange && (
+                <button 
+                  onClick={() => setShowReturnSheet(true)}
+                  className="w-full py-3.5 text-xs font-black text-amber-600 hover:bg-amber-50 active:bg-amber-100 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider border-b border-white/10"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Request Return
+                </button>
+              )}
+
+              {/* Exchange Request Button */}
+              {isDelivered && !hasActiveExchange && !checkingExchange && !existingReturn && (
+                <div className="w-full">
+                  {hasFailedExchange && (
+                    <div className="px-5 py-2.5 bg-amber-50 text-amber-700 text-[10px] font-bold border-b border-amber-200 flex items-center gap-1.5 leading-tight">
+                      <span>⚠️ Your previous exchange request failed. You can request another exchange if you are still within the exchange window.</span>
+                    </div>
+                  )}
+                  <button 
+                    onClick={handleOpenExchangeSheet}
+                    className="w-full py-3.5 text-xs font-black text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider"
+                  >
+                    <ArrowLeftRight className="w-4 h-4" />
+                    Request Exchange
+                  </button>
+                </div>
+              )}
+
+              {/* Existing Return Status */}
               {existingReturn && (
                 <div className="px-5 py-3.5 bg-amber-50/40 border-t border-amber-100 text-xs">
                   <div className="flex items-center justify-between">
@@ -705,7 +1009,7 @@ export default function OrderDetailsPage() {
                     </div>
                     <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full border ${
                       existingReturn.status === 'Refunded' ? 'bg-green-50 text-green-600 border-green-100' :
-                      existingReturn.status === 'Rejected' ? 'bg-red-50 text-red-650' :
+                      existingReturn.status === 'Rejected' ? 'bg-red-50 text-red-600 border-red-100' :
                       'bg-amber-50 text-amber-600 border-amber-100'
                     }`}>{existingReturn.status}</span>
                   </div>
@@ -1137,6 +1441,161 @@ export default function OrderDetailsPage() {
                 )}
               </button>
 
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exchange Request Bottom Sheet Modal */}
+      {showExchangeSheet && (
+        <div 
+          className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4" 
+          onClick={() => setShowExchangeSheet(false)}
+        >
+          <div 
+            className="bg-surface rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl relative animate-in slide-in-from-bottom-6 duration-300 flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Handle bar (Mobile Only) */}
+            <div className="flex justify-center pt-3 pb-1 sm:hidden">
+              <div className="w-10 h-1 bg-slate-200 rounded-full"></div>
+            </div>
+
+            <div className="p-5 flex-1 overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-4">
+                <h2 className="text-base font-black text-[#02006c] uppercase tracking-wide">Request Exchange</h2>
+                <button onClick={() => setShowExchangeSheet(false)} className="p-1 hover:bg-slate-100 rounded-full transition-colors cursor-pointer">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+
+              {exchangeStep === 1 && (
+                <div className="space-y-4 animate-fade-in">
+                  <div>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Reason for exchange</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {EXCHANGE_REASONS.map((reason) => (
+                        <button
+                          key={reason}
+                          onClick={() => setExchangeReason(reason)}
+                          className={`px-3 py-2.5 rounded-xl text-[11px] font-bold text-left transition-all border ${
+                            exchangeReason === reason 
+                              ? 'border-[#0B132B] bg-blue-50 text-blue-700' 
+                              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          {reason}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Additional details (optional)</p>
+                    <textarea
+                      value={exchangeComments}
+                      onChange={(e) => setExchangeComments(e.target.value)}
+                      placeholder="Describe the issue..."
+                      className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all resize-none h-[80px]"
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      if (!exchangeReason) { toast.info('Select a reason'); return; }
+                      setExchangeStep(2);
+                    }}
+                    className="w-full bg-[#0B132B] text-white font-bold text-xs py-3.5 rounded-xl hover:bg-opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 uppercase tracking-wider mt-4"
+                  >
+                    Select Replacement Size/Color <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {exchangeStep === 2 && (
+                <div className="space-y-4 animate-slide-left">
+                  <button onClick={() => setExchangeStep(1)} className="text-xs font-bold text-blue-600 flex items-center gap-1 mb-2">
+                    <ArrowLeft className="w-3 h-3" /> Back
+                  </button>
+                  
+                  {fetchingProduct ? (
+                    <div className="flex flex-col items-center justify-center py-10">
+                      <Loader2 className="w-6 h-6 animate-spin text-slate-400 mb-2" />
+                      <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Loading options...</p>
+                    </div>
+                  ) : !exchangeProduct ? (
+                    <div className="py-10 text-center text-sm text-red-500">Could not load product options.</div>
+                  ) : (
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Select Replacement Variant</p>
+                      
+                      {/* Original Item context */}
+                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 mb-4 flex items-center gap-3">
+                        <div className="w-10 h-10 bg-white rounded-lg border border-slate-100 overflow-hidden">
+                          {globalOrder?.items?.[0]?.image ? <OptimizedImage src={globalOrder?.items?.[0]?.image} alt="" type="product" className="w-full h-full object-cover" /> : <Package size={16} className="m-auto text-slate-300 mt-2.5" />}
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">You are returning:</p>
+                          <p className="text-xs font-black text-slate-700">{globalOrder?.items?.[0]?.attributes?.size} / {globalOrder?.items?.[0]?.attributes?.color}</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 max-h-[35vh] overflow-y-auto pr-1">
+                        {exchangeProduct.variations?.map((variant) => {
+                          const isOriginal = 
+                            variant.size === globalOrder?.items?.[0]?.attributes?.size && 
+                            variant.color === globalOrder?.items?.[0]?.attributes?.color;
+                          const outOfStock = variant.stock <= 0;
+                          
+                          return (
+                            <button
+                              key={variant.sku}
+                              disabled={isOriginal || outOfStock}
+                              onClick={() => setExchangeSelectedVariant(variant)}
+                              className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all ${
+                                exchangeSelectedVariant?.sku === variant.sku 
+                                  ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' 
+                                  : isOriginal || outOfStock
+                                    ? 'border-slate-100 bg-slate-50 opacity-60 cursor-not-allowed'
+                                    : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                {variant.images?.[0] ? (
+                                  <OptimizedImage src={variant.images[0]} alt="" type="product" className="w-10 h-10 rounded-md object-cover border border-slate-100" />
+                                ) : (
+                                  <div className="w-10 h-10 bg-slate-100 rounded-md flex items-center justify-center border border-slate-200"><ImageIcon className="w-4 h-4 text-slate-400" /></div>
+                                )}
+                                <div>
+                                  <p className="text-xs font-black text-slate-800">{variant.size} / {variant.color}</p>
+                                  <p className="text-[10px] font-bold text-slate-500">₹{variant.sellingPrice?.toLocaleString() || exchangeProduct.sellingPrice?.toLocaleString()}</p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                {isOriginal && <span className="text-[9px] font-bold uppercase bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full tracking-widest">Current</span>}
+                                {outOfStock && !isOriginal && <span className="text-[9px] font-bold uppercase bg-red-100 text-red-600 px-2 py-0.5 rounded-full tracking-widest">Out of Stock</span>}
+                                {exchangeSelectedVariant?.sku === variant.sku && <CheckCircle2 className="w-5 h-5 text-blue-600 ml-auto" />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        onClick={handleSubmitExchange}
+                        disabled={submittingExchange || !exchangeSelectedVariant}
+                        className="w-full bg-[#0B132B] text-white font-bold text-xs py-3.5 rounded-xl hover:bg-opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 uppercase tracking-wider mt-5"
+                      >
+                        {submittingExchange ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" /> Submitting...</>
+                        ) : (
+                          <><ArrowLeftRight className="w-4 h-4" /> Submit Exchange</>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -6,7 +6,7 @@ import {
   Truck, Store, Key, Settings, ChevronDown, ChevronRight,
   UserPlus, DollarSign, BarChart3, HelpCircle, FileText, Image, LayoutGrid, Layout, Bookmark,
   Tag, Zap, MessageSquare, RotateCcw, Inbox, Gamepad2,
-  Banknote, Percent, AlertCircle, CheckCircle2, GitBranch
+  Banknote, Percent, AlertCircle, CheckCircle2, GitBranch, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import OptimizedImage from '../components/common/OptimizedImage';
@@ -107,6 +107,7 @@ const AdminLayout = () => {
         },
         { name: 'Orders', path: '/admin/orders', icon: <ShoppingCart size={18} /> },
         { name: 'Returns & Refunds', path: '/admin/operations/returns', icon: <RotateCcw size={18} /> },
+        { name: 'Exchanges', path: '/admin/operations/exchanges', icon: <RefreshCw size={18} /> },
       ]
     },
     {

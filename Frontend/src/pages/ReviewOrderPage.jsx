@@ -57,7 +57,27 @@ export default function ReviewOrderPage() {
   const [deliveryCharge, setDeliveryCharge] = useState(0);
   const [etd, setEtd] = useState('');
   const [isEstimatingDelivery, setIsEstimatingDelivery] = useState(false);
+  const isAnyModalOpen = isAddressModalOpen || Boolean(feeInfoModal);
 
+  useEffect(() => {
+    if (isAnyModalOpen) {
+      const scrollContainer = document.getElementById('main-scroll-container');
+      const originalBodyOverflow = document.body.style.overflow;
+      const originalContainerOverflow = scrollContainer ? scrollContainer.style.overflow : '';
+
+      document.body.style.overflow = 'hidden';
+      if (scrollContainer) {
+        scrollContainer.style.overflow = 'hidden';
+      }
+
+      return () => {
+        document.body.style.overflow = originalBodyOverflow;
+        if (scrollContainer) {
+          scrollContainer.style.overflow = originalContainerOverflow;
+        }
+      };
+    }
+  }, [isAnyModalOpen]);
 
   // Fetch addresses
   const fetchAddresses = async () => {

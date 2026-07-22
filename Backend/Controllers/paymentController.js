@@ -129,7 +129,7 @@ exports.webhookReceiver = async (req, res) => {
         if (item.variationSku) {
           const variant = (product.variations || []).find(v => v.sku === item.variationSku);
           if (variant) {
-            itemPrice = variant.price || product.sellingPrice;
+            itemPrice = (!variant.useDefaultPricing && variant.sellingPrice !== undefined) ? variant.sellingPrice : product.sellingPrice;
           }
         }
 
@@ -144,6 +144,7 @@ exports.webhookReceiver = async (req, res) => {
           quantity: item.quantity,
           image: (product.images && product.images[0]) || '',
           variationSku: item.variationSku || null,
+          article: product.article || null,
           attributes: item.attributes || {}
         });
       }

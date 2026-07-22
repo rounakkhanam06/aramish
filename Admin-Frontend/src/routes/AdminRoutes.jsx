@@ -44,6 +44,7 @@ import LegalPolicies from '../pages/admin/content/LegalPolicies';
 
 // Operations
 import Returns from '../pages/admin/operations/Returns';
+import Exchanges from '../pages/admin/operations/Exchanges';
 import OrderDetail from '../pages/admin/operations/OrderDetail';
 
 // Support
@@ -82,6 +83,7 @@ const AdminRoutes = () => {
 
         {/* Operations */}
         <Route path="operations/returns" element={<Returns />} />
+        <Route path="operations/exchanges" element={<Exchanges />} />
 
         {/* Support */}
         <Route path="support/tickets" element={<Tickets />} />

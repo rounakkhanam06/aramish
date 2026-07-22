@@ -50,6 +50,7 @@ const AddProduct = () => {
   const [stock, setStock] = useState(1);
   const [discountLabel, setDiscountLabel] = useState('');
   const [sku, setSku] = useState('');
+  const [article, setArticle] = useState('');
   const [categories, setCategories] = useState([]);
   const [subCategoriesMap, setSubCategoriesMap] = useState({});
 
@@ -145,8 +146,9 @@ const AddProduct = () => {
            } else {
              setDiscountLabel('');
            }
-           setSku(p.sku || '');
-          setBrandName(p.brandName || '');
+            setSku(p.sku || '');
+            setArticle(p.article || p.sku || '');
+           setBrandName(p.brandName || '');
           setBrandId(p.brandId && typeof p.brandId === 'object' ? p.brandId._id : (p.brandId || ''));
           setIsTrending(p.isTrending || false);
           setTags(Array.isArray(p.tags) ? p.tags.join(', ') : '');
@@ -261,16 +263,16 @@ const AddProduct = () => {
   }, [subCategoriesMap, subCategory, category]);
 
   const generateSku = (colorStr, sizeStr) => {
-    let base = sku ? sku.toUpperCase() : `ARM-${Math.floor(1000 + Math.random() * 9000)}`;
-    if (base.includes('MNZ')) base = base.replace(/MNZ/g, 'ARM');
-    const colorPart = colorStr ? colorStr.substring(0,3).toUpperCase() : '';
-    const sizePart = sizeStr ? sizeStr.toUpperCase() : '';
-    const parts = [base, colorPart, sizePart].filter(Boolean);
-    if (parts.length === 1 && !base.includes('-')) parts.push(Math.floor(1000 + Math.random() * 9000));
+    if (!article) return '';
+    const parts = [article.trim(), colorStr ? colorStr.trim() : '', sizeStr ? sizeStr.trim() : ''].filter(Boolean);
     return parts.join('-');
   };
 
   const handleGenerateVariants = () => {
+    if (!article) {
+      toast.info('Please enter the Article Number first before generating variants.');
+      return;
+    }
     const colors = generatorColors.split(',').map(c => c.trim()).filter(Boolean);
     const sizes = generatorSizes.split(',').map(s => s.trim()).filter(Boolean);
 
@@ -399,8 +401,8 @@ const AddProduct = () => {
   };
 
   const handleSave = async () => {
-    if (!name || !category || !sellingPrice) {
-      toast.info('Product Name, Category, and Selling Price are required!');
+    if (!name || !category || !sellingPrice || !article) {
+      toast.info('Product Name, Category, Article Number, and Selling Price are required!');
       return;
     }
     
@@ -505,6 +507,7 @@ const AddProduct = () => {
       bodyFormData.append('stock', stock);
       bodyFormData.append('discountLabel', discountLabel ? `-${discountLabel}% OFF` : '');
       bodyFormData.append('sku', sku);
+      bodyFormData.append('article', article);
       bodyFormData.append('hsnCode', hsnCode);
       bodyFormData.append('brandName', brandName || 'Generic');
       bodyFormData.append('brandId', brandId || '');
@@ -747,24 +750,14 @@ const AddProduct = () => {
                 />
               </div>
               <div>
-                <Label>SKU / Product Code</Label>
-                <div className="flex items-center gap-2">
-                  <input 
-                    type="text" 
-                    value={sku}
-                    onChange={e => setSku(e.target.value)}
-                    placeholder="e.g. ARM-001" 
-                    className={inputCls} 
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setSku(`ARM-${Math.floor(1000 + Math.random() * 9000)}`)}
-                    title="Generate Base SKU"
-                    className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl border border-slate-200 transition-colors shrink-0 flex items-center justify-center"
-                  >
-                    <RefreshCw size={18} />
-                  </button>
-                </div>
+                <Label required>Article Number</Label>
+                <input 
+                  type="text" 
+                  value={article}
+                  onChange={e => setArticle(e.target.value)}
+                  placeholder="e.g. RF-101" 
+                  className={inputCls} 
+                />
               </div>
             </div>
           </section>
@@ -1004,20 +997,21 @@ const AddProduct = () => {
                             </td>
                             <td className="px-4 py-3 align-top">
                               {isFirstOfColor ? (
-                                <div className="flex flex-col items-center gap-1.5">
-                                  {v.images && v.images.length > 0 ? (
-                                    <div className="w-12 h-12 rounded border border-slate-200 relative group bg-white">
-                                      <OptimizedImage src={v.images[0]} alt="Variant" type="product" className="w-full h-full object-contain p-0.5 rounded" />
+                                <div className="flex gap-1.5 flex-wrap items-center">
+                                  {v.images && v.images.map((img, imgIdx) => (
+                                    <div key={imgIdx} className="w-10 h-10 rounded border border-slate-200 relative group bg-white">
+                                      <OptimizedImage src={img} alt="Variant" type="product" className="w-full h-full object-contain p-0.5 rounded" />
                                       <button 
-                                        onClick={() => handleRemoveVariantImage(i, 0)}
+                                        onClick={() => handleRemoveVariantImage(i, imgIdx)}
                                         className="absolute -top-1 -right-1 bg-red-500 text-white p-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
                                       >
-                                        <X size={10} />
+                                        <X size={8} />
                                       </button>
                                     </div>
-                                  ) : (
-                                    <label className="w-12 h-12 rounded border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:bg-slate-100 bg-white group">
-                                      <Plus size={14} className="text-slate-400 group-hover:text-slate-600" />
+                                  ))}
+                                  {(!v.images || v.images.length < 3) && (
+                                    <label className="w-10 h-10 rounded border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:bg-slate-100 bg-white group">
+                                      <Plus size={12} className="text-slate-400 group-hover:text-slate-600" />
                                       <input type="file" accept="image/*" className="hidden" onChange={(e) => handleAddVariantImageFile(i, e)} />
                                     </label>
                                   )}

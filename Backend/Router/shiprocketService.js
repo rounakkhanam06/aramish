@@ -217,6 +217,67 @@ const createShiprocketReturnOrder = async (returnData) => {
     }
 };
 
+const createExchangeForwardOrder = async (orderData) => {
+    try {
+        const token = await getShiprocketToken();
+        if (!token) throw new Error('Shiprocket authentication failed');
+
+        const response = await axios.post(`${SHIPROCKET_API_BASE}/v1/external/orders/create/adhoc`, orderData, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Error creating Shiprocket exchange forward order:', error.response?.data || error.message);
+        throw error;
+    }
+};
+
+const cancelShiprocketOrder = async (shiprocketOrderId) => {
+    try {
+        const token = await getShiprocketToken();
+        if (!token) throw new Error('Shiprocket authentication failed');
+
+        const response = await axios.post(`${SHIPROCKET_API_BASE}/v1/external/orders/cancel`, {
+            ids: [shiprocketOrderId]
+        }, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Error cancelling Shiprocket order:', error.response?.data || error.message);
+        // Best-effort, don't throw
+        return null;
+    }
+};
+
+// Webhook status mapping for exchange legs
+const EXCHANGE_WEBHOOK_MAP = {
+    reverse: {
+        'Pickup Scheduled': 'Pickup Scheduled',
+        'Out for Pickup': 'Pickup Scheduled',
+        'Pickup Generated': 'Pickup Scheduled',
+        'Picked Up': 'Old Item Picked Up',
+        'In Transit': 'Old Item Picked Up',
+        'Cancelled': 'Failed',
+        'RTO': 'Failed',
+        'RTO Initiated': 'Manual Review',
+        'NDR': 'Manual Review',
+        'Lost': 'Failed',
+        'Undelivered': 'Manual Review'
+    },
+    forward: {
+        'In Transit': 'Replacement Dispatched',
+        'Out for Delivery': 'Replacement Dispatched',
+        'Delivered': 'Completed',
+        'Cancelled': 'Manual Review',
+        'RTO': 'Manual Review',
+        'RTO Initiated': 'Manual Review',
+        'NDR': 'Manual Review',
+        'Lost': 'Failed',
+        'Undelivered': 'Manual Review'
+    }
+};
+
 module.exports = {
     getShiprocketToken,
     createShiprocketOrder,
@@ -226,5 +287,8 @@ module.exports = {
     generateLabel,
     trackAWB,
     parseCityState,
-    createShiprocketReturnOrder
+    createShiprocketReturnOrder,
+    createExchangeForwardOrder,
+    cancelShiprocketOrder,
+    EXCHANGE_WEBHOOK_MAP
 };
