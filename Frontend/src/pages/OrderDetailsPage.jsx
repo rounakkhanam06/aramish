@@ -195,7 +195,7 @@ export default function OrderDetailsPage() {
     createdAt: orderData.createdAt
   } : null;
 
-  const isDelivered = globalOrder ? globalOrder.status === 'Delivered' : id !== 'ORD-8X92-K1';
+  const isDelivered = globalOrder ? ['Delivered', 'Return Requested', 'Refunded', 'Partially Refunded'].includes(globalOrder.status) : id !== 'ORD-8X92-K1';
 
   // Return request state
   const [showReturnSheet, setShowReturnSheet] = useState(false);
@@ -206,6 +206,14 @@ export default function OrderDetailsPage() {
   const [existingReturn, setExistingReturn] = useState(null);
   const [checkingReturn, setCheckingReturn] = useState(false);
   const [returnImages, setReturnImages] = useState([]);
+
+  // Refund Destination States (Bank / UPI)
+  const [refundMethodOption, setRefundMethodOption] = useState('Wallet'); // 'Wallet' | 'Bank' | 'UPI'
+  const [bankAccountHolder, setBankAccountHolder] = useState('');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankIfscCode, setBankIfscCode] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [upiId, setUpiId] = useState('');
 
   // Exchange states
   const [existingExchange, setExistingExchange] = useState(null);
@@ -547,6 +555,18 @@ export default function OrderDetailsPage() {
     if (returnImages.length < 1) { toast.info('Please upload at least 1 image of the product'); return; }
     if (returnImages.length > 3) { toast.info('You can upload a maximum of 3 images'); return; }
 
+    if (refundMethodOption === 'Bank') {
+      if (!bankAccountHolder.trim() || !bankAccountNumber.trim() || !bankIfscCode.trim()) {
+        toast.info('Please enter Account Holder Name, Account Number and IFSC Code');
+        return;
+      }
+    } else if (refundMethodOption === 'UPI') {
+      if (!upiId.trim() || !upiId.includes('@')) {
+        toast.info('Please enter a valid UPI ID (e.g. name@upi)');
+        return;
+      }
+    }
+
     const token = localStorage.getItem('userToken');
     if (!token) { toast.error('Please login to continue'); return; }
 
@@ -557,6 +577,18 @@ export default function OrderDetailsPage() {
       formData.append('orderId', id);
       formData.append('reason', returnReason);
       formData.append('reasonDetails', returnReasonDetails);
+      formData.append('refundMethod', refundMethodOption === 'Wallet' ? 'Wallet' : 'Bank');
+
+      if (refundMethodOption === 'Bank' || refundMethodOption === 'UPI') {
+        const bankPayload = {
+          accountHolderName: bankAccountHolder.trim() || null,
+          accountNumber: bankAccountNumber.trim() || null,
+          ifscCode: bankIfscCode.trim().toUpperCase() || null,
+          bankName: bankName.trim() || null,
+          upiId: upiId.trim() || null
+        };
+        formData.append('bankDetails', JSON.stringify(bankPayload));
+      }
 
       const itemsPayload = returnSelectedItems.map(item => ({
         productId: item.productId || item.id,
@@ -961,15 +993,25 @@ export default function OrderDetailsPage() {
             <div className="bg-surface rounded-2xl border border-white/10 shadow-3xs overflow-hidden">
               <div className="p-5 border-b border-slate-105 flex items-center justify-between">
                  <div>
-                   <h2 className={`text-base font-black ${existingExchange ? 'text-[#02006c]' : (isDelivered ? 'text-green-700' : 'text-[#0B132B]')} mb-1`}>
+                   <h2 className={`text-base font-black ${existingExchange ? 'text-[#02006c]' : (existingReturn || ['Return Requested', 'Refunded', 'Partially Refunded'].includes(globalOrder?.status) ? 'text-amber-600' : (isDelivered ? 'text-green-700' : 'text-[#0B132B]'))} mb-1`}>
                      {existingExchange 
                        ? getHeaderTitle() 
-                       : (isDelivered ? `Delivered, ${globalOrder?.date || 'Apr 13'}` : (globalOrder?.etd ? `Estimated Delivery: ${globalOrder.etd}` : 'Processing Order'))}
+                       : (existingReturn 
+                           ? `Return ${existingReturn.status}` 
+                           : (globalOrder?.status === 'Return Requested' ? 'Return Requested' :
+                              globalOrder?.status === 'Refunded' ? 'Order Refunded' :
+                              globalOrder?.status === 'Partially Refunded' ? 'Partially Refunded' :
+                              (isDelivered ? `Delivered, ${globalOrder?.date || 'Apr 13'}` : (globalOrder?.etd ? `Estimated Delivery: ${globalOrder.etd}` : 'Processing Order'))))}
                    </h2>
                    {existingExchange ? (
                       <div className="flex items-center gap-1.5 text-xs text-slate-455">
                         <div className="w-1.5 h-1.5 bg-[#02006c] rounded-full animate-pulse"></div>
                         {getHeaderSubtitle()}
+                      </div>
+                    ) : existingReturn ? (
+                      <div className="flex items-center gap-1.5 text-xs text-slate-455">
+                        <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></div>
+                        <span>Reason: {existingReturn.reason} • Refund: ₹{existingReturn.refundAmount}</span>
                       </div>
                     ) : isDelivered ? (
                       <div className="flex items-center gap-1.5 text-xs text-slate-455">
@@ -1028,7 +1070,10 @@ export default function OrderDetailsPage() {
               {/* Return Request Button */}
               {isDelivered && !existingReturn && !checkingReturn && !hasActiveExchange && (
                 <button 
-                  onClick={() => setShowReturnSheet(true)}
+                  onClick={() => {
+                    setReturnSelectedItems(orderItems || []);
+                    setShowReturnSheet(true);
+                  }}
                   className="w-full py-3.5 text-xs font-black text-amber-600 hover:bg-amber-50 active:bg-amber-100 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider border-b border-white/10"
                 >
                   <RotateCcw className="w-4 h-4" />
@@ -1054,23 +1099,7 @@ export default function OrderDetailsPage() {
                 </div>
               )}
 
-              {/* Existing Return Status */}
-              {existingReturn && (
-                <div className="px-5 py-3.5 bg-amber-50/40 border-t border-amber-100 text-xs">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <RotateCcw className="w-4 h-4 text-amber-600" />
-                      <span className="font-black text-amber-700">Return {existingReturn.status}</span>
-                    </div>
-                    <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full border ${
-                      existingReturn.status === 'Refunded' ? 'bg-green-50 text-green-600 border-green-100' :
-                      existingReturn.status === 'Rejected' ? 'bg-red-50 text-red-600 border-red-100' :
-                      'bg-amber-50 text-amber-600 border-amber-100'
-                    }`}>{existingReturn.status}</span>
-                  </div>
-                  <p className="text-amber-600 font-bold mt-1.5">Refund: ₹{existingReturn.refundAmount?.toLocaleString()} • Reason: {existingReturn.reason}</p>
-                </div>
-              )}
+
 
               {globalOrder && ['Pending', 'Processing', 'Shipped'].includes(globalOrder.status) && (
                 <button 
@@ -1278,11 +1307,11 @@ export default function OrderDetailsPage() {
 
               <div className="space-y-3.5 text-xs">
                  <div className="flex justify-between items-center text-slate-600 font-semibold">
-                   <span>Listing price</span>
+                   <span>Actual price</span>
                    <span>₹{orderItems.reduce((acc, curr) => acc + (curr.price * 1.2 * curr.quantity), 0).toFixed(0)}</span>
                  </div>
                  <div className="flex justify-between items-center text-slate-600 font-semibold">
-                   <span className="flex items-center gap-1">Selling price <div className="w-3.5 h-3.5 border border-slate-350 rounded-full flex items-center justify-center text-[8px] font-bold">i</div></span>
+                   <span className="flex items-center gap-1">Discounted price <div className="w-3.5 h-3.5 border border-slate-350 rounded-full flex items-center justify-center text-[8px] font-bold">i</div></span>
                    <span>₹{subtotal}</span>
                  </div>
                  <div className="flex justify-between items-center text-slate-600 font-semibold">
@@ -1290,14 +1319,8 @@ export default function OrderDetailsPage() {
                    <span>₹{gstAmount}</span>
                  </div>
                  <div className="flex justify-between items-center text-slate-600 font-semibold">
-                   <span className="flex items-center gap-1">Total fees <ChevronDown className="w-3.5 h-3.5 text-slate-400" /></span>
+                   <span className="flex items-center gap-1">Platform fee</span>
                    <span>₹{platformCommission}</span>
-                 </div>
-                 <div className="flex justify-between items-center text-slate-600 font-semibold">
-                   <span>Delivery Charges</span>
-                   <span className={deliveryCharge ? "font-bold text-slate-800" : "text-green-600 font-black"}>
-                     {deliveryCharge ? `₹${Number(deliveryCharge).toFixed(2)}` : 'FREE'}
-                   </span>
                  </div>
                  
                  <div className="border-t border-dashed border-white/10 pt-3 flex justify-between items-center text-xs font-semibold text-slate-600">
@@ -1504,6 +1527,89 @@ export default function OrderDetailsPage() {
                 </div>
               </div>
 
+              {/* Refund Method Choice */}
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Refund Destination</p>
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setRefundMethodOption('Wallet')}
+                    className={`p-2.5 rounded-xl border text-center text-xs font-bold transition-all cursor-pointer ${
+                      refundMethodOption === 'Wallet' ? 'border-[#0B132B] bg-[#0B132B] text-white shadow-sm' : 'border-slate-200 bg-surface text-slate-600'
+                    }`}
+                  >
+                    Wallet
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRefundMethodOption('Bank')}
+                    className={`p-2.5 rounded-xl border text-center text-xs font-bold transition-all cursor-pointer ${
+                      refundMethodOption === 'Bank' ? 'border-[#0B132B] bg-[#0B132B] text-white shadow-sm' : 'border-slate-200 bg-surface text-slate-600'
+                    }`}
+                  >
+                    Bank
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRefundMethodOption('UPI')}
+                    className={`p-2.5 rounded-xl border text-center text-xs font-bold transition-all cursor-pointer ${
+                      refundMethodOption === 'UPI' ? 'border-[#0B132B] bg-[#0B132B] text-white shadow-sm' : 'border-slate-200 bg-surface text-slate-600'
+                    }`}
+                  >
+                    UPI ID
+                  </button>
+                </div>
+
+                {refundMethodOption === 'Bank' && (
+                  <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-2.5 text-xs animate-in fade-in duration-200">
+                    <p className="font-bold text-slate-700 text-[11px] uppercase tracking-wider">Enter Bank Details</p>
+                    <input
+                      type="text"
+                      placeholder="Account Holder Name *"
+                      value={bankAccountHolder}
+                      onChange={(e) => setBankAccountHolder(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#0B132B]"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        placeholder="Account Number *"
+                        value={bankAccountNumber}
+                        onChange={(e) => setBankAccountNumber(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#0B132B]"
+                      />
+                      <input
+                        type="text"
+                        placeholder="IFSC Code *"
+                        value={bankIfscCode}
+                        onChange={(e) => setBankIfscCode(e.target.value.toUpperCase())}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#0B132B] uppercase"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Bank Name (Optional)"
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#0B132B]"
+                    />
+                  </div>
+                )}
+
+                {refundMethodOption === 'UPI' && (
+                  <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-2 text-xs animate-in fade-in duration-200">
+                    <p className="font-bold text-slate-700 text-[11px] uppercase tracking-wider">Enter UPI ID</p>
+                    <input
+                      type="text"
+                      placeholder="e.g. 9876543210@paytm / user@okaxis *"
+                      value={upiId}
+                      onChange={(e) => setUpiId(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#0B132B]"
+                    />
+                  </div>
+                )}
+              </div>
+
               {/* Refund summary */}
               {returnSelectedItems.length > 0 && (
                 <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-xs">
@@ -1511,11 +1617,18 @@ export default function OrderDetailsPage() {
                     <span className="font-bold text-green-700">Estimated Refund</span>
                     <span className="text-sm font-black text-green-700">₹{returnSelectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toLocaleString()}</span>
                   </div>
-                  <p className="text-[10px] text-green-600 mt-1 font-semibold">Refund will be credited back to your wallet</p>
+                  <p className="text-[10px] text-green-600 mt-1 font-semibold">
+                    {refundMethodOption === 'Wallet' 
+                      ? 'Refund will be credited back to your wallet' 
+                      : `Refund will be transferred to your specified ${refundMethodOption === 'Bank' ? 'Bank Account' : 'UPI ID'} by admin`}
+                  </p>
                 </div>
               )}
 
               {/* Submit */}
+              {returnSelectedItems.length === 0 && (
+                <p className="text-[10px] text-amber-600 font-bold text-center">Please tap and select at least one item above to return</p>
+              )}
               <button
                 onClick={handleSubmitReturn}
                 disabled={submittingReturn || returnSelectedItems.length === 0 || !returnReason || returnImages.length < 1}

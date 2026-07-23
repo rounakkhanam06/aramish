@@ -64,6 +64,18 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  welcomeBonusGiven: {
+    type: Boolean,
+    default: false
+  },
+  welcomeBonusDate: {
+    type: Date,
+    default: null
+  },
+  welcomeBonusRemaining: {
+    type: Number,
+    default: 0
+  },
   referredBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

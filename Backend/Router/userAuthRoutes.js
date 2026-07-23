@@ -4,7 +4,7 @@ const { sendOtp, verifyOtp, getMe, updateProfile, changePassword, getWallet, upd
 const { protectUser } = require('../Middlewares/userAuthMiddleware');
 const { uploadImage, processImage, handleUploadError } = require('../Middlewares/uploadMiddleware');
 
-const { redeemCoinsToWallet, addTestCoins } = require('../Controllers/walletController');
+const { addTestCoins } = require('../Controllers/walletController');
 
 // Public routes
 router.post('/send-otp', sendOtp);
@@ -15,7 +15,6 @@ router.get('/me', protectUser, getMe);
 router.put('/profile', protectUser, uploadImage, processImage, handleUploadError, updateProfile);
 router.put('/change-password', protectUser, changePassword);
 router.get('/wallet', protectUser, getWallet);
-router.post('/wallet/redeem', protectUser, redeemCoinsToWallet);
 router.post('/wallet/test-coins', protectUser, addTestCoins);
 router.post('/fcm-token', protectUser, updateFcmToken);
 router.delete('/fcm-token', protectUser, removeFcmToken);

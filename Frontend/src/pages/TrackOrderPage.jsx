@@ -9,6 +9,7 @@ export default function TrackOrderPage() {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [exchange, setExchange] = useState(null);
+  const [returnRequest, setReturnRequest] = useState(null);
 
   const [liveTracking, setLiveTracking] = useState(null);
 
@@ -46,6 +47,17 @@ export default function TrackOrderPage() {
           toast.error('Could not fetch order details');
         }
 
+        // Fetch Return details if exists
+        try {
+          const retRes = await fetch(`${apiBase}/returns/by-order/${orderId}`, { headers });
+          const retData = await retRes.json();
+          if (retRes.ok && retData.success && retData.returnRequest) {
+            setReturnRequest(retData.returnRequest);
+          }
+        } catch (e) {
+          console.error('Error fetching return details:', e);
+        }
+
         // Fetch Exchange details if exists
         try {
           const exRes = await fetch(`${apiBase}/exchanges/by-order/${orderId}`, { headers });
@@ -77,8 +89,8 @@ export default function TrackOrderPage() {
     </div>;
   }
 
-  const isDelivered = order.status === 'Delivered';
-  const isCancelled = order.status === 'Cancelled';
+  const isDelivered = ['Delivered', 'Return Requested', 'Refunded', 'Partially Refunded'].includes(order.status);
+  const isCancelled = order.status === 'Cancelled' && !returnRequest;
   const trackingHistory = order.trackingHistory || [];
 
   // Helper to find step completion & date inside exchange timeline
@@ -228,7 +240,7 @@ export default function TrackOrderPage() {
         status: 'completed'
       }))
     ];
-  } else if (trackingHistory.length > 0) {
+  } else if (trackingHistory.length > 0 && !returnRequest && !['Return Requested', 'Refunded', 'Partially Refunded'].includes(order.status)) {
     steps = [
       { id: 'placed', title: 'Order Placed', desc: 'We have received your order', date: new Date(order.createdAt).toLocaleString(), icon: CheckCircle2, status: 'completed' },
       ...trackingHistory.map((history, idx) => ({
@@ -244,10 +256,53 @@ export default function TrackOrderPage() {
     steps = [
       { id: 1, title: 'Order Placed', desc: 'We have received your order', date: new Date(order.createdAt).toLocaleString(), icon: CheckCircle2, status: 'completed' },
       { id: 2, title: 'Order Processed', desc: 'Your order is being prepared', date: '', icon: Package, status: order.status !== 'Pending' ? 'completed' : 'pending' },
-      { id: 3, title: 'Shipped', desc: 'Your item has been shipped', date: '', icon: Truck, status: ['Shipped', 'Out for Delivery', 'Delivered'].includes(order.status) ? 'completed' : (order.status === 'Processing' ? 'active' : 'pending') },
+      { id: 3, title: 'Shipped', desc: 'Your item has been shipped', date: '', icon: Truck, status: (isDelivered || ['Shipped', 'Out for Delivery', 'Delivered'].includes(order.status)) ? 'completed' : (order.status === 'Processing' ? 'active' : 'pending') },
       { id: 4, title: 'Out for Delivery', desc: 'Delivery partner is on the way', date: '', icon: MapPin, status: isDelivered ? 'completed' : (order.status === 'Out for Delivery' ? 'active' : 'pending') },
       { id: 5, title: 'Delivered', desc: 'Package arrived', date: '', icon: Home, status: isDelivered ? 'completed' : 'pending' },
     ];
+
+    if (returnRequest || ['Return Requested', 'Refunded', 'Partially Refunded'].includes(order.status)) {
+      const rStatus = returnRequest?.status || order.status;
+      const isReqCompleted = true;
+      const isAppCompleted = ['Approved', 'Pick-up Scheduled', 'Received', 'Refunded'].includes(rStatus);
+      const isPickupCompleted = ['Pick-up Scheduled', 'Received', 'Refunded'].includes(rStatus);
+      const isRefundCompleted = rStatus === 'Refunded';
+
+      steps.push(
+        { 
+          id: 6, 
+          title: 'Return Requested', 
+          desc: returnRequest?.reason ? `Reason: ${returnRequest.reason}` : 'Return request submitted', 
+          date: returnRequest?.createdAt ? new Date(returnRequest.createdAt).toLocaleString() : '', 
+          icon: CheckCircle2, 
+          status: isAppCompleted ? 'completed' : 'active' 
+        },
+        { 
+          id: 7, 
+          title: 'Return Approved', 
+          desc: 'Your return request was reviewed and approved.', 
+          date: '', 
+          icon: Package, 
+          status: isPickupCompleted ? 'completed' : (isAppCompleted ? 'active' : 'pending') 
+        },
+        { 
+          id: 8, 
+          title: 'Pickup Scheduled / Collected', 
+          desc: returnRequest?.courierName ? `Courier: ${returnRequest.courierName}` : 'Item pickup by courier partner', 
+          date: '', 
+          icon: Truck, 
+          status: isRefundCompleted ? 'completed' : (isPickupCompleted ? 'active' : 'pending') 
+        },
+        { 
+          id: 9, 
+          title: 'Refund Processed', 
+          desc: returnRequest?.refundMethod === 'Bank' ? 'Refund transferred to Bank/UPI' : 'Refund credited to Aramish Wallet', 
+          date: '', 
+          icon: CheckCircle2, 
+          status: isRefundCompleted ? 'completed' : 'pending' 
+        }
+      );
+    }
   }
 
   // Estimated delivery based on order ETD, live tracking, or fallback
@@ -301,10 +356,14 @@ export default function TrackOrderPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">
-                {exchange ? 'Exchange Status' : (isCancelled ? 'Order Status' : 'Estimated Delivery')}
+                {exchange ? 'Exchange Status' : (returnRequest || ['Return Requested', 'Refunded', 'Partially Refunded'].includes(order.status) ? 'Return Status' : (isCancelled ? 'Order Status' : 'Estimated Delivery'))}
               </p>
               <p className={`text-base md:text-lg font-black ${exchange ? (exchange.status === 'Failed' || exchange.status === 'Rejected' ? 'text-red-650' : 'text-[#02006c]') : (isCancelled ? 'text-red-600' : 'text-[#02006c]')}`}>
-                {exchange ? getExchangeHeaderTitle() : (isCancelled ? 'Cancelled' : estDeliveryDate.toDateString())}
+                {exchange ? getExchangeHeaderTitle() : (
+                  returnRequest || ['Return Requested', 'Refunded', 'Partially Refunded'].includes(order.status)
+                    ? (order.status === 'Refunded' ? 'Refund Processed' : 'Return in Progress')
+                    : (isCancelled ? 'Cancelled' : estDeliveryDate.toDateString())
+                )}
               </p>
               {exchange && (
                 <p className="text-[11px] text-slate-450 font-semibold mt-1">

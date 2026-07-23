@@ -22,6 +22,22 @@ const orderSchema = new mongoose.Schema({
       attributes: { type: Map, of: String, default: {} }
     }
   ],
+  subtotal: {
+    type: Number,
+    default: 0
+  },
+  discountAmount: {
+    type: Number,
+    default: 0
+  },
+  gstAmount: {
+    type: Number,
+    default: 0
+  },
+  platformCommission: {
+    type: Number,
+    default: 0
+  },
   total: {
     type: Number,
     required: true
@@ -51,6 +67,10 @@ const orderSchema = new mongoose.Schema({
     default: 0
   },
   walletUsed: {
+    type: Number,
+    default: 0
+  },
+  welcomeCoinsUsed: {
     type: Number,
     default: 0
   },

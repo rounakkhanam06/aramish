@@ -189,6 +189,33 @@ const verifyOtp = async (req, res) => {
       }
     }
 
+    // Welcome Bonus Check (Only Once)
+    if (!user.welcomeBonusGiven) {
+      try {
+        const SystemConfig = require('../Models/SystemConfig');
+        const WalletTransaction = require('../Models/WalletTransaction');
+        
+        const config = await SystemConfig.findOne({});
+        const welcomeAmount = config && config.welcomeBonusCoins !== undefined ? config.welcomeBonusCoins : 1000;
+        
+        user.walletBalance = (user.walletBalance || 0) + welcomeAmount;
+        user.welcomeBonusRemaining = (user.welcomeBonusRemaining || 0) + welcomeAmount;
+        user.welcomeBonusGiven = true;
+        user.welcomeBonusDate = new Date();
+        
+        await WalletTransaction.create({
+          userId: user._id,
+          type: 'Welcome Bonus',
+          amount: welcomeAmount,
+          description: 'Welcome Bonus Credited'
+        });
+        
+        console.log(`🎁 Welcome bonus of ${welcomeAmount} credited to user ${user._id}`);
+      } catch (wbErr) {
+        console.error('❌ Error processing welcome bonus:', wbErr.message);
+      }
+    }
+
     await user.save();
 
     const token = generateToken(user._id, user.phone, user.tokenVersion);
@@ -361,6 +388,7 @@ const getWallet = async (req, res) => {
       success: true,
       coins: user.referralCoins || 0,
       walletBalance: user.walletBalance || 0,
+      welcomeBonusRemaining: user.welcomeBonusRemaining || 0,
       coinTransactions: coinTransactions.map(t => ({
         id: t._id,
         type: t.type,

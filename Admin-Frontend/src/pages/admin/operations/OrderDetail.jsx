@@ -455,41 +455,76 @@ const OrderDetail = () => {
                     </div>
                   ))}
                </div>
-               <div className="p-8 bg-slate-50/50 border-t border-slate-100 space-y-3">
-                  <div className="flex justify-between text-xs font-bold text-slate-400 uppercase tracking-widest">
-                     <span>Payment Mode</span>
-                     <span className="text-slate-900 uppercase">{order.paymentMethod}</span>
-                  </div>
-                  <div className="flex justify-between text-xs font-bold text-slate-400 uppercase tracking-widest">
-                     <span>Payment Status</span>
-                     <div className="flex items-center gap-2">
-                        <span className="text-slate-900 uppercase font-black">{order.paymentStatus}</span>
-                        <select
-                          value={order.paymentStatus}
-                          onChange={(e) => handleUpdatePaymentStatus(e.target.value)}
-                          className="bg-white border border-slate-200 text-slate-800 text-[10px] font-bold px-2 py-1 rounded-lg focus:outline-none"
-                        >
-                          <option value="Pending">Pending</option>
-                          <option value="Paid">Paid</option>
-                          <option value="Failed">Failed</option>
-                        </select>
-                     </div>
-                  </div>
-                  <div className="flex justify-between text-xs font-bold text-slate-400 uppercase tracking-widest">
-                     <span>Delivery Charges</span>
-                     <span className="text-slate-900">₹{(order.deliveryCharge || 0).toLocaleString()}</span>
-                  </div>
-                  {order.couponCode && (
-                    <div className="flex justify-between text-xs font-bold text-indigo-500 bg-indigo-50/50 px-3 py-2 rounded-xl border border-indigo-100/50">
-                       <span className="uppercase">Coupon Used</span>
-                       <span className="font-black">{order.couponCode}</span>
-                    </div>
-                  )}
-                  <div className="pt-4 border-t border-slate-100 flex justify-between items-center">
-                     <p className="text-sm font-black text-slate-900 font-montserrat uppercase tracking-widest">Order Total</p>
-                     <p className="text-2xl font-black text-blue-600 font-roboto">₹{order.total.toLocaleString()}</p>
-                  </div>
-               </div>
+               <div className="p-8 bg-slate-50/50 border-t border-slate-100 space-y-2.5">
+                   <div className="flex justify-between text-xs font-bold text-slate-400 uppercase tracking-widest">
+                      <span>Payment Mode</span>
+                      <span className="text-slate-900 uppercase font-black">{order.paymentMethod}</span>
+                   </div>
+                   <div className="flex justify-between text-xs font-bold text-slate-400 uppercase tracking-widest">
+                      <span>Payment Status</span>
+                      <div className="flex items-center gap-2">
+                         <span className="text-slate-900 uppercase font-black">{order.paymentStatus}</span>
+                         <select
+                           value={order.paymentStatus}
+                           onChange={(e) => handleUpdatePaymentStatus(e.target.value)}
+                           className="bg-white border border-slate-200 text-slate-800 text-[10px] font-bold px-2 py-1 rounded-lg focus:outline-none cursor-pointer"
+                         >
+                           <option value="Pending">Pending</option>
+                           <option value="Paid">Paid</option>
+                           <option value="Failed">Failed</option>
+                           <option value="Refunded">Refunded</option>
+                         </select>
+                      </div>
+                   </div>
+
+                   <div className="border-t border-slate-200/60 pt-3 space-y-2">
+                      <div className="flex justify-between text-xs font-bold text-slate-500">
+                         <span>Items Subtotal</span>
+                         <span>₹{(order.subtotal || order.items.reduce((s, i) => s + (i.price * i.quantity), 0)).toLocaleString()}</span>
+                      </div>
+
+                      {!!order.discountAmount && order.discountAmount > 0 && (
+                         <div className="flex justify-between text-xs font-bold text-emerald-600">
+                            <span>Coupon Discount {order.couponCode ? `(${order.couponCode})` : ''}</span>
+                            <span>- ₹{Number(order.discountAmount).toLocaleString()}</span>
+                         </div>
+                      )}
+
+                      {!!order.gstAmount && order.gstAmount > 0 && (
+                         <div className="flex justify-between text-xs font-semibold text-slate-400">
+                            <span>GST / Taxes</span>
+                            <span>+ ₹{Number(order.gstAmount).toLocaleString()}</span>
+                         </div>
+                      )}
+
+                      {!!order.platformCommission && order.platformCommission > 0 && (
+                         <div className="flex justify-between text-xs font-semibold text-slate-400">
+                            <span>Platform Fee</span>
+                            <span>+ ₹{Number(order.platformCommission).toLocaleString()}</span>
+                         </div>
+                      )}
+
+                      <div className="flex justify-between text-xs font-semibold text-slate-400">
+                         <span>Delivery Charges</span>
+                         <span>+ ₹{(order.deliveryCharge || 0).toLocaleString()}</span>
+                      </div>
+
+                      {!!order.walletUsed && order.walletUsed > 0 && (
+                         <div className="flex justify-between text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200/60">
+                            <span>Wallet / Coins Deducted</span>
+                            <span>- ₹{Number(order.walletUsed).toLocaleString()}</span>
+                         </div>
+                      )}
+                   </div>
+
+                   <div className="pt-3 border-t border-slate-200 flex justify-between items-center">
+                      <div>
+                         <p className="text-xs font-black text-slate-900 font-montserrat uppercase tracking-widest">Net Payable / Amount Paid</p>
+                         <p className="text-[10px] text-slate-400 font-medium">Final customer payment amount</p>
+                      </div>
+                      <p className="text-2xl font-black text-blue-600 font-roboto">₹{order.total.toLocaleString()}</p>
+                   </div>
+                </div>
             </div>
 
             {/* Logistics Actions (Shiprocket) */}

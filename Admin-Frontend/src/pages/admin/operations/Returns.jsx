@@ -5,7 +5,7 @@ import {
   DollarSign, Package, User, Calendar,
   AlertCircle, ChevronRight, X, Truck,
   ArrowRight, RefreshCw, Ban, Eye,
-  ChevronLeft, ChevronDown
+  ChevronLeft, ChevronDown, Landmark
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -108,7 +108,16 @@ const Returns = () => {
     if (!token) return;
 
     // Confirmation for important actions
-    if (newStatus === 'Refunded' && !window.confirm('Process refund? This will restore stock and credit the customer wallet.')) return;
+    if (newStatus === 'Refunded') {
+      const isBankOrUpi = selectedReturn.refundMethod === 'Bank' || (selectedReturn.bankDetails && (selectedReturn.bankDetails.accountNumber || selectedReturn.bankDetails.upiId));
+      const amountToRefund = editRefundAmount || selectedReturn.refundAmount || 0;
+      
+      const confirmMsg = isBankOrUpi
+        ? `Have you manually transferred ₹${amountToRefund} to the customer's ${selectedReturn.bankDetails?.upiId ? 'UPI ID' : 'Bank Account'}?\n\nClick OK to confirm payment and mark as Refunded.`
+        : `Process refund of ₹${amountToRefund}? This will restore stock and credit the customer's wallet.`;
+
+      if (!window.confirm(confirmMsg)) return;
+    }
     if (newStatus === 'Rejected' && !window.confirm('Reject this return request?')) return;
 
     try {
@@ -188,13 +197,16 @@ const Returns = () => {
     const map = {
       'Requested': [
         { label: 'Approve', status: 'Approved', icon: CheckCircle2, color: 'bg-blue-500 hover:bg-blue-600 text-white shadow-lg shadow-blue-100' },
+        { label: 'Process Refund Directly', status: 'Refunded', icon: DollarSign, color: 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-100' },
         { label: 'Reject', status: 'Rejected', icon: Ban, color: 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-100' }
       ],
       'Approved': [
-        { label: 'Schedule Pickup', status: 'Pick-up Scheduled', icon: Truck, color: 'bg-indigo-500 hover:bg-indigo-600 text-white shadow-lg shadow-indigo-100' }
+        { label: 'Schedule Pickup', status: 'Pick-up Scheduled', icon: Truck, color: 'bg-indigo-500 hover:bg-indigo-600 text-white shadow-lg shadow-indigo-100' },
+        { label: 'Process Refund Directly', status: 'Refunded', icon: DollarSign, color: 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-100' }
       ],
       'Pick-up Scheduled': [
-        { label: 'Mark Received', status: 'Received', icon: Package, color: 'bg-purple-500 hover:bg-purple-600 text-white shadow-lg shadow-purple-100' }
+        { label: 'Mark Received', status: 'Received', icon: Package, color: 'bg-purple-500 hover:bg-purple-600 text-white shadow-lg shadow-purple-100' },
+        { label: 'Process Refund Directly', status: 'Refunded', icon: DollarSign, color: 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-100' }
       ],
       'Received': [
         { label: 'Process Refund', status: 'Refunded', icon: DollarSign, color: 'bg-green-500 hover:bg-green-600 text-white shadow-lg shadow-green-100' }
@@ -518,7 +530,7 @@ const Returns = () => {
                         <DollarSign size={16} className="text-green-600" />
                         <p className="text-[10px] font-black text-green-800 uppercase tracking-widest">Refund Amount</p>
                       </div>
-                      {selectedReturn.status === 'Received' ? (
+                      {!['Refunded', 'Rejected'].includes(selectedReturn.status) ? (
                         <div className="flex items-center gap-3">
                           <span className="text-xs font-bold text-green-700">₹</span>
                           <input
@@ -531,8 +543,43 @@ const Returns = () => {
                       ) : (
                         <p className="text-2xl font-black text-green-800 font-roboto">₹{selectedReturn.refundAmount?.toLocaleString()}</p>
                       )}
-                      <p className="text-[10px] text-green-600 font-medium">Method: {selectedReturn.refundMethod === 'Wallet' ? 'Wallet Credit' : 'Original Payment'}</p>
+                      <p className="text-[10px] text-green-600 font-medium">Method: {selectedReturn.refundMethod === 'Wallet' ? 'Wallet Credit' : selectedReturn.refundMethod === 'Bank' ? 'Bank / UPI Transfer' : 'Original Payment'}</p>
                     </div>
+
+                    {/* Customer Bank / UPI Details for Manual Transfer */}
+                    {selectedReturn.bankDetails && (selectedReturn.bankDetails.accountNumber || selectedReturn.bankDetails.upiId) && (
+                      <div className="bg-blue-50/70 p-5 rounded-2xl border border-blue-100 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Landmark size={16} className="text-blue-600" />
+                          <p className="text-[10px] font-black text-blue-900 uppercase tracking-widest">Customer Bank / UPI Details (For Manual Refund)</p>
+                        </div>
+                        {selectedReturn.bankDetails.upiId ? (
+                          <div className="bg-white p-3.5 rounded-xl border border-blue-100">
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">UPI ID</p>
+                            <p className="text-sm font-black text-blue-700 font-mono mt-0.5">{selectedReturn.bankDetails.upiId}</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-3 text-xs bg-white p-3.5 rounded-xl border border-blue-100">
+                            <div>
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Account Holder</p>
+                              <p className="font-bold text-slate-800 mt-0.5">{selectedReturn.bankDetails.accountHolderName || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Bank Name</p>
+                              <p className="font-bold text-slate-800 mt-0.5">{selectedReturn.bankDetails.bankName || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Account Number</p>
+                              <p className="font-black text-slate-900 font-mono mt-0.5">{selectedReturn.bankDetails.accountNumber || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">IFSC Code</p>
+                              <p className="font-black text-blue-700 font-mono mt-0.5">{selectedReturn.bankDetails.ifscCode || 'N/A'}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Shiprocket Logistics Details */}
                     {selectedReturn.shiprocketReturnOrderId && (

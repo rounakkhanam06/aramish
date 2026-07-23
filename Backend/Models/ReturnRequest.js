@@ -43,8 +43,15 @@ const returnRequestSchema = new mongoose.Schema({
   },
   refundMethod: {
     type: String,
-    enum: ['Original', 'Wallet'],
+    enum: ['Original', 'Wallet', 'Bank'],
     default: 'Original'
+  },
+  bankDetails: {
+    accountHolderName: { type: String, default: null },
+    accountNumber: { type: String, default: null },
+    ifscCode: { type: String, default: null },
+    bankName: { type: String, default: null },
+    upiId: { type: String, default: null }
   },
   adminNotes: {
     type: String,
@@ -58,6 +65,7 @@ const returnRequestSchema = new mongoose.Schema({
   shiprocketReturnShipmentId: { type: String, default: null },
   awbCode: { type: String, default: null },
   courierName: { type: String, default: null },
+  walletRefundProcessed: { type: Boolean, default: false },
   pickupScheduled: { type: Boolean, default: false }
 }, { timestamps: true });
 

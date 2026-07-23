@@ -30,6 +30,7 @@ const updateSettings = async (req, res) => {
     const fields = [
       'platformName', 'supportEmail', 'helpline', 'currency',
       'commission', 'gstNo', 'gstPercentage',
+      'welcomeBonusCoins', 'marqueeEnabled', 'walletEnabled',
       'coinConversionEnabled', 'coinsPerRupee', 'minimumRedeemCoins', 'maximumRedeemPerOrder',
       'crazyDealsHeaderName', 'showCrazyDealsTimer', 'crazyDealsDuration',
       'featuredCollectionHeaderName', 'showFeaturedCollectionTimer', 'featuredCollectionDuration',
@@ -40,10 +41,10 @@ const updateSettings = async (req, res) => {
       if (req.body[f] !== undefined) {
         if ([
           'commission', 'gstPercentage', 'coinsPerRupee', 'minimumRedeemCoins', 'maximumRedeemPerOrder',
-          'crazyDealsDuration', 'featuredCollectionDuration', 'newArrivalsDuration'
+          'welcomeBonusCoins', 'crazyDealsDuration', 'featuredCollectionDuration', 'newArrivalsDuration'
         ].includes(f)) {
           config[f] = Number(req.body[f]);
-        } else if (['coinConversionEnabled', 'showCrazyDealsTimer', 'showFeaturedCollectionTimer', 'showNewArrivalsTimer'].includes(f)) {
+        } else if (['coinConversionEnabled', 'marqueeEnabled', 'walletEnabled', 'showCrazyDealsTimer', 'showFeaturedCollectionTimer', 'showNewArrivalsTimer'].includes(f)) {
           config[f] = req.body[f] === true || req.body[f] === 'true';
         } else {
           config[f] = req.body[f];

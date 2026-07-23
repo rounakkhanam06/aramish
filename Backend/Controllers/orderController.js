@@ -220,54 +220,51 @@ exports.createOrder = async (req, res) => {
 
     const finalCalculatedTotal = Math.max(0, calculatedSubtotal - discountAmount + gstAmount + platformCommission + calculatedDeliveryCharge);
 
-    // Coins Redemption
-    if (redeemCoins) {
-      const user = await User.findById(req.user._id, null, sessionOpt);
-      if (user && user.referralCoins > 0) {
-        coinsRedeemedAmount = Math.min(user.referralCoins, finalCalculatedTotal);
-        if (coinsRedeemedAmount > 0) {
-          user.referralCoins -= coinsRedeemedAmount;
-          await user.save(sessionOpt);
-          coinsDeducted = true;
-
-          const CoinTransaction = require('../Models/CoinTransaction');
-          await CoinTransaction.create([{
-            userId: req.user._id,
-            type: 'spent',
-            title: 'Redeemed at Checkout',
-            amount: coinsRedeemedAmount
-          }], sessionOpt);
-        }
-      }
-    }
-
-    // Wallet Cash Redemption (new flow)
+    // Wallet Cash Redemption (Capped welcome bonus + other balance)
     walletDeducted = false;
     walletUsedAmount = 0;
+    let welcomeCoinsUsed = 0;
+
+    const welcomeBonusCoins = systemConfig && systemConfig.welcomeBonusCoins !== undefined ? systemConfig.welcomeBonusCoins : 1000;
+    const limitPerOrder = welcomeBonusCoins / 4;
+
     if (redeemWallet) {
       const user = await User.findById(req.user._id, null, sessionOpt);
       if (user && user.walletBalance > 0) {
-        const remainingToPay = Math.max(0, finalCalculatedTotal - coinsRedeemedAmount);
-        walletUsedAmount = Math.min(user.walletBalance, remainingToPay);
+        // Welcome bonus cap of W / 4
+        const maxWelcomeCoinsToUse = Math.min(limitPerOrder, user.welcomeBonusRemaining || 0);
+        // The rest of the balance can be fully used
+        const otherBalanceToUse = Math.max(0, user.walletBalance - (user.welcomeBonusRemaining || 0));
+        const totalUsableWallet = maxWelcomeCoinsToUse + otherBalanceToUse;
+        
+        walletUsedAmount = Math.min(totalUsableWallet, finalCalculatedTotal);
         walletUsedAmount = Number(walletUsedAmount.toFixed(2));
+        
         if (walletUsedAmount > 0) {
+          // Determine how much of the used amount came from the welcome bonus
+          welcomeCoinsUsed = Math.min(walletUsedAmount, maxWelcomeCoinsToUse);
+          
           user.walletBalance -= walletUsedAmount;
           user.walletBalance = Number(user.walletBalance.toFixed(2));
+          
+          user.welcomeBonusRemaining = (user.welcomeBonusRemaining || 0) - welcomeCoinsUsed;
+          user.welcomeBonusRemaining = Number(user.welcomeBonusRemaining.toFixed(2));
+          
           await user.save(sessionOpt);
           walletDeducted = true;
 
           const WalletTransaction = require('../Models/WalletTransaction');
           await WalletTransaction.create([{
             userId: req.user._id,
-            type: 'Payment',
+            type: 'ORDER_REDEMPTION',
             amount: walletUsedAmount,
-            description: `Used for Order Checkout`
+            description: `Used for Order Checkout (Welcome points: ${welcomeCoinsUsed}, Other: ${(walletUsedAmount - welcomeCoinsUsed).toFixed(2)})`
           }], sessionOpt);
         }
       }
     }
 
-    const finalPayableTotal = Math.max(0, finalCalculatedTotal - coinsRedeemedAmount - walletUsedAmount);
+    const finalPayableTotal = Math.max(0, finalCalculatedTotal - walletUsedAmount);
 
     // 6. Verify Razorpay payment if paymentMethod is Online
     if (paymentMethod === 'Online') {
@@ -318,9 +315,14 @@ exports.createOrder = async (req, res) => {
     const orderData = {
       userId: req.user._id,
       items: validatedItems,
+      subtotal: calculatedSubtotal,
+      discountAmount,
+      gstAmount,
+      platformCommission,
       total: finalPayableTotal,
       coinsRedeemed: coinsRedeemedAmount,
       walletUsed: walletUsedAmount,
+      welcomeCoinsUsed,
       deliveryAddress,
       paymentMethod,
       paymentStatus: paymentMethod === 'Online' ? 'Paid' : 'Pending',
@@ -473,23 +475,12 @@ exports.createOrder = async (req, res) => {
           );
         }
       }
-
-      if (coinsDeducted && coinsRedeemedAmount > 0) {
-        await User.findByIdAndUpdate(req.user._id, {
-          $inc: { referralCoins: coinsRedeemedAmount }
-        });
-        const CoinTransaction = require('../Models/CoinTransaction');
-        await CoinTransaction.create({
-          userId: req.user._id,
-          type: 'earned',
-          title: 'Refund: Checkout Failure Rollback',
-          amount: coinsRedeemedAmount
-        });
-      }
-
       if (walletDeducted && walletUsedAmount > 0) {
         await User.findByIdAndUpdate(req.user._id, {
-          $inc: { walletBalance: walletUsedAmount }
+          $inc: { 
+            walletBalance: walletUsedAmount,
+            welcomeBonusRemaining: welcomeCoinsUsed || 0
+          }
         });
         const WalletTransaction = require('../Models/WalletTransaction');
         await WalletTransaction.create({

@@ -13,7 +13,7 @@ exports.createReturnRequest = async (req, res) => {
   try {
     const { orderId, items, reason, reasonDetails, images } = req.body;
 
-    if (!orderId || !items || items.length === 0 || !reason) {
+    if (!orderId || !items || !reason) {
       return res.status(400).json({ success: false, message: 'orderId, items, and reason are required' });
     }
 
@@ -58,6 +58,17 @@ exports.createReturnRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: 'A return request already exists for this order' });
     }
 
+    let parsedItems = [];
+    try {
+      parsedItems = typeof items === 'string' ? JSON.parse(items) : items;
+    } catch (e) {
+      return res.status(400).json({ success: false, message: 'Invalid items format' });
+    }
+
+    if (!Array.isArray(parsedItems) || parsedItems.length === 0) {
+      return res.status(400).json({ success: false, message: 'Items list cannot be empty' });
+    }
+
     // Validate return items and calculate refund amount securely (H-04 return amount security, M-13 return item validation)
     let calculatedRefundAmount = 0;
     const validatedReturnItems = [];
@@ -93,6 +104,22 @@ exports.createReturnRequest = async (req, res) => {
     // Cap the refund amount by the total amount paid on the order
     const refundAmount = Math.min(calculatedRefundAmount, order.total);
 
+    let imagePaths = [];
+    if (req.processedFiles && req.processedFiles.length > 0) {
+      imagePaths = req.processedFiles.map(f => f.url);
+    } else if (req.files && req.files.length > 0) {
+      imagePaths = req.files.map(f => `/uploads/${f.filename || f.originalname}`);
+    }
+
+    let parsedBankDetails = null;
+    if (req.body.bankDetails) {
+      try {
+        parsedBankDetails = typeof req.body.bankDetails === 'string' ? JSON.parse(req.body.bankDetails) : req.body.bankDetails;
+      } catch (e) {
+        parsedBankDetails = null;
+      }
+    }
+
     const returnRequest = await ReturnRequest.create({
       orderId,
       userId: req.user._id,
@@ -100,6 +127,8 @@ exports.createReturnRequest = async (req, res) => {
       reason,
       reasonDetails: reasonDetails || '',
       refundAmount,
+      refundMethod: req.body.refundMethod || (parsedBankDetails ? 'Bank' : 'Original'),
+      bankDetails: parsedBankDetails,
       images: imagePaths,
       status: 'Requested'
     });
@@ -324,10 +353,10 @@ exports.updateReturnStatus = async (req, res) => {
 
     // Validate status transitions
     const validTransitions = {
-      'Requested': ['Approved', 'Rejected'],
-      'Approved': ['Pick-up Scheduled'],
-      'Pick-up Scheduled': ['Received'],
-      'Received': ['Refunded']
+      'Requested': ['Approved', 'Rejected', 'Refunded'],
+      'Approved': ['Pick-up Scheduled', 'Received', 'Refunded', 'Rejected'],
+      'Pick-up Scheduled': ['Received', 'Refunded', 'Rejected'],
+      'Received': ['Refunded', 'Rejected']
     };
 
     const allowed = validTransitions[returnRequest.status];
@@ -484,55 +513,95 @@ exports.updateReturnStatus = async (req, res) => {
         }
       }
 
-      // 2. Process Refund (Razorpay online or Coins wallet fallback)
-      let refundProcessedOnline = false;
-      
-      if (order && order.paymentMethod === 'Online' && order.paymentId) {
-        const rzpKeyId = process.env.RAZORPAY_KEY_ID;
-        const rzpKeySecret = process.env.RAZORPAY_KEY_SECRET;
+      // 2. INDEPENDENT WALLET COINS REFUND: Restore redeemed wallet coins to user's wallet
+      if (order.walletUsed && order.walletUsed > 0 && !returnRequest.walletRefundProcessed) {
+        const WalletTransaction = require('../Models/WalletTransaction');
+        
+        const SystemConfig = require('../Models/SystemConfig');
+        const systemConfig = await SystemConfig.findOne({});
+        const welcomeBonusCoins = systemConfig && systemConfig.welcomeBonusCoins !== undefined ? systemConfig.welcomeBonusCoins : 1000;
+        
+        const currentUser = await User.findById(returnRequest.userId);
+        const coinsToRestore = order.welcomeCoinsUsed !== undefined && order.welcomeCoinsUsed !== null ? order.welcomeCoinsUsed : (order.walletUsed || 0);
+        const restoredWelcomeRemaining = Math.min(welcomeBonusCoins, (currentUser?.welcomeBonusRemaining || 0) + coinsToRestore);
 
-        if (rzpKeyId && rzpKeySecret) {
-          try {
-            const rzpAuth = Buffer.from(`${rzpKeyId}:${rzpKeySecret}`).toString('base64');
-            await axios.post(`https://api.razorpay.com/v1/payments/${order.paymentId}/refund`, {
-              amount: returnRequest.refundAmount * 100
-            }, {
-              headers: {
-                'Authorization': `Basic ${rzpAuth}`,
-                'Content-Type': 'application/json'
-              }
-            });
-            refundProcessedOnline = true;
-            console.log(`Razorpay refund processed successfully for payment: ${order.paymentId}`);
-          } catch (refundErr) {
-            console.error('Razorpay refund API call failed, falling back to coins store credit:', refundErr.response?.data || refundErr.message);
+        await User.findByIdAndUpdate(returnRequest.userId, {
+          $inc: {
+            walletBalance: order.walletUsed
+          },
+          $set: {
+            welcomeBonusRemaining: restoredWelcomeRemaining
           }
+        });
+
+        await WalletTransaction.create({
+          userId: returnRequest.userId,
+          type: 'REFUND',
+          amount: order.walletUsed,
+          description: `Restored ${order.walletUsed} Wallet Coins for Returned Order #${order._id.toString().substring(order._id.toString().length - 6).toUpperCase()}`
+        });
+
+        returnRequest.walletRefundProcessed = true;
+        console.log(`✅ Restored ${order.walletUsed} wallet coins for returned order: ${order._id}`);
+      }
+
+      // 3. INDEPENDENT PAYMENT REFUND: Process Cash / Paid Amount Refund (Razorpay online or store credit fallback)
+      let refundProcessedOnline = false;
+      const cashRefundAmount = Number(returnRequest.refundAmount) || 0;
+      
+      if (cashRefundAmount > 0) {
+        if (order && order.paymentMethod === 'Online' && order.paymentId) {
+          const rzpKeyId = process.env.RAZORPAY_KEY_ID;
+          const rzpKeySecret = process.env.RAZORPAY_KEY_SECRET;
+
+          if (rzpKeyId && rzpKeySecret) {
+            try {
+              const rzpAuth = Buffer.from(`${rzpKeyId}:${rzpKeySecret}`).toString('base64');
+              await axios.post(`https://api.razorpay.com/v1/payments/${order.paymentId}/refund`, {
+                amount: Math.round(cashRefundAmount * 100)
+              }, {
+                headers: {
+                  'Authorization': `Basic ${rzpAuth}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              refundProcessedOnline = true;
+              console.log(`Razorpay refund processed successfully for payment: ${order.paymentId}`);
+            } catch (refundErr) {
+              console.error('Razorpay refund API call failed, falling back to coins store credit:', refundErr.response?.data || refundErr.message);
+            }
+          }
+        }
+
+        // Only add cash refund to wallet balance if customer specifically chose 'Wallet' as their refund destination
+        const isWalletSelected = returnRequest.refundMethod === 'Wallet';
+
+        if (!refundProcessedOnline && isWalletSelected) {
+          const WalletTransaction = require('../Models/WalletTransaction');
+          await WalletTransaction.create({
+            userId: returnRequest.userId,
+            type: 'Refund',
+            amount: cashRefundAmount,
+            description: `Cash Refund for Return #${returnRequest._id.toString().substring(returnRequest._id.toString().length - 6).toUpperCase()}`
+          });
+
+          // Update the User document's walletBalance
+          await User.findByIdAndUpdate(returnRequest.userId, {
+            $inc: { walletBalance: cashRefundAmount }
+          });
+          console.log(`✅ Credited cash refund of ₹${cashRefundAmount} to wallet balance (Refund method: Wallet)`);
+        } else if (!refundProcessedOnline) {
+          console.log(`ℹ️ Cash refund of ₹${cashRefundAmount} processed manually via ${returnRequest.refundMethod || 'Bank/UPI'} - skipped wallet credit.`);
         }
       }
 
-      if (!refundProcessedOnline) {
-        const WalletTransaction = require('../Models/WalletTransaction');
-        await WalletTransaction.create({
-          userId: returnRequest.userId,
-          type: 'Refund',
-          amount: returnRequest.refundAmount,
-          description: `Refund for Return #${returnRequest._id.toString().substring(returnRequest._id.toString().length - 6).toUpperCase()}`
-        });
-
-        // Update the User document's walletBalance
-        await User.findByIdAndUpdate(returnRequest.userId, {
-          $inc: { walletBalance: returnRequest.refundAmount }
-        });
-      }
-
-      // 3. Update order
+      // 4. Update order status
       if (order) {
-        // Check if all items are returned
         const returnedQty = returnRequest.items.reduce((sum, i) => sum + i.quantity, 0);
         const orderQty = order.items.reduce((sum, i) => sum + i.quantity, 0);
         
         if (returnedQty >= orderQty) {
-          order.status = 'Cancelled'; // Full return
+          order.status = 'Refunded'; // Full return
           order.paymentStatus = 'Refunded';
         } else {
           order.paymentStatus = 'Partially Refunded';

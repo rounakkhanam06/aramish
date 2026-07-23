@@ -117,6 +117,7 @@ input::-ms-clear {
 .marquee-container {
   overflow: hidden;
   white-space: nowrap;
+  display: flex;
 }
 
 .animate-marquee {

@@ -96,27 +96,27 @@ const handleOrderCancellationRefunds = async (order) => {
 
   // 1. Refund wallet balance if wallet was used
   if (order.walletUsed && order.walletUsed > 0) {
+    const SystemConfig = require('../Models/SystemConfig');
+    const systemConfig = await SystemConfig.findOne({});
+    const welcomeBonusCoins = systemConfig && systemConfig.welcomeBonusCoins !== undefined ? systemConfig.welcomeBonusCoins : 1000;
+    
+    const currentUser = await User.findById(order.userId);
+    const coinsToRestore = order.welcomeCoinsUsed !== undefined && order.welcomeCoinsUsed !== null ? order.welcomeCoinsUsed : (order.walletUsed || 0);
+    const restoredWelcomeRemaining = Math.min(welcomeBonusCoins, (currentUser?.welcomeBonusRemaining || 0) + coinsToRestore);
+
     await User.findByIdAndUpdate(order.userId, {
-      $inc: { walletBalance: order.walletUsed }
+      $inc: { 
+        walletBalance: order.walletUsed
+      },
+      $set: {
+        welcomeBonusRemaining: restoredWelcomeRemaining
+      }
     });
     await WalletTransaction.create({
       userId: order.userId,
-      type: 'Order Cancellation',
+      type: 'REFUND',
       amount: order.walletUsed,
-      description: `Refund for Cancelled Order #${order._id.toString().substring(order._id.toString().length - 6).toUpperCase()}`
-    });
-  }
-
-  // 2. Refund referral coins if coins were redeemed
-  if (order.coinsRedeemed && order.coinsRedeemed > 0) {
-    await User.findByIdAndUpdate(order.userId, {
-      $inc: { referralCoins: order.coinsRedeemed }
-    });
-    await CoinTransaction.create({
-      userId: order.userId,
-      type: 'earned',
-      title: 'Refund: Cancelled Order',
-      amount: order.coinsRedeemed
+      description: `Restored ${order.walletUsed} Wallet Coins for Cancelled Order #${order._id.toString().substring(order._id.toString().length - 6).toUpperCase()}`
     });
   }
 

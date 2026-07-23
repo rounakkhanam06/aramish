@@ -30,6 +30,9 @@ const Settings = () => {
   const [coinsPerRupee, setCoinsPerRupee] = useState(100);
   const [minimumRedeemCoins, setMinimumRedeemCoins] = useState(500);
   const [maximumRedeemPerOrder, setMaximumRedeemPerOrder] = useState(10000);
+  const [welcomeBonusCoins, setWelcomeBonusCoins] = useState(1000);
+  const [marqueeEnabled, setMarqueeEnabled] = useState(true);
+  const [walletEnabled, setWalletEnabled] = useState(true);
 
   // Homepage Deals states
   const [crazyDealsHeaderName, setCrazyDealsHeaderName] = useState('Crazy Deals');
@@ -100,6 +103,9 @@ const Settings = () => {
         setCoinsPerRupee(s.coinsPerRupee ?? 100);
         setMinimumRedeemCoins(s.minimumRedeemCoins ?? 500);
         setMaximumRedeemPerOrder(s.maximumRedeemPerOrder ?? 10000);
+        setWelcomeBonusCoins(s.welcomeBonusCoins ?? 1000);
+        setMarqueeEnabled(s.marqueeEnabled ?? true);
+        setWalletEnabled(s.walletEnabled ?? true);
 
         setCrazyDealsHeaderName(s.crazyDealsHeaderName ?? 'Crazy Deals');
         setShowCrazyDealsTimer(s.showCrazyDealsTimer ?? true);
@@ -237,7 +243,10 @@ const Settings = () => {
             coinConversionEnabled,
             coinsPerRupee: Number(coinsPerRupee),
             minimumRedeemCoins: Number(minimumRedeemCoins),
-            maximumRedeemPerOrder: Number(maximumRedeemPerOrder)
+            maximumRedeemPerOrder: Number(maximumRedeemPerOrder),
+            welcomeBonusCoins: Number(welcomeBonusCoins),
+            marqueeEnabled: Boolean(marqueeEnabled),
+            walletEnabled: Boolean(walletEnabled)
           })
         });
         const settingsData = await settingsRes.json();
@@ -585,24 +594,47 @@ const Settings = () => {
                   <div className="space-y-8 animate-in fade-in duration-300">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       <div className="space-y-2">
-                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Coins Per Rupee (e.g. 100)</label>
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Welcome Bonus Coins</label>
                         <input 
                           type="number" 
-                          value={coinsPerRupee}
-                          onChange={e => setCoinsPerRupee(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
-                          required 
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Minimum Redeem Coins</label>
-                        <input 
-                          type="number" 
-                          value={minimumRedeemCoins}
-                          onChange={e => setMinimumRedeemCoins(e.target.value)}
+                          value={welcomeBonusCoins}
+                          onChange={e => setWelcomeBonusCoins(e.target.value)}
                           className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
                           required 
                         />
+                      </div>
+                    </div>
+
+                    {/* Features Toggle Panel */}
+                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-5">
+                      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Features Control</h3>
+                      
+                      <div className="flex flex-col gap-4">
+                        <div className="flex items-center gap-3">
+                          <input 
+                            type="checkbox" 
+                            id="marqueeEnabled" 
+                            checked={marqueeEnabled}
+                            onChange={e => setMarqueeEnabled(e.target.checked)}
+                            className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-50 cursor-pointer"
+                          />
+                          <label htmlFor="marqueeEnabled" className="text-xs font-bold text-slate-700 select-none cursor-pointer">
+                            Show Scrolling Marquee Banner on Website
+                          </label>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <input 
+                            type="checkbox" 
+                            id="walletEnabled" 
+                            checked={walletEnabled}
+                            onChange={e => setWalletEnabled(e.target.checked)}
+                            className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-50 cursor-pointer"
+                          />
+                          <label htmlFor="walletEnabled" className="text-xs font-bold text-slate-700 select-none cursor-pointer">
+                            Enable Wallet Feature on Checkout Screen
+                          </label>
+                        </div>
                       </div>
                     </div>
                   </div>

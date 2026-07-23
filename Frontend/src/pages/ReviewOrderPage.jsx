@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, MapPin, Tag, Banknote, ShieldCheck, X, CheckCircle2, Plus, Coins, Landmark } from 'lucide-react';
+import { ArrowLeft, MapPin, Tag, Banknote, ShieldCheck, X, CheckCircle2, Plus, Coins, Landmark, ChevronDown } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import toast from '../utils/toast';
 import OptimizedImage from '../components/ui/OptimizedImage';
@@ -44,6 +44,7 @@ export default function ReviewOrderPage() {
   const [userCoins, setUserCoins] = useState(0);
   const [redeemWallet, setRedeemWallet] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
+  const [welcomeBonusRemaining, setWelcomeBonusRemaining] = useState(0);
   const [coinsConfig, setCoinsConfig] = useState({
     coinsPerRupee: 100,
     maximumRedeemPerOrder: 10000
@@ -51,6 +52,7 @@ export default function ReviewOrderPage() {
   
   // Payment states
   const [paymentMethod, setPaymentMethod] = useState('COD'); // 'COD' | 'ONLINE'
+  const [isPaymentDropdownOpen, setIsPaymentDropdownOpen] = useState(false);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
   // Shipping estimate states
@@ -119,6 +121,7 @@ export default function ReviewOrderPage() {
           if (data.success) {
             setUserCoins(data.coins || 0);
             setWalletBalance(data.walletBalance || 0);
+            setWelcomeBonusRemaining(data.welcomeBonusRemaining || 0);
           }
         } catch (err) {
           console.error("Error fetching user coins:", err);
@@ -500,7 +503,12 @@ export default function ReviewOrderPage() {
   const gstAmount = Math.round(Math.max(0, totalCartPrice - discountAmount) * (gstPercentage / 100));
   const grandTotalBeforeCoins = Math.max(0, totalCartPrice - discountAmount + gstAmount + platformCommission + deliveryCharge);
   
-  const walletUsedAmount = redeemWallet ? Math.min(walletBalance, grandTotalBeforeCoins) : 0;
+  const welcomeBonusCoins = systemSettings?.welcomeBonusCoins ?? 1000;
+  const limitPerOrder = welcomeBonusCoins / 4;
+  const maxWelcomeCoinsToUse = Math.min(limitPerOrder, welcomeBonusRemaining || 0);
+  const otherBalanceToUse = Math.max(0, walletBalance - (welcomeBonusRemaining || 0));
+  const totalUsableWallet = maxWelcomeCoinsToUse + otherBalanceToUse;
+  const walletUsedAmount = redeemWallet ? Math.min(totalUsableWallet, grandTotalBeforeCoins) : 0;
   const grandTotal = Math.max(0, grandTotalBeforeCoins - walletUsedAmount);
 
   const firstItem = cart && cart.length > 0 ? cart[0] : null;
@@ -606,19 +614,18 @@ export default function ReviewOrderPage() {
 
           {/* Promo Code Input Block */}
           <div>
-            <div className="flex items-center gap-2 mb-2 px-1 text-[#02006c]">
-              <Tag className="w-4 h-4" />
-              <h2 className="text-xs font-black uppercase tracking-wide">Promo Code / Coupons</h2>
-            </div>
-            <div className="bg-surface rounded-2xl p-4 shadow-3xs border border-white/10 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-500">Apply Coupon</span>
-                {appliedCoupon && (
-                  <span className="text-[10px] text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
-                    Active
-                  </span>
-                )}
+            <div className="flex items-center justify-between mb-2 px-1">
+              <div className="flex items-center gap-2 text-[#02006c]">
+                <Tag className="w-4 h-4 text-emerald-500" />
+                <h2 className="text-xs font-black uppercase tracking-wide">Promo Code / Coupons</h2>
               </div>
+              {appliedCoupon && (
+                <span className="text-[9px] text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
+                  Active
+                </span>
+              )}
+            </div>
+            <div className="bg-surface rounded-2xl p-3 shadow-3xs border border-white/10 flex flex-col gap-1.5">
               <div className="flex gap-2">
                 <div className="relative flex-grow">
                   <input 
@@ -693,71 +700,103 @@ export default function ReviewOrderPage() {
           </div>
 
           {/* Aramish Wallet Cash Redemption */}
-          {walletBalance > 0 && (
+          {walletBalance > 0 && systemSettings?.walletEnabled !== false && (
             <div>
               <div className="flex items-center gap-2 mb-2 px-1 text-[#02006c]">
                 <Landmark className="w-4 h-4 text-emerald-500" />
                 <h2 className="text-xs font-black uppercase tracking-wide">Aramish Wallet Cash</h2>
               </div>
-              <div className="bg-surface rounded-2xl p-4 shadow-3xs border border-white/10 flex items-center justify-between">
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-slate-800">Use Wallet Balance</span>
-                  <span className="text-[10px] text-slate-500 font-medium mt-0.5">
-                    Available Balance: <span className="font-bold text-slate-700">₹{walletBalance.toFixed(2)}</span>
-                  </span>
-                  {redeemWallet && (
-                    <span className="text-[10px] text-emerald-600 font-bold mt-1">
-                      Paying ₹{walletUsedAmount.toFixed(2)} from wallet!
+              <div className="bg-surface rounded-2xl p-4 shadow-3xs border border-white/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-800">Use Wallet Balance</span>
+                    <span className="text-[10px] text-slate-500 font-medium mt-0.5">
+                      Available Balance: <span className="font-bold text-slate-700">₹{walletBalance.toFixed(2)}</span>
                     </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setRedeemWallet(!redeemWallet)}
-                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    redeemWallet ? 'bg-emerald-500' : 'bg-surface'
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out ${
-                      redeemWallet ? 'translate-x-5' : 'translate-x-0'
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRedeemWallet(!redeemWallet)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      redeemWallet ? 'bg-emerald-500' : 'bg-slate-200'
                     }`}
-                  />
-                </button>
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out ${
+                        redeemWallet ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+                
+                {redeemWallet && (
+                  <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-600">
+                    <div>
+                      <p>Coins to use: <span className="text-emerald-600">₹{walletUsedAmount.toFixed(2)}</span></p>
+                    </div>
+                    <div>
+                      <p>Remaining Wallet: <span className="text-slate-700">₹{(walletBalance - walletUsedAmount).toFixed(2)}</span></p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* Payment Method Selected Tabs */}
-          <div className="bg-surface rounded-2xl shadow-3xs border border-white/10 p-4">
-            <div className="flex items-center gap-2 mb-3 text-[#02006c]">
-              <Banknote className="w-4 h-4" />
-              <h2 className="text-xs font-black uppercase tracking-wide">Select Payment Method</h2>
-            </div>
-            <div className="flex gap-3">
-              <button 
-                type="button"
-                onClick={() => setPaymentMethod('COD')}
-                className={`flex-1 py-3.5 px-2.5 rounded-xl border transition-all text-center flex flex-col items-center justify-center cursor-pointer ${
-                  paymentMethod === 'COD' 
-                    ? 'border-[#0B132B] bg-gold/10 text-[#0B132B] shadow-3xs' 
-                    : 'border-white/10 bg-surface text-slate-600 hover:bg-surface'
-                }`}
-              >
-                <span className="text-xs font-black">Cash on Delivery</span>
-              </button>
-              <button 
-                type="button"
-                onClick={() => setPaymentMethod('ONLINE')}
-                className={`flex-1 py-3.5 px-2.5 rounded-xl border transition-all text-center flex flex-col items-center justify-center cursor-pointer ${
-                  paymentMethod === 'ONLINE' 
-                    ? 'border-[#0B132B] bg-gold/10 text-[#0B132B] shadow-3xs' 
-                    : 'border-white/10 bg-surface text-slate-600 hover:bg-surface'
-                }`}
-              >
-                <span className="text-xs font-black">Pay Online (Razorpay)</span>
-              </button>
-            </div>
+          {/* Payment Method Selected Dropdown */}
+          <div className="bg-surface rounded-2xl shadow-3xs border border-white/10 overflow-hidden">
+            <button 
+              type="button"
+              onClick={() => setIsPaymentDropdownOpen(!isPaymentDropdownOpen)}
+              className="w-full flex items-center justify-between p-4 text-left cursor-pointer hover:bg-slate-50 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-[#02006c]">
+                <Banknote className="w-4 h-4 text-emerald-500" />
+                <span className="text-xs font-black uppercase tracking-wide">Select Payment Mode</span>
+                <span className="text-[11px] font-bold text-slate-500 lowercase ml-1">
+                  (Selected: {paymentMethod === 'COD' ? 'Cash on Delivery' : 'Online'})
+                </span>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isPaymentDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isPaymentDropdownOpen && (
+              <div className="p-4 border-t border-slate-100 bg-[#fafafa] flex flex-col gap-2.5 animate-fade-in">
+                {/* Cash on Delivery option */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMethod('COD');
+                    setIsPaymentDropdownOpen(false);
+                  }}
+                  className={`w-full p-3.5 rounded-xl border text-left flex items-center justify-between cursor-pointer transition-all bg-white ${
+                    paymentMethod === 'COD'
+                      ? 'border-[#0B132B] text-[#0B132B] font-black shadow-3xs'
+                      : 'border-white/10 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="text-xs">Cash on Delivery</span>
+                  {paymentMethod === 'COD' && <span className="w-2 h-2 rounded-full bg-[#0B132B]" />}
+                </button>
+
+                {/* Online Payment option */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMethod('ONLINE');
+                    setIsPaymentDropdownOpen(false);
+                  }}
+                  className={`w-full p-3.5 rounded-xl border text-left flex items-center justify-between cursor-pointer transition-all bg-white ${
+                    paymentMethod === 'ONLINE'
+                      ? 'border-[#0B132B] text-[#0B132B] font-black shadow-3xs'
+                      : 'border-white/10 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="text-xs">Online</span>
+                  {paymentMethod === 'ONLINE' && <span className="w-2 h-2 rounded-full bg-[#0B132B]" />}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -811,8 +850,18 @@ export default function ReviewOrderPage() {
               )}
             </div>
             
+            <div className="border-t border-white/10 pt-3.5 flex justify-between items-center text-xs font-bold text-slate-700">
+              <span>Total Price</span>
+              <span>₹{Number(grandTotalBeforeCoins).toFixed(2)}</span>
+            </div>
+            {redeemWallet && walletUsedAmount > 0 && (
+              <div className="flex justify-between items-center text-xs font-bold text-emerald-600">
+                <span>Wallet Deduction</span>
+                <span>- ₹{Number(walletUsedAmount).toFixed(2)}</span>
+              </div>
+            )}
             <div className="border-t border-white/10 pt-3.5 flex justify-between items-center text-base font-black text-[#02006c]">
-              <span>Total Amount</span>
+              <span>Net Payable</span>
               <span>₹{Number(grandTotal).toFixed(2)}</span>
             </div>
           </div>
