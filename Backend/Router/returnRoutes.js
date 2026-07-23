@@ -11,10 +11,12 @@ const {
   getReturnByOrderId
 } = require('../Controllers/returnController');
 
+const { uploadImages, processImages, handleUploadError } = require('../Middlewares/uploadMiddleware');
+
 // User routes
 router.route('/')
   .get(protectUser, getUserReturns)
-  .post(protectUser, createReturnRequest);
+  .post(protectUser, uploadImages, processImages, handleUploadError, createReturnRequest);
 
 router.get('/by-order/:orderId', protectUser, getReturnByOrderId);
 

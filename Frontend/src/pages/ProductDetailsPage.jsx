@@ -1344,15 +1344,6 @@ export default function ProductDetailsPage() {
                   </div>
                 )}
                 
-                {/* Dynamic Guidelines */}
-                {product.sizeChart.howToMeasure && (
-                  <div className="bg-surface p-4 pb-12 mt-1 h-full">
-                    <h4 className="font-bold text-slate-900 text-sm mb-3">Measurement Guidelines:</h4>
-                    <p className="text-sm text-slate-800 whitespace-pre-wrap leading-snug">
-                      {product.sizeChart.howToMeasure}
-                    </p>
-                  </div>
-                )}
               </>
             ) : (
               <>
@@ -1402,35 +1393,20 @@ export default function ProductDetailsPage() {
                   </table>
                 </div>
 
-                {/* Fallback Measurement Guidelines */}
-                <div className="bg-surface p-4 pb-12 mt-1 h-full">
-                  <h4 className="font-bold text-slate-900 text-sm mb-3">Measurement Guidelines:</h4>
-                  <p className="text-sm text-slate-800 mb-2 leading-snug">
-                    <span className="font-bold">Measuring T Shirt Size</span> Not sure about your t shirt size? Follow these simple steps to figure it out:
-                  </p>
-                  <ul className="text-sm text-slate-800 space-y-2 leading-snug">
-                    <li><span className="font-bold">Shoulder</span> - Measure the shoulder at the back, from edge to edge with arms relaxed on both sides</li>
-                    <li><span className="font-bold">Chest</span> - Measure around the body under the arms at the fullest part of the chest with your arms relaxed at both sides.</li>
-                    <li><span className="font-bold">Sleeve</span> - Measure from the shoulder seam through the outer arm to the cuff/hem</li>
-                    <li><span className="font-bold">Neck</span> - Measured horizontally across the neck Length - Measure from the highest point of the shoulder seam to the bottom hem of the garment's</li>
-                  </ul>
-                  
-                  <div className="mt-6 flex justify-center bg-surface rounded-lg p-3 max-w-[280px] mx-auto border border-white/10">
-                    <svg viewBox="0 0 200 150" className="w-full h-auto text-slate-800" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M60,40 Q100,20 140,40 L180,90 L160,110 L140,90 L140,150 L60,150 L60,90 L40,110 L20,90 Z" />
-                      <path strokeDasharray="4 4" d="M100,30 L100,150" stroke="#0B132B" />
-                      <path strokeDasharray="4 4" d="M60,90 L140,90" stroke="#0B132B" />
-                      <path strokeDasharray="4 4" d="M60,40 L140,40" stroke="#0B132B" />
-                      <path strokeDasharray="4 4" d="M40,65 L80,65" stroke="#0B132B" />
-                      <text x="90" y="20" fontSize="8" fill="currentColor" stroke="none">NECK</text>
-                      <text x="130" y="35" fontSize="8" fill="currentColor" stroke="none">SHOULDER</text>
-                      <text x="95" y="100" fontSize="8" fill="currentColor" stroke="none">CHEST</text>
-                      <text x="25" y="125" fontSize="8" fill="currentColor" stroke="none">SLEEVE</text>
-                    </svg>
-                  </div>
-                </div>
               </>
             )}
+
+            {/* Static Footwear Measurement Guidelines */}
+            <div className="bg-surface p-5 pb-12 mt-2 h-full border-t border-slate-100">
+              <h4 className="font-black text-slate-900 text-lg mb-1">How to Measure</h4>
+              <p className="text-sm text-slate-600 mb-8 leading-relaxed">
+                Here is a guide to help with your body measurements and choose the right size.
+              </p>
+              
+              <div className="mt-4 flex justify-center bg-white rounded-2xl p-6 max-w-[340px] mx-auto border border-slate-100 shadow-sm">
+                <img src="/Gemini_Generated_Image_nusnywnusnywnusn (1).png" alt="How to Measure" className="w-full h-auto object-contain" />
+              </div>
+            </div>
           </div>
         </div>
       )}

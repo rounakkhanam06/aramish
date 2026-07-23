@@ -62,7 +62,7 @@ exports.createReturnRequest = async (req, res) => {
     let calculatedRefundAmount = 0;
     const validatedReturnItems = [];
 
-    for (const returnItem of items) {
+    for (const returnItem of parsedItems) {
       if (!returnItem.productId || !returnItem.quantity || returnItem.quantity <= 0) {
         return res.status(400).json({ success: false, message: 'Invalid product or quantity in return request' });
       }
@@ -100,7 +100,7 @@ exports.createReturnRequest = async (req, res) => {
       reason,
       reasonDetails: reasonDetails || '',
       refundAmount,
-      images: images || [],
+      images: imagePaths,
       status: 'Requested'
     });
 

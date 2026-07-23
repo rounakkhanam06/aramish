@@ -100,4 +100,11 @@ input, textarea, select {
   height: 100%;
   object-fit: contain;
   object-position: center;
-}
+}
+
+/* Hide native browser password reveal and clear buttons */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}
+

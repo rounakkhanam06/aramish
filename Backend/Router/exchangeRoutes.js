@@ -18,10 +18,12 @@ const {
 // Webhook — no auth (must come before any auth middleware)
 router.post('/webhook/shiprocket', handleExchangeWebhook);
 
+const { uploadImages, processImages, handleUploadError } = require('../Middlewares/uploadMiddleware');
+
 // User routes
 router.route('/')
   .get(protectUser, getUserExchanges)
-  .post(protectUser, createExchangeRequest);
+  .post(protectUser, uploadImages, processImages, handleUploadError, createExchangeRequest);
 
 router.get('/by-order/:orderId', protectUser, getExchangeByOrderId);
 

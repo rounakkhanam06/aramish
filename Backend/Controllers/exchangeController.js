@@ -37,8 +37,40 @@ exports.createExchangeRequest = async (req, res) => {
   try {
     const { orderId, originalItem, requestedVariant, reason, comments, images } = req.body;
 
-    if (!orderId || !originalItem || !requestedVariant || !reason) {
+    let parsedOriginalItem = originalItem;
+    if (typeof originalItem === 'string') {
+      try {
+        parsedOriginalItem = JSON.parse(originalItem);
+      } catch (err) {
+        return res.status(400).json({ success: false, message: 'Invalid originalItem format' });
+      }
+    }
+
+    let parsedRequestedVariant = requestedVariant;
+    if (typeof requestedVariant === 'string') {
+      try {
+        parsedRequestedVariant = JSON.parse(requestedVariant);
+      } catch (err) {
+        return res.status(400).json({ success: false, message: 'Invalid requestedVariant format' });
+      }
+    }
+
+    if (!orderId || !parsedOriginalItem || !parsedRequestedVariant || !reason) {
       return res.status(400).json({ success: false, message: 'orderId, originalItem, requestedVariant, and reason are required' });
+    }
+
+    let imagePaths = [];
+    if (req.processedFiles && req.processedFiles.length > 0) {
+      imagePaths = req.processedFiles.map(f => f.url);
+    } else if (images) {
+      imagePaths = Array.isArray(images) ? images : (typeof images === 'string' ? JSON.parse(images) : []);
+    }
+
+    if (!imagePaths || imagePaths.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one product image is required for exchange request' });
+    }
+    if (imagePaths.length > 3) {
+      return res.status(400).json({ success: false, message: 'You can upload a maximum of 3 product images' });
     }
 
     const order = await Order.findById(orderId);
@@ -71,23 +103,23 @@ exports.createExchangeRequest = async (req, res) => {
 
     // Validate original item belongs to the order
     const orderItem = order.items.find(i =>
-      i.productId.toString() === originalItem.productId &&
-      (originalItem.variationSku ? i.variationSku === originalItem.variationSku : true)
+      i.productId.toString() === parsedOriginalItem.productId &&
+      (parsedOriginalItem.variationSku ? i.variationSku === parsedOriginalItem.variationSku : true)
     );
     if (!orderItem) {
       return res.status(400).json({ success: false, message: 'Original item not found in this order' });
     }
 
     // Same variant validation
-    if (originalItem.variationSku && requestedVariant.sku === originalItem.variationSku) {
+    if (parsedOriginalItem.variationSku && parsedRequestedVariant.sku === parsedOriginalItem.variationSku) {
       return res.status(400).json({ success: false, message: 'Requested variant must be different from the current variant' });
     }
 
     // Fetch product to validate requested variant
-    const product = await Product.findById(requestedVariant.productId || originalItem.productId);
+    const product = await Product.findById(parsedRequestedVariant.productId || parsedOriginalItem.productId);
     if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
 
-    const reqVariant = product.variations.find(v => v.sku === requestedVariant.sku);
+    const reqVariant = product.variations.find(v => v.sku === parsedRequestedVariant.sku);
     if (!reqVariant) {
       return res.status(400).json({ success: false, message: 'Requested variant not found' });
     }
@@ -97,7 +129,7 @@ exports.createExchangeRequest = async (req, res) => {
 
     const exchange = await ExchangeRequest.create({
       orderId,
-      userId: req.user._id,
+      userId:  req.user._id,
       originalItem: {
         productId:    orderItem.productId,
         variationSku: orderItem.variationSku || null,
@@ -105,8 +137,8 @@ exports.createExchangeRequest = async (req, res) => {
         price:        orderItem.price,
         quantity:     1,
         image:        orderItem.image || '',
-        color:        orderItem.attributes?.get?.('color') || originalItem.color || '',
-        size:         orderItem.attributes?.get?.('size') || originalItem.size || ''
+        color:        orderItem.attributes?.get?.('color') || parsedOriginalItem.color || '',
+        size:         orderItem.attributes?.get?.('size') || parsedOriginalItem.size || ''
       },
       requestedVariant: {
         productId: product._id,
@@ -119,8 +151,8 @@ exports.createExchangeRequest = async (req, res) => {
       priceDifference,
       reason,
       comments: comments || '',
-      images: images || [],
-      status: 'Requested'
+      images:   imagePaths,
+      status:   'Requested'
     });
 
     // Add initial timeline entry

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Copy, CheckCircle2, Star, MapPin, Receipt, Download, ChevronDown, PenLine, X, Package, Image as ImageIcon, Video, RotateCcw, AlertCircle, Loader2, Check, ArrowLeftRight, ArrowRight, Home, Truck } from 'lucide-react';
+import { ArrowLeft, Copy, CheckCircle2, Star, MapPin, Receipt, Download, ChevronDown, PenLine, X, Package, Image as ImageIcon, Video, RotateCcw, AlertCircle, Loader2, Check, ArrowLeftRight, ArrowRight, Home, Truck, Camera } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import toast from '../utils/toast';
@@ -205,10 +205,42 @@ export default function OrderDetailsPage() {
   const [submittingReturn, setSubmittingReturn] = useState(false);
   const [existingReturn, setExistingReturn] = useState(null);
   const [checkingReturn, setCheckingReturn] = useState(false);
+  const [returnImages, setReturnImages] = useState([]);
 
   // Exchange states
   const [existingExchange, setExistingExchange] = useState(null);
   const [checkingExchange, setCheckingExchange] = useState(false);
+  const [exchangeImages, setExchangeImages] = useState([]);
+
+  const handleReturnImageChange = (e) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files);
+      if (returnImages.length + files.length > 3) {
+        toast.info('You can upload a maximum of 3 images');
+        return;
+      }
+      setReturnImages(prev => [...prev, ...files]);
+    }
+  };
+
+  const handleRemoveReturnImage = (index) => {
+    setReturnImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleExchangeImageChange = (e) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files);
+      if (exchangeImages.length + files.length > 3) {
+        toast.info('You can upload a maximum of 3 images');
+        return;
+      }
+      setExchangeImages(prev => [...prev, ...files]);
+    }
+  };
+
+  const handleRemoveExchangeImage = (index) => {
+    setExchangeImages(prev => prev.filter((_, i) => i !== index));
+  };
   const hasActiveExchange = existingExchange && (
     !['Failed', 'Rejected', 'Cancelled'].includes(existingExchange.status) || 
     (existingExchange.status === 'Failed' && (existingExchange.retryCount || 0) < 3)
@@ -402,6 +434,9 @@ export default function OrderDetailsPage() {
   const handleSubmitExchange = async () => {
     if (!exchangeReason) { toast.info('Select a reason for exchange'); return; }
     if (!exchangeSelectedVariant) { toast.info('Select a replacement size/color'); return; }
+    if (exchangeImages.length < 1) { toast.info('Please upload at least 1 image of the product'); return; }
+    if (exchangeImages.length > 3) { toast.info('You can upload a maximum of 3 images'); return; }
+
     const token = localStorage.getItem('userToken');
     if (!token) { toast.error('Please login'); return; }
     const orderItem = globalOrder?.items?.[0];
@@ -409,38 +444,48 @@ export default function OrderDetailsPage() {
     try {
       setSubmittingExchange(true);
       const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const formData = new FormData();
+      formData.append('orderId', id);
+      formData.append('reason', exchangeReason);
+      formData.append('comments', exchangeComments);
+      
+      const originalItemPayload = {
+        productId: orderItem.productId,
+        variationSku: orderItem.variationSku || null,
+        name: orderItem.name,
+        price: orderItem.price,
+        image: orderItem.image || '',
+        color: orderItem.attributes?.color || '',
+        size: orderItem.attributes?.size || '',
+        quantity: 1
+      };
+      formData.append('originalItem', JSON.stringify(originalItemPayload));
+
+      const requestedVariantPayload = {
+        productId: orderItem.productId,
+        sku: exchangeSelectedVariant.sku,
+        color: exchangeSelectedVariant.color,
+        size: exchangeSelectedVariant.size,
+        image: (exchangeSelectedVariant.images && exchangeSelectedVariant.images[0]) || exchangeProduct.images?.[0] || '',
+        price: exchangeSelectedVariant.sellingPrice || exchangeProduct.sellingPrice || 0
+      };
+      formData.append('requestedVariant', JSON.stringify(requestedVariantPayload));
+
+      exchangeImages.forEach(file => {
+        formData.append('images', file);
+      });
+
       const res = await fetch(`${apiBase}/exchanges`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          orderId: id,
-          originalItem: {
-            productId: orderItem.productId,
-            variationSku: orderItem.variationSku || null,
-            name: orderItem.name,
-            price: orderItem.price,
-            image: orderItem.image || '',
-            color: orderItem.attributes?.color || '',
-            size: orderItem.attributes?.size || '',
-            quantity: 1
-          },
-          requestedVariant: {
-            productId: orderItem.productId,
-            sku: exchangeSelectedVariant.sku,
-            color: exchangeSelectedVariant.color,
-            size: exchangeSelectedVariant.size,
-            image: (exchangeSelectedVariant.images && exchangeSelectedVariant.images[0]) || exchangeProduct.images?.[0] || '',
-            price: exchangeSelectedVariant.sellingPrice || exchangeProduct.sellingPrice || 0
-          },
-          reason: exchangeReason,
-          comments: exchangeComments
-        })
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
       });
       const data = await res.json();
       if (res.ok && data.success) {
         toast.success('Exchange request submitted!');
         setShowExchangeSheet(false);
         setExistingExchange(data.exchangeRequest);
+        setExchangeImages([]);
         fetchOrderDetails(false);
       } else {
         toast.error(data.message || 'Exchange request failed');
@@ -499,6 +544,8 @@ export default function OrderDetailsPage() {
   const handleSubmitReturn = async () => {
     if (returnSelectedItems.length === 0) { toast.info('Select at least one item to return'); return; }
     if (!returnReason) { toast.info('Select a reason for return'); return; }
+    if (returnImages.length < 1) { toast.info('Please upload at least 1 image of the product'); return; }
+    if (returnImages.length > 3) { toast.info('You can upload a maximum of 3 images'); return; }
 
     const token = localStorage.getItem('userToken');
     if (!token) { toast.error('Please login to continue'); return; }
@@ -506,21 +553,28 @@ export default function OrderDetailsPage() {
     try {
       setSubmittingReturn(true);
       const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const formData = new FormData();
+      formData.append('orderId', id);
+      formData.append('reason', returnReason);
+      formData.append('reasonDetails', returnReasonDetails);
+
+      const itemsPayload = returnSelectedItems.map(item => ({
+        productId: item.productId || item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        image: item.image || ''
+      }));
+      formData.append('items', JSON.stringify(itemsPayload));
+
+      returnImages.forEach(file => {
+        formData.append('images', file);
+      });
+
       const res = await fetch(`${apiBase}/returns`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          orderId: id,
-          items: returnSelectedItems.map(item => ({
-            productId: item.productId || item.id,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            image: item.image || ''
-          })),
-          reason: returnReason,
-          reasonDetails: returnReasonDetails
-        })
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -530,6 +584,7 @@ export default function OrderDetailsPage() {
         setReturnReason('');
         setReturnReasonDetails('');
         setReturnSelectedItems([]);
+        setReturnImages([]);
       } else {
         toast.error(data.message || 'Failed to submit return');
       }
@@ -1417,6 +1472,38 @@ export default function OrderDetailsPage() {
                 />
               </div>
 
+              {/* Product Images Upload */}
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Upload Product Images (1 to 3 images required)</p>
+                <div className="flex flex-wrap gap-2 items-center">
+                  {returnImages.map((file, idx) => (
+                    <div key={idx} className="relative w-16 h-16 rounded-xl border border-white/10 overflow-hidden bg-slate-50">
+                      <img src={URL.createObjectURL(file)} alt="" className="w-full h-full object-cover" />
+                      <button 
+                        type="button" 
+                        onClick={() => handleRemoveReturnImage(idx)}
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 shadow hover:bg-red-600 transition-colors cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                  {returnImages.length < 3 && (
+                    <label className="w-16 h-16 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors">
+                      <Camera className="w-5 h-5 text-slate-400" />
+                      <span className="text-[8px] font-bold text-slate-400 mt-0.5">Add</span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        multiple 
+                        onChange={handleReturnImageChange} 
+                        className="hidden" 
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
+
               {/* Refund summary */}
               {returnSelectedItems.length > 0 && (
                 <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-xs">
@@ -1431,7 +1518,7 @@ export default function OrderDetailsPage() {
               {/* Submit */}
               <button
                 onClick={handleSubmitReturn}
-                disabled={submittingReturn || returnSelectedItems.length === 0 || !returnReason}
+                disabled={submittingReturn || returnSelectedItems.length === 0 || !returnReason || returnImages.length < 1}
                 className="w-full bg-[#0B132B] text-white font-bold text-xs py-3.5 rounded-xl hover:bg-[#ff5c3f] active:bg-[#d43d1a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 uppercase tracking-wider cursor-pointer"
               >
                 {submittingReturn ? (
@@ -1500,9 +1587,42 @@ export default function OrderDetailsPage() {
                     />
                   </div>
 
+                  {/* Product Images Upload */}
+                  <div>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Upload Product Images (1 to 3 images required)</p>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      {exchangeImages.map((file, idx) => (
+                        <div key={idx} className="relative w-16 h-16 rounded-xl border border-slate-200 overflow-hidden bg-slate-50">
+                          <img src={URL.createObjectURL(file)} alt="" className="w-full h-full object-cover" />
+                          <button 
+                            type="button" 
+                            onClick={() => handleRemoveExchangeImage(idx)}
+                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 shadow hover:bg-red-600 transition-colors cursor-pointer"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                      {exchangeImages.length < 3 && (
+                        <label className="w-16 h-16 rounded-xl border border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors">
+                          <Camera className="w-5 h-5 text-slate-400" />
+                          <span className="text-[8px] font-bold text-slate-400 mt-0.5">Add</span>
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            multiple 
+                            onChange={handleExchangeImageChange} 
+                            className="hidden" 
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+
                   <button
                     onClick={() => {
                       if (!exchangeReason) { toast.info('Select a reason'); return; }
+                      if (exchangeImages.length < 1) { toast.info('Please upload at least 1 image of the product'); return; }
                       setExchangeStep(2);
                     }}
                     className="w-full bg-[#0B132B] text-white font-bold text-xs py-3.5 rounded-xl hover:bg-opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 uppercase tracking-wider mt-4"
@@ -1583,7 +1703,7 @@ export default function OrderDetailsPage() {
 
                       <button
                         onClick={handleSubmitExchange}
-                        disabled={submittingExchange || !exchangeSelectedVariant}
+                        disabled={submittingExchange || !exchangeSelectedVariant || exchangeImages.length < 1}
                         className="w-full bg-[#0B132B] text-white font-bold text-xs py-3.5 rounded-xl hover:bg-opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 uppercase tracking-wider mt-5"
                       >
                         {submittingExchange ? (

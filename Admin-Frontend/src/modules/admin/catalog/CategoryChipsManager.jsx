@@ -23,7 +23,16 @@ const SizeChartModal = ({ isOpen, onClose, sizeChart, onSave }) => {
     ['IND-9', '28', '10.5'],
     ['IND-10', '29', '10.6']
   ]);
-  const [howToMeasure, setHowToMeasure] = useState(sizeChart?.howToMeasure || '');
+
+  useEffect(() => {
+    if (isOpen) {
+      const originalStyle = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalStyle;
+      };
+    }
+  }, [isOpen]);
 
   const addColumn = () => {
     const colName = prompt('Enter column header name:');
@@ -57,7 +66,7 @@ const SizeChartModal = ({ isOpen, onClose, sizeChart, onSave }) => {
   };
 
   const handleSave = () => {
-    onSave({ headers, rows, howToMeasure });
+    onSave({ headers, rows });
     onClose();
   };
 
@@ -142,17 +151,6 @@ const SizeChartModal = ({ isOpen, onClose, sizeChart, onSave }) => {
                 </tbody>
               </table>
             </div>
-          </div>
-
-          {/* How to Measure Textarea */}
-          <div className="space-y-2">
-            <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block">How to Measure (Instructions)</label>
-            <textarea
-              value={howToMeasure}
-              onChange={e => setHowToMeasure(e.target.value)}
-              placeholder="e.g. Draw your foot outline on paper and measure heel-to-toe length..."
-              className="w-full min-h-[100px] border border-slate-200 rounded-xl p-3 text-[12px] font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 bg-white"
-            />
           </div>
         </div>
 

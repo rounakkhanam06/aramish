@@ -586,6 +586,20 @@ const Exchanges = () => {
                       </div>
                     </div>
 
+                    {/* User uploaded images */}
+                    {selectedExchange.images?.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Customer Photos</p>
+                        <div className="flex gap-2 flex-wrap">
+                          {selectedExchange.images.map((img, idx) => (
+                            <div key={idx} className="w-20 h-20 rounded-xl overflow-hidden border border-slate-100">
+                              <OptimizedImage src={img} alt={`proof-${idx}`} type="default" className="w-full h-full object-cover" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Shipments */}
                     <div className="space-y-3">
                       {/* Reverse */}

@@ -322,7 +322,7 @@ export default function CategoriesPage() {
         <div ref={containerRef} className="flex-grow p-2.5 md:p-6 overflow-y-auto space-y-4 bg-[#ff7400]/5 md:bg-surface relative">
 
           {/* Title bar */}
-          <div className="flex items-center justify-between border-b border-white/10 pb-2 relative z-20 px-1">
+          <div className="flex items-center justify-between border-b border-white/10 pb-2 relative z-30 px-1">
             <div className="space-y-0.5">
               <h3 className="text-xs md:text-sm font-black text-[#02006c] uppercase tracking-wider">
                 {categories.find((c) => c.id === selectedCategory || c._id === selectedCategory)?.categoryName || categories.find((c) => c.id === selectedCategory || c._id === selectedCategory)?.name || "Catalog"}
@@ -396,7 +396,7 @@ export default function CategoriesPage() {
             if (uniqueMatchedSubs.length === 0) return null;
 
             return (
-              <div className="flex overflow-x-auto gap-3 py-3 scrollbar-none snap-x relative z-20 px-2 flex-shrink-0 bg-surface border border-white/10 rounded-2xl shadow-3xs items-start">
+              <div className="flex overflow-x-auto gap-3 py-3 scrollbar-none snap-x relative z-10 px-2 flex-shrink-0 bg-surface border border-white/10 rounded-2xl shadow-3xs items-start">
                 <button
                   onClick={() => setSelectedSubCategory('all')}
                   className="flex flex-col items-center w-[68px] group cursor-pointer flex-shrink-0 snap-start"
