@@ -107,4 +107,27 @@ input::-ms-reveal,
 input::-ms-clear {
   display: none;
 }
+
+/* Web Marquee banner styles */
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+.marquee-container {
+  overflow: hidden;
+  white-space: nowrap;
+  display: flex;
+}
+
+.animate-marquee {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: marquee 35s linear infinite;
+  padding-left: 20px;
+}
+
+.marquee-container:hover .animate-marquee {
+  animation-play-state: paused;
+}
 

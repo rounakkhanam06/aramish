@@ -231,6 +231,16 @@ export default function Layout({ children }) {
               />
             </div>
           )}
+          {!hideNavbar && (
+            <div className="w-full bg-[#0B132B] border-b border-white/5 py-2 overflow-hidden select-none marquee-container relative z-40">
+              <div className="animate-marquee flex items-center gap-8 text-[11px] font-bold text-amber-400 tracking-wider uppercase font-sans">
+                <span>Download the Aramish App, Login & Get 1000 Welcome Coins. Use up to 250 Coins per order and earn 100 Coins on every successful order.</span>
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400/50 flex-shrink-0" />
+                <span>Download the Aramish App, Login & Get 1000 Welcome Coins. Use up to 250 Coins per order and earn 100 Coins on every successful order.</span>
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400/50 flex-shrink-0" />
+              </div>
+            </div>
+          )}
           {!hideNavbar && <Navbar />}
           {children}
         </main>
