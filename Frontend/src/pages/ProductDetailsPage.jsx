@@ -1037,15 +1037,15 @@ export default function ProductDetailsPage() {
                   {activeDetailTab === 'specifications' && (
                     <div className="animate-fade-in">
                       {product.specifications && product.specifications.length > 0 ? (
-                        <div className="space-y-4">
+                        <div className="space-y-8">
                           {product.specifications.map((spec, sIdx) => (
-                            <div key={sIdx}>
-                              <h4 className="font-bold text-sm text-slate-900 mb-1.5">{spec.section}</h4>
-                              <div className="bg-white border border-slate-100 rounded-lg overflow-hidden divide-y divide-slate-50 shadow-sm">
+                            <div key={sIdx} className="w-full">
+                              <h4 className="font-bold text-[15px] text-black pb-2 border-b border-slate-200">{spec.section}</h4>
+                              <div className="divide-y divide-slate-200">
                                 {spec.fields.map((field, fIdx) => (
-                                  <div key={fIdx} className="flex flex-col md:flex-row md:items-center px-3 py-1.5 hover:bg-slate-50 transition-colors">
-                                    <span className="text-[11px] md:text-xs text-slate-500 font-semibold md:w-1/3">{field.name}</span>
-                                    <span className="text-[11px] md:text-xs font-bold text-slate-800 md:w-2/3">{field.value}</span>
+                                  <div key={fIdx} className="flex flex-col sm:flex-row sm:items-start py-2.5">
+                                    <span className="text-[13px] text-slate-600 font-bold sm:w-1/3 shrink-0 mb-1 sm:mb-0 pr-4">{field.name}</span>
+                                    <span className="text-[13px] text-slate-800 sm:w-2/3">{field.value}</span>
                                   </div>
                                 ))}
                               </div>
