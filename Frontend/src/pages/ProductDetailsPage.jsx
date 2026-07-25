@@ -1699,9 +1699,8 @@ export default function ProductDetailsPage() {
                 {/* WhatsApp */}
                 <button 
                   onClick={() => {
-                    const shareUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/share/product/${id || product?.id}`;
                     const text = `Check out this amazing product on Aramish: ${product?.name || ''}`;
-                    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text + ' ' + shareUrl)}`;
+                    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text + ' ' + window.location.href)}`;
                     window.open(url, '_blank');
                     setIsShareModalOpen(false);
                   }}
@@ -1716,8 +1715,7 @@ export default function ProductDetailsPage() {
                 {/* Facebook */}
                 <button 
                   onClick={() => {
-                    const shareUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/share/product/${id || product?.id}`;
-                    const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
+                    const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`;
                     window.open(url, '_blank');
                     setIsShareModalOpen(false);
                   }}
@@ -1732,9 +1730,8 @@ export default function ProductDetailsPage() {
                 {/* Twitter / X */}
                 <button 
                   onClick={() => {
-                    const shareUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/share/product/${id || product?.id}`;
                     const text = `Check out this amazing product on Aramish: ${product?.name || ''}`;
-                    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
+                    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(window.location.href)}`;
                     window.open(url, '_blank');
                     setIsShareModalOpen(false);
                   }}
@@ -1749,9 +1746,8 @@ export default function ProductDetailsPage() {
                 {/* Email */}
                 <button 
                   onClick={() => {
-                    const shareUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/share/product/${id || product?.id}`;
                     const subject = `Check out this product on Aramish`;
-                    const body = `Hey, check out this amazing product on Aramish: ${product?.name || ''}\n\n${shareUrl}`;
+                    const body = `Hey, check out this amazing product on Aramish: ${product?.name || ''}\n\n${window.location.href}`;
                     const url = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
                     window.open(url, '_self');
                     setIsShareModalOpen(false);
@@ -1770,13 +1766,12 @@ export default function ProductDetailsPage() {
                 <input 
                   type="text" 
                   readOnly 
-                  value={`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/share/product/${id || product?.id}`} 
+                  value={window.location.href} 
                   className="flex-1 bg-transparent border-none outline-none text-xs text-slate-500 px-2 select-all"
                 />
                 <button 
                   onClick={() => {
-                    const shareUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/share/product/${id || product?.id}`;
-                    navigator.clipboard.writeText(shareUrl);
+                    navigator.clipboard.writeText(window.location.href);
                     toast.success('Link copied to clipboard!', {
                       position: 'top-center',
                       style: {
