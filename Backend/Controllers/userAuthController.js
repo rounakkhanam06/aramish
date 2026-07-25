@@ -384,10 +384,16 @@ const getWallet = async (req, res) => {
     const walletTransactions = await WalletTransaction.find({ userId: req.user.id })
       .sort({ createdAt: -1 });
 
+    const { getUserLockedRewardCoins } = require('../utils/rewardService');
+    const lockedRewardCoins = await getUserLockedRewardCoins(req.user.id);
+    const availableWalletBalance = Math.max(0, (user.walletBalance || 0) - lockedRewardCoins);
+
     res.status(200).json({
       success: true,
       coins: user.referralCoins || 0,
       walletBalance: user.walletBalance || 0,
+      lockedRewardCoins,
+      availableWalletBalance,
       welcomeBonusRemaining: user.welcomeBonusRemaining || 0,
       coinTransactions: coinTransactions.map(t => ({
         id: t._id,
@@ -403,6 +409,8 @@ const getWallet = async (req, res) => {
         coinsUsed: w.coinsUsed,
         status: w.status,
         description: w.description,
+        orderId: w.orderId,
+        unlocksAt: w.unlocksAt,
         createdAt: w.createdAt
       }))
     });

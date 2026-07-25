@@ -259,6 +259,7 @@ const createProduct = async (req, res) => {
       article,
       highlights: parseJsonField(req.body.highlights),
       technicalSpecs: parseJsonField(req.body.technicalSpecs),
+      specifications: parseJsonField(req.body.specifications),
       shippingSpecs: parseJsonField(req.body.shippingSpecs),
       flags: parseJsonField(req.body.flags, { topSection: false, crazyDeals: false, flashSale: false }),
       gstCategory,
@@ -356,6 +357,7 @@ const updateProduct = async (req, res) => {
     // Handle parsed nested objects/arrays if present in req.body
     if (req.body.highlights !== undefined) product.highlights = parseJsonField(req.body.highlights);
     if (req.body.technicalSpecs !== undefined) product.technicalSpecs = parseJsonField(req.body.technicalSpecs);
+    if (req.body.specifications !== undefined) product.specifications = parseJsonField(req.body.specifications);
     if (req.body.shippingSpecs !== undefined) product.shippingSpecs = parseJsonField(req.body.shippingSpecs);
     if (req.body.flags !== undefined) product.flags = parseJsonField(req.body.flags);
     if (req.body.tags !== undefined) product.tags = parseJsonField(req.body.tags);

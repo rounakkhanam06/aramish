@@ -225,16 +225,26 @@ exports.createOrder = async (req, res) => {
     walletUsedAmount = 0;
     let welcomeCoinsUsed = 0;
 
+    const mongoose = require('mongoose');
+    const newOrderId = new mongoose.Types.ObjectId();
+
     const welcomeBonusCoins = systemConfig && systemConfig.welcomeBonusCoins !== undefined ? systemConfig.welcomeBonusCoins : 1000;
     const limitPerOrder = welcomeBonusCoins / 4;
 
     if (redeemWallet) {
       const user = await User.findById(req.user._id, null, sessionOpt);
       if (user && user.walletBalance > 0) {
+        // Calculate locked reward coins from active return windows
+        const { getUserLockedRewardCoins } = require('../utils/rewardService');
+        const lockedRewardCoins = await getUserLockedRewardCoins(user._id);
+
+        // Usable balance excludes locked reward coins
+        const availableBalance = Math.max(0, user.walletBalance - lockedRewardCoins);
+
         // Welcome bonus cap of W / 4
         const maxWelcomeCoinsToUse = Math.min(limitPerOrder, user.welcomeBonusRemaining || 0);
         // The rest of the balance can be fully used
-        const otherBalanceToUse = Math.max(0, user.walletBalance - (user.welcomeBonusRemaining || 0));
+        const otherBalanceToUse = Math.max(0, availableBalance - (user.welcomeBonusRemaining || 0));
         const totalUsableWallet = maxWelcomeCoinsToUse + otherBalanceToUse;
         
         walletUsedAmount = Math.min(totalUsableWallet, finalCalculatedTotal);
@@ -256,6 +266,7 @@ exports.createOrder = async (req, res) => {
           const WalletTransaction = require('../Models/WalletTransaction');
           await WalletTransaction.create([{
             userId: req.user._id,
+            orderId: newOrderId,
             type: 'ORDER_REDEMPTION',
             amount: walletUsedAmount,
             description: `Used for Order Checkout (Welcome points: ${welcomeCoinsUsed}, Other: ${(walletUsedAmount - welcomeCoinsUsed).toFixed(2)})`
@@ -313,6 +324,7 @@ exports.createOrder = async (req, res) => {
 
     // 7. Create the Order
     const orderData = {
+      _id: newOrderId,
       userId: req.user._id,
       items: validatedItems,
       subtotal: calculatedSubtotal,
@@ -675,6 +687,12 @@ exports.updateOrderStatus = async (req, res) => {
     }
 
     await order.save();
+    
+    if (order.status === 'Delivered') {
+      const { creditOrderReward } = require('../utils/rewardService');
+      creditOrderReward(order._id).catch(err => console.error('Error in creditOrderReward async trigger:', err));
+    }
+
     await checkAndTriggerReferral(order);
     res.status(200).json({ success: true, message: 'Order status updated successfully', order });
   } catch (error) {

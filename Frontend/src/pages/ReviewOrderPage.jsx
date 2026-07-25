@@ -44,6 +44,8 @@ export default function ReviewOrderPage() {
   const [userCoins, setUserCoins] = useState(0);
   const [redeemWallet, setRedeemWallet] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
+  const [availableWalletBalance, setAvailableWalletBalance] = useState(0);
+  const [lockedRewardCoins, setLockedRewardCoins] = useState(0);
   const [welcomeBonusRemaining, setWelcomeBonusRemaining] = useState(0);
   const [coinsConfig, setCoinsConfig] = useState({
     coinsPerRupee: 100,
@@ -121,6 +123,8 @@ export default function ReviewOrderPage() {
           if (data.success) {
             setUserCoins(data.coins || 0);
             setWalletBalance(data.walletBalance || 0);
+            setAvailableWalletBalance(data.availableWalletBalance !== undefined ? data.availableWalletBalance : (data.walletBalance || 0));
+            setLockedRewardCoins(data.lockedRewardCoins || 0);
             setWelcomeBonusRemaining(data.welcomeBonusRemaining || 0);
           }
         } catch (err) {
@@ -506,7 +510,8 @@ export default function ReviewOrderPage() {
   const welcomeBonusCoins = systemSettings?.welcomeBonusCoins ?? 1000;
   const limitPerOrder = welcomeBonusCoins / 4;
   const maxWelcomeCoinsToUse = Math.min(limitPerOrder, welcomeBonusRemaining || 0);
-  const otherBalanceToUse = Math.max(0, walletBalance - (welcomeBonusRemaining || 0));
+  const spendableBalance = availableWalletBalance !== undefined ? availableWalletBalance : Math.max(0, walletBalance - lockedRewardCoins);
+  const otherBalanceToUse = Math.max(0, spendableBalance - (welcomeBonusRemaining || 0));
   const totalUsableWallet = maxWelcomeCoinsToUse + otherBalanceToUse;
   const walletUsedAmount = redeemWallet ? Math.min(totalUsableWallet, grandTotalBeforeCoins) : 0;
   const grandTotal = Math.max(0, grandTotalBeforeCoins - walletUsedAmount);
@@ -581,8 +586,8 @@ export default function ReviewOrderPage() {
                       <h3 className="text-xs md:text-sm font-bold text-slate-800 leading-snug truncate">{item.name}</h3>
                       {item.attributes && Object.keys(item.attributes).length > 0 && (
                         <div className="flex flex-wrap gap-1.5 mt-1">
-                          {Object.entries(item.attributes).map(([key, val]) => (
-                            <span key={key} className="text-[9px] bg-surface text-slate-700 px-1.5 py-0.5 rounded font-black uppercase">
+                          {Object.entries(item.attributes).map(([key, val], idx) => (
+                            <span key={`${key}-${idx}`} className="text-[9px] bg-surface text-slate-700 px-1.5 py-0.5 rounded font-black uppercase">
                               {key}: {val}
                             </span>
                           ))}
@@ -864,6 +869,21 @@ export default function ReviewOrderPage() {
               <span>Net Payable</span>
               <span>₹{Number(grandTotal).toFixed(2)}</span>
             </div>
+
+            {/* Order Reward Coins Info Badge */}
+            {systemSettings?.rewardCoinsEnabled !== false && (systemSettings?.rewardCoinsPerDeliveredOrder ?? 100) > 0 && (
+              <div className="bg-gradient-to-r from-amber-500/10 via-amber-400/10 to-amber-500/10 border border-amber-200/60 rounded-xl p-3 flex items-center gap-2.5 text-amber-900 shadow-3xs">
+                <div className="w-7 h-7 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                  <Coins className="w-4 h-4 text-amber-600 animate-pulse" />
+                </div>
+                <div className="text-[11px] leading-tight font-semibold">
+                  <p className="font-black text-amber-800">Earn Reward Coins 🎉</p>
+                  <p className="text-amber-700/90 text-[10px] mt-0.5 font-bold">
+                    You will get <span className="text-amber-900 font-extrabold">{systemSettings?.rewardCoinsPerDeliveredOrder ?? 100} Coins</span> when this order is delivered.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Place order button */}

@@ -109,6 +109,26 @@ const orderSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  rewardCredited: {
+    type: Boolean,
+    default: false
+  },
+  rewardCreditedAt: {
+    type: Date,
+    default: null
+  },
+  rewardCoinsAmount: {
+    type: Number,
+    default: 0
+  },
+  rewardDeducted: {
+    type: Boolean,
+    default: false
+  },
+  rewardDeductedAt: {
+    type: Date,
+    default: null
+  },
   awbCode: {
     type: String,
     default: null

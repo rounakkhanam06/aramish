@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, ShoppingCart, Heart, Send, Star, ChevronRight, Home, Truck, Store, RotateCcw, Banknote, ShieldCheck, ArrowRight, ChevronDown, ChevronUp, CheckCircle2, CheckCircle, X, Play, MapPin } from 'lucide-react';
+import { ArrowLeft, Search, ShoppingCart, Heart, Send, Star, ChevronRight, Home, Truck, Store, RotateCcw, Banknote, ShieldCheck, ArrowRight, ChevronDown, ChevronUp, CheckCircle2, CheckCircle, X, Play, MapPin, Coins } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { useApp } from '../context/AppContext';
 import analytics from '../utils/analytics';
@@ -12,7 +12,7 @@ import { formatDiscount } from '../utils/discountHelper';
 export default function ProductDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { totalCartItems, addToCart, cart, toggleWishlist, isInWishlist, user, setSearchQuery, location: userLocation } = useApp();
+  const { totalCartItems, addToCart, cart, toggleWishlist, isInWishlist, user, setSearchQuery, location: userLocation, systemSettings } = useApp();
   
   const [product, setProduct] = useState(null);
   const [selectedSize, setSelectedSize] = useState('');
@@ -353,6 +353,7 @@ export default function ProductDetailsPage() {
             stock: p.stock || 0,
             highlights: p.highlights || {},
             technicalSpecs: p.technicalSpecs || {},
+            specifications: p.specifications || [],
             manufacturerInfo: p.manufacturerInfo || '',
             shippingSpecs: p.shippingSpecs || {},
             variations: p.variations || [],
@@ -669,8 +670,8 @@ export default function ProductDetailsPage() {
                       ? Object.entries(product.highlights).filter(([key, val]) => val !== undefined && val !== null && val !== '' && val !== '-' && val !== '0' && val !== 0)
                       : [];
                     if (validHighlights.length > 0) {
-                      return validHighlights.slice(0, 5).map(([key, val]) => (
-                        <div key={key} className="flex flex-col border-b border-white/20 pb-0.5 w-28">
+                      return validHighlights.slice(0, 5).map(([key, val], idx) => (
+                        <div key={`${key}-${idx}`} className="flex flex-col border-b border-white/20 pb-0.5 w-28">
                           <span className="text-[10px] text-white/70 capitalize">{key}</span>
                           <span className="text-xs font-bold text-white drop-shadow truncate">{val}</span>
                         </div>
@@ -849,6 +850,23 @@ export default function ProductDetailsPage() {
             </div>
           </div>
 
+          {/* Reward Coins Offer Banner */}
+          {systemSettings?.rewardCoinsEnabled !== false && (systemSettings?.rewardCoinsPerDeliveredOrder ?? 100) > 0 && (
+            <div className="bg-gradient-to-r from-amber-500/10 via-amber-400/15 to-amber-500/10 border border-amber-300/50 rounded-2xl p-3.5 flex items-center gap-3 text-amber-900 shadow-3xs my-2">
+              <div className="w-9 h-9 rounded-full bg-amber-500/20 border border-amber-400/30 flex items-center justify-center flex-shrink-0 shadow-inner">
+                <Coins className="w-5 h-5 text-amber-600 animate-bounce" />
+              </div>
+              <div className="text-xs leading-tight">
+                <p className="font-black text-amber-900 flex items-center gap-1.5 text-xs">
+                  Earn {systemSettings?.rewardCoinsPerDeliveredOrder ?? 100} Aramish Coins! 🪙
+                </p>
+                <p className="text-amber-800/90 text-[11px] font-semibold mt-0.5">
+                  Buy this item & get <span className="font-extrabold text-amber-950">₹{systemSettings?.rewardCoinsPerDeliveredOrder ?? 100} Coins credited to your wallet</span> upon delivery. Use it for your next order!
+                </p>
+              </div>
+            </div>
+          )}
+
 
 
           {/* Product Description */}
@@ -962,8 +980,8 @@ export default function ProductDetailsPage() {
                       ? Object.entries(product.highlights).filter(([key, val]) => val !== undefined && val !== null && val !== '' && val !== '-' && val !== '0' && val !== 0)
                       : [];
                     if (validHighlights.length > 0) {
-                      return validHighlights.map(([key, val]) => (
-                        <div key={key} className="flex flex-col border-b border-white/10 pb-1">
+                      return validHighlights.map(([key, val], idx) => (
+                        <div key={`${key}-${idx}`} className="flex flex-col border-b border-white/10 pb-1">
                           <span className="text-[11px] text-slate-400 mb-0.5 capitalize font-extrabold">{key}</span>
                           <span className="text-xs font-bold text-slate-800">{val}</span>
                         </div>
@@ -1018,54 +1036,72 @@ export default function ProductDetailsPage() {
 
                   {activeDetailTab === 'specifications' && (
                     <div className="animate-fade-in">
-                      <div className="grid grid-cols-2 gap-y-2 gap-x-6">
-                        {(() => {
-                          const validSpecs = product.technicalSpecs 
-                            ? Object.entries(product.technicalSpecs).filter(([key, val]) => val !== undefined && val !== null && val !== '' && val !== '-' && val !== '0' && val !== 0)
-                            : [];
-
-                          if (product.shippingSpecs) {
-                            const weightVal = product.shippingSpecs.weight;
-                            if (weightVal !== undefined && weightVal !== null && weightVal !== '' && Number(weightVal) > 0) {
-                              validSpecs.push(['weight', `${weightVal} kg`]);
-                            }
-                            const heightVal = product.shippingSpecs.height;
-                            if (heightVal !== undefined && heightVal !== null && heightVal !== '' && Number(heightVal) > 0) {
-                              validSpecs.push(['height', `${heightVal} cm`]);
-                            }
-                            const lengthVal = product.shippingSpecs.length;
-                            if (lengthVal !== undefined && lengthVal !== null && lengthVal !== '' && Number(lengthVal) > 0) {
-                              validSpecs.push(['length', `${lengthVal} cm`]);
-                            }
-                            const widthVal = product.shippingSpecs.width;
-                            if (widthVal !== undefined && widthVal !== null && widthVal !== '' && Number(widthVal) > 0) {
-                              validSpecs.push(['width', `${widthVal} cm`]);
-                            }
-                          }
-
-                          if (validSpecs.length > 0) {
-                            return validSpecs.map(([key, val]) => (
-                              <div key={key} className="flex flex-col border-b border-white/10 pb-1">
-                                <span className="text-[11px] text-slate-400 mb-0.5 capitalize font-extrabold">{key}</span>
-                                <span className="text-xs font-bold text-slate-800">{val}</span>
+                      {product.specifications && product.specifications.length > 0 ? (
+                        <div className="space-y-6">
+                          {product.specifications.map((spec, sIdx) => (
+                            <div key={sIdx}>
+                              <h4 className="font-bold text-sm text-slate-900 mb-3">{spec.section}</h4>
+                              <div className="bg-white border border-slate-100 rounded-xl overflow-hidden divide-y divide-slate-100 shadow-sm">
+                                {spec.fields.map((field, fIdx) => (
+                                  <div key={fIdx} className="flex flex-col md:flex-row md:items-start p-3 hover:bg-slate-50 transition-colors">
+                                    <span className="text-[11px] md:text-xs text-slate-500 font-bold md:w-1/3 mb-1 md:mb-0 pt-0.5">{field.name}</span>
+                                    <span className="text-[12px] md:text-sm font-semibold text-slate-800 md:w-2/3">{field.value}</span>
+                                  </div>
+                                ))}
                               </div>
-                            ));
-                          } else {
-                            return (
-                              <>
-                                <div className="flex flex-col border-b border-white/10 pb-1">
-                                  <span className="text-[11px] text-slate-400 mb-0.5 font-extrabold">Brand</span>
-                                  <span className="text-xs font-bold text-slate-800">{product.brandName || 'Generic'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-y-2 gap-x-6">
+                          {(() => {
+                            const validSpecs = product.technicalSpecs 
+                              ? Object.entries(product.technicalSpecs).filter(([key, val]) => val !== undefined && val !== null && val !== '' && val !== '-' && val !== '0' && val !== 0)
+                              : [];
+
+                            if (product.shippingSpecs) {
+                              const weightVal = product.shippingSpecs.weight;
+                              if (weightVal !== undefined && weightVal !== null && weightVal !== '' && Number(weightVal) > 0) {
+                                validSpecs.push(['weight', `${weightVal} kg`]);
+                              }
+                              const heightVal = product.shippingSpecs.height;
+                              if (heightVal !== undefined && heightVal !== null && heightVal !== '' && Number(heightVal) > 0) {
+                                validSpecs.push(['height', `${heightVal} cm`]);
+                              }
+                              const lengthVal = product.shippingSpecs.length;
+                              if (lengthVal !== undefined && lengthVal !== null && lengthVal !== '' && Number(lengthVal) > 0) {
+                                validSpecs.push(['length', `${lengthVal} cm`]);
+                              }
+                              const widthVal = product.shippingSpecs.width;
+                              if (widthVal !== undefined && widthVal !== null && widthVal !== '' && Number(widthVal) > 0) {
+                                validSpecs.push(['width', `${widthVal} cm`]);
+                              }
+                            }
+
+                            if (validSpecs.length > 0) {
+                              return validSpecs.map(([key, val], idx) => (
+                                <div key={`${key}-${idx}`} className="flex flex-col border-b border-white/10 pb-1">
+                                  <span className="text-[11px] text-slate-400 mb-0.5 capitalize font-extrabold">{key}</span>
+                                  <span className="text-xs font-bold text-slate-800">{val}</span>
                                 </div>
-                                <div className="flex flex-col border-b border-white/10 pb-1">
-                                  <span className="text-[11px] text-slate-400 mb-0.5 font-extrabold">Type</span>
-                                  <span className="text-xs font-bold text-slate-800">Premium quality product</span>
-                                </div>
-                              </>
-                            );
-                          }
-                        })()}
-                      </div>
+                              ));
+                            } else {
+                              return (
+                                <>
+                                  <div className="flex flex-col border-b border-white/10 pb-1">
+                                    <span className="text-[11px] text-slate-400 mb-0.5 font-extrabold">Brand</span>
+                                    <span className="text-xs font-bold text-slate-800">{product.brandName || 'Generic'}</span>
+                                  </div>
+                                  <div className="flex flex-col border-b border-white/10 pb-1">
+                                    <span className="text-[11px] text-slate-400 mb-0.5 font-extrabold">Type</span>
+                                    <span className="text-xs font-bold text-slate-800">Premium quality product</span>
+                                  </div>
+                                </>
+                              );
+                            }
+                          })()}
+                        </div>
+                      )}
                     </div>
                   )}
                   

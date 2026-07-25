@@ -31,6 +31,9 @@ const Settings = () => {
   const [minimumRedeemCoins, setMinimumRedeemCoins] = useState(500);
   const [maximumRedeemPerOrder, setMaximumRedeemPerOrder] = useState(10000);
   const [welcomeBonusCoins, setWelcomeBonusCoins] = useState(1000);
+  const [rewardCoinsEnabled, setRewardCoinsEnabled] = useState(true);
+  const [rewardCoinsPerDeliveredOrder, setRewardCoinsPerDeliveredOrder] = useState(100);
+  const [returnWindowDays, setReturnWindowDays] = useState(2);
   const [marqueeEnabled, setMarqueeEnabled] = useState(true);
   const [walletEnabled, setWalletEnabled] = useState(true);
 
@@ -104,6 +107,9 @@ const Settings = () => {
         setMinimumRedeemCoins(s.minimumRedeemCoins ?? 500);
         setMaximumRedeemPerOrder(s.maximumRedeemPerOrder ?? 10000);
         setWelcomeBonusCoins(s.welcomeBonusCoins ?? 1000);
+        setRewardCoinsEnabled(s.rewardCoinsEnabled ?? true);
+        setRewardCoinsPerDeliveredOrder(s.rewardCoinsPerDeliveredOrder ?? 100);
+        setReturnWindowDays(s.returnWindowDays ?? 2);
         setMarqueeEnabled(s.marqueeEnabled ?? true);
         setWalletEnabled(s.walletEnabled ?? true);
 
@@ -245,6 +251,9 @@ const Settings = () => {
             minimumRedeemCoins: Number(minimumRedeemCoins),
             maximumRedeemPerOrder: Number(maximumRedeemPerOrder),
             welcomeBonusCoins: Number(welcomeBonusCoins),
+            rewardCoinsEnabled: Boolean(rewardCoinsEnabled),
+            rewardCoinsPerDeliveredOrder: Number(rewardCoinsPerDeliveredOrder),
+            returnWindowDays: Number(returnWindowDays),
             marqueeEnabled: Boolean(marqueeEnabled),
             walletEnabled: Boolean(walletEnabled)
           })
@@ -592,7 +601,7 @@ const Settings = () => {
 
                 {activeSection === 'Coins' && (
                   <div className="space-y-8 animate-in fade-in duration-300">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       <div className="space-y-2">
                         <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Welcome Bonus Coins</label>
                         <input 
@@ -603,6 +612,27 @@ const Settings = () => {
                           required 
                         />
                       </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Reward Coins Per Order</label>
+                        <input 
+                          type="number" 
+                          value={rewardCoinsPerDeliveredOrder}
+                          onChange={e => setRewardCoinsPerDeliveredOrder(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
+                          required 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Return Window Duration (Days)</label>
+                        <input 
+                          type="number" 
+                          value={returnWindowDays}
+                          onChange={e => setReturnWindowDays(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
+                          min="1"
+                          required 
+                        />
+                      </div>
                     </div>
 
                     {/* Features Toggle Panel */}
@@ -610,6 +640,19 @@ const Settings = () => {
                       <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Features Control</h3>
                       
                       <div className="flex flex-col gap-4">
+                        <div className="flex items-center gap-3">
+                          <input 
+                            type="checkbox" 
+                            id="rewardCoinsEnabled" 
+                            checked={rewardCoinsEnabled}
+                            onChange={e => setRewardCoinsEnabled(e.target.checked)}
+                            className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-50 cursor-pointer"
+                          />
+                          <label htmlFor="rewardCoinsEnabled" className="text-xs font-bold text-slate-700 select-none cursor-pointer">
+                            Enable Order Reward Coins Feature for Delivered Orders
+                          </label>
+                        </div>
+
                         <div className="flex items-center gap-3">
                           <input 
                             type="checkbox" 

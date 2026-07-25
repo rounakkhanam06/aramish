@@ -621,7 +621,7 @@ export default function Home() {
         {selectedCategory === 'for-you' ? (
           <>
             {/* Marquee Banner above Crazy Deals */}
-            {(systemSettings?.marqueeEnabled !== false) && (!user || !user.welcomeBonusGiven) && (
+            {(systemSettings?.marqueeEnabled !== false) && !user && (
               <div className="w-full bg-[#0B132B] rounded-xl py-2 overflow-hidden select-none marquee-container relative mb-2">
                 <div className="animate-marquee flex items-center gap-8 text-[11px] font-bold text-amber-400 tracking-wider uppercase font-sans">
                   <span>Download the Aramish App, Login & Get {systemSettings?.welcomeBonusCoins || 1000} Welcome Coins.</span>

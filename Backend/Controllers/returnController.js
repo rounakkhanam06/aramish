@@ -607,6 +607,10 @@ exports.updateReturnStatus = async (req, res) => {
           order.paymentStatus = 'Partially Refunded';
         }
         await order.save();
+
+        // Deduct Order Reward Coins on return refund
+        const { deductOrderReward } = require('../utils/rewardService');
+        deductOrderReward(order._id).catch(err => console.error('Error in deductOrderReward async trigger:', err));
       }
     }
 

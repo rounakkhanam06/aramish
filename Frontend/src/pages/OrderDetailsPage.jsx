@@ -990,60 +990,87 @@ export default function OrderDetailsPage() {
             </div>
 
             {/* Compact Delivered Status Card */}
-            <div className="bg-surface rounded-2xl border border-white/10 shadow-3xs overflow-hidden">
-              <div className="p-5 border-b border-slate-105 flex items-center justify-between">
-                 <div>
-                   <h2 className={`text-base font-black ${existingExchange ? 'text-[#02006c]' : (existingReturn || ['Return Requested', 'Refunded', 'Partially Refunded'].includes(globalOrder?.status) ? 'text-amber-600' : (isDelivered ? 'text-green-700' : 'text-[#0B132B]'))} mb-1`}>
-                     {existingExchange 
-                       ? getHeaderTitle() 
-                       : (existingReturn 
-                           ? `Return ${existingReturn.status}` 
-                           : (globalOrder?.status === 'Return Requested' ? 'Return Requested' :
-                              globalOrder?.status === 'Refunded' ? 'Order Refunded' :
-                              globalOrder?.status === 'Partially Refunded' ? 'Partially Refunded' :
-                              (isDelivered ? `Delivered, ${globalOrder?.date || 'Apr 13'}` : (globalOrder?.etd ? `Estimated Delivery: ${globalOrder.etd}` : 'Processing Order'))))}
-                   </h2>
-                   {existingExchange ? (
-                      <div className="flex items-center gap-1.5 text-xs text-slate-455">
-                        <div className="w-1.5 h-1.5 bg-[#02006c] rounded-full animate-pulse"></div>
-                        {getHeaderSubtitle()}
-                      </div>
-                    ) : existingReturn ? (
-                      <div className="flex items-center gap-1.5 text-xs text-slate-455">
-                        <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></div>
-                        <span>Reason: {existingReturn.reason} • Refund: ₹{existingReturn.refundAmount}</span>
-                      </div>
-                    ) : isDelivered ? (
-                      <div className="flex items-center gap-1.5 text-xs text-slate-455">
-                        <div className="w-3.5 h-3.5 border border-slate-400 rounded-full flex items-center justify-center text-[9px] font-bold">i</div>
-                        {returnWindowExpiry.expired 
-                          ? `Return window expired on ${returnWindowExpiry.dateText}` 
-                          : `Return window active until ${returnWindowExpiry.dateText}`}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5 text-xs text-slate-455">
-                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                        {globalOrder?.status === 'Pending' ? 'Order is pending verification' :
-                         globalOrder?.status === 'Processing' ? 'Item is being processed' :
-                         globalOrder?.status === 'Shipped' ? 'Item has been shipped' :
-                         globalOrder?.status === 'Out for Delivery' ? 'Item is out for delivery' :
-                         globalOrder?.status === 'Cancelled' ? 'Order is cancelled' :
-                         globalOrder?.status === 'Return Requested' ? 'Return requested' :
-                         globalOrder?.status === 'Refunded' ? 'Refunded' :
-                         globalOrder?.status === 'Partially Refunded' ? 'Partially refunded' :
-                         'Processing Order'}
-                      </div>
-                    )}
+            <div className="bg-surface rounded-2xl border border-slate-200/80 shadow-3xs overflow-hidden">
+              <div className="p-4 flex flex-col gap-3">
+                 <div className="flex items-center justify-between">
+                   <div>
+                     <h2 className={`text-sm font-bold ${existingExchange ? 'text-[#02006c]' : (existingReturn || ['Return Requested', 'Refunded', 'Partially Refunded'].includes(globalOrder?.status) ? 'text-amber-600' : (isDelivered ? 'text-emerald-700' : 'text-[#0B132B]'))} mb-0.5`}>
+                       {existingExchange 
+                         ? getHeaderTitle() 
+                         : (existingReturn 
+                             ? `Return ${existingReturn.status}` 
+                             : (globalOrder?.status === 'Return Requested' ? 'Return Requested' :
+                                globalOrder?.status === 'Refunded' ? 'Order Refunded' :
+                                globalOrder?.status === 'Partially Refunded' ? 'Partially Refunded' :
+                                (isDelivered ? `Delivered, ${globalOrder?.date || 'Apr 13'}` : (globalOrder?.etd ? `Estimated Delivery: ${globalOrder.etd}` : 'Processing Order'))))}
+                     </h2>
+                     {existingExchange ? (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                          <div className="w-1.5 h-1.5 bg-[#02006c] rounded-full animate-pulse"></div>
+                          {getHeaderSubtitle()}
+                        </div>
+                      ) : existingReturn ? (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                          <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></div>
+                          <span>Reason: {existingReturn.reason} • Refund: ₹{existingReturn.refundAmount}</span>
+                        </div>
+                      ) : isDelivered ? (
+                        <div className="flex items-center gap-1.5 text-[11.5px] text-slate-500">
+                          <div className="w-3.5 h-3.5 border border-slate-300 rounded-full flex items-center justify-center text-[9px] font-semibold text-slate-500">i</div>
+                          {returnWindowExpiry.expired 
+                            ? `Return window expired on ${returnWindowExpiry.dateText}` 
+                            : `Return window active until ${returnWindowExpiry.dateText}`}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                          <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
+                          {globalOrder?.status === 'Pending' ? 'Order is pending verification' :
+                           globalOrder?.status === 'Processing' ? 'Item is being processed' :
+                           globalOrder?.status === 'Shipped' ? 'Item has been shipped' :
+                           globalOrder?.status === 'Out for Delivery' ? 'Item is out for delivery' :
+                           globalOrder?.status === 'Cancelled' ? 'Order is cancelled' :
+                           globalOrder?.status === 'Return Requested' ? 'Return requested' :
+                           globalOrder?.status === 'Refunded' ? 'Refunded' :
+                           globalOrder?.status === 'Partially Refunded' ? 'Partially refunded' :
+                           'Processing Order'}
+                        </div>
+                      )}
+                   </div>
+                   <div className={`${existingExchange ? 'bg-[#02006c]' : (isDelivered ? 'bg-emerald-600' : 'bg-[#0B132B]')} rounded-full w-7 h-7 flex items-center justify-center shadow-2xs shrink-0`}>
+                     {existingExchange ? (
+                       <ArrowLeftRight className="w-3.5 h-3.5 text-white" />
+                     ) : isDelivered ? (
+                       <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                     ) : (
+                       <Package className="w-3.5 h-3.5 text-white" />
+                     )}
+                   </div>
                  </div>
-                 <div className={`${existingExchange ? 'bg-[#02006c]' : (isDelivered ? 'bg-green-600' : 'bg-[#0B132B]')} rounded-full w-8 h-8 flex items-center justify-center shadow-sm`}>
-                   {existingExchange ? (
-                     <ArrowLeftRight className="w-4 h-4 text-white" />
-                   ) : isDelivered ? (
-                     <CheckCircle2 className="w-4 h-4 text-white" />
-                   ) : (
-                     <Package className="w-4 h-4 text-white" />
-                   )}
-                 </div>
+
+                 {/* Coins Earned & Usage Condition Banner */}
+                 {systemSettings?.rewardCoinsEnabled !== false && !['Cancelled', 'Refunded'].includes(globalOrder?.status) && (
+                   <div className="mt-1 pt-2.5 border-t border-slate-100 flex items-start gap-2.5 bg-amber-50/50 -mx-4 -mb-4 p-3 rounded-b-2xl border-t border-amber-100/70">
+                     <div className="w-6 h-6 rounded-full bg-amber-100 border border-amber-300/80 flex items-center justify-center shrink-0 text-xs shadow-2xs">
+                       🪙
+                     </div>
+                     <div className="flex flex-col text-xs">
+                       <span className="font-bold text-amber-950 text-[12px] flex items-center gap-1">
+                         +{globalOrder?.rewardCoinsAmount || systemSettings?.rewardCoinsPerDeliveredOrder || 100} Coins Earned
+                       </span>
+                       <span className="text-[11px] text-amber-900/80 mt-0.5 leading-snug">
+                         {isDelivered ? (
+                           returnWindowExpiry?.expired ? (
+                             '🎉 Coins unlocked & ready to use on your next order!'
+                           ) : (
+                             `✨ You can use these coins after the return window closes of this product (${returnWindowExpiry?.dateText || 'return expiry'}).`
+                           )
+                         ) : (
+                           'Coins will be credited upon delivery and unlocked after the return window closes.'
+                         )}
+                       </span>
+                     </div>
+                   </div>
+                 )}
               </div>
               {(!existingExchange || (
                 !['Rejected', 'Cancelled'].includes(existingExchange.status) &&

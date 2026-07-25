@@ -53,6 +53,13 @@ const productSchema = new mongoose.Schema({
     width: Number,
     height: Number
   },
+  specifications: [{
+    section: { type: String, required: true },
+    fields: [{
+      name: { type: String, required: true },
+      value: { type: String, required: true }
+    }]
+  }],
   flags: {
     topSection: { type: Boolean, default: false },
     crazyDeals: { type: Boolean, default: false },

@@ -383,6 +383,11 @@ exports.syncOrderStatus = async (req, res) => {
                     }
                 }
 
+                if (mappedStatus === 'Delivered') {
+                    const { creditOrderReward } = require('../utils/rewardService');
+                    creditOrderReward(order._id).catch(err => console.error('Error in creditOrderReward async trigger:', err));
+                }
+
                 // Rebuild tracking history from Shiprocket activities
                 if (activities.length > 0) {
                     const existingWebhookEntries = order.trackingHistory.filter(t => 

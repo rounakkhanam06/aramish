@@ -93,6 +93,55 @@ const AddProduct = () => {
     height: ''
   });
 
+  // Dynamic specifications
+  const defaultSpecificationsTemplate = [
+    {
+      section: 'Style',
+      fields: [
+        { name: 'Color', value: '' },
+        { name: 'Occasion Type', value: '' },
+        { name: 'Heel Type', value: '' },
+        { name: 'Toe Style', value: '' },
+        { name: 'Style Name', value: '' },
+        { name: 'Pattern', value: '' },
+        { name: 'Seasons', value: '' }
+      ]
+    },
+    {
+      section: 'Features & Specs',
+      fields: [
+        { name: 'Special Features', value: '' },
+        { name: 'Closure Type', value: '' },
+        { name: 'Shoe Type', value: '' },
+        { name: 'Water Resistance Level', value: '' },
+        { name: 'Strap Type', value: '' }
+      ]
+    },
+    {
+      section: 'Materials & Care',
+      fields: [
+        { name: 'Outer Material', value: '' },
+        { name: 'Material Fabric', value: '' }
+      ]
+    },
+    {
+      section: 'Item details',
+      fields: [
+        { name: 'Brand', value: '' },
+        { name: 'Item Type Name', value: '' },
+        { name: 'Manufacturer Part Number', value: '' }
+      ]
+    },
+    {
+      section: 'Measurements',
+      fields: [
+        { name: 'Fit to Size Sentiment', value: '' }
+      ]
+    }
+  ];
+
+  const [specifications, setSpecifications] = useState(defaultSpecificationsTemplate);
+
   // Flags state
   const [flags, setFlags] = useState({ topSection: false, crazyDeals: false, flashSale: false });
   const [systemSettings, setSystemSettings] = useState(null);
@@ -170,6 +219,9 @@ const AddProduct = () => {
               ts[k] = p.technicalSpecs[k];
             });
             setTechSpecs(prev => ({ ...prev, ...ts }));
+          }
+          if (p.specifications && Array.isArray(p.specifications)) {
+            setSpecifications(p.specifications.length > 0 ? p.specifications : defaultSpecificationsTemplate);
           }
           if (p.shippingSpecs) {
             setShippingSpecs(prev => ({ ...prev, ...p.shippingSpecs }));
@@ -531,6 +583,7 @@ const AddProduct = () => {
 
       bodyFormData.append('highlights', JSON.stringify(highlights));
       bodyFormData.append('technicalSpecs', JSON.stringify(techSpecs));
+      bodyFormData.append('specifications', JSON.stringify(specifications));
       bodyFormData.append('shippingSpecs', JSON.stringify(shippingSpecs));
       bodyFormData.append('flags', JSON.stringify(flags));
 
@@ -830,6 +883,95 @@ const AddProduct = () => {
                   ))}
                 </div>
               </div>
+            </div>
+          </section>
+
+          {/* Dynamic Specifications */}
+          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-7 space-y-5">
+            <SectionTitle icon={FileText} color="bg-pink-50 text-pink-500">Detailed Specifications</SectionTitle>
+            <div className="space-y-6">
+              {specifications.map((spec, secIdx) => (
+                <div key={secIdx} className="p-4 border border-slate-100 rounded-xl bg-slate-50 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <input 
+                      type="text"
+                      placeholder="Section Name (e.g., Style, Materials)"
+                      value={spec.section}
+                      onChange={e => {
+                        const newSpecs = [...specifications];
+                        newSpecs[secIdx].section = e.target.value;
+                        setSpecifications(newSpecs);
+                      }}
+                      className="bg-white border border-slate-200 rounded-lg py-2 px-3 text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-pink-100 focus:border-pink-300 transition-all outline-none"
+                    />
+                    <button 
+                      onClick={() => {
+                        const newSpecs = [...specifications];
+                        newSpecs.splice(secIdx, 1);
+                        setSpecifications(newSpecs);
+                      }}
+                      className="text-red-500 p-1 hover:bg-red-50 rounded"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {spec.fields.map((field, fieldIdx) => (
+                      <div key={fieldIdx} className="flex items-center gap-3">
+                        <input 
+                          type="text"
+                          placeholder="Field Name"
+                          value={field.name}
+                          onChange={e => {
+                            const newSpecs = [...specifications];
+                            newSpecs[secIdx].fields[fieldIdx].name = e.target.value;
+                            setSpecifications(newSpecs);
+                          }}
+                          className={tableInputCls}
+                        />
+                        <input 
+                          type="text"
+                          placeholder="Field Value"
+                          value={field.value}
+                          onChange={e => {
+                            const newSpecs = [...specifications];
+                            newSpecs[secIdx].fields[fieldIdx].value = e.target.value;
+                            setSpecifications(newSpecs);
+                          }}
+                          className={tableInputCls}
+                        />
+                        <button 
+                          onClick={() => {
+                            const newSpecs = [...specifications];
+                            newSpecs[secIdx].fields.splice(fieldIdx, 1);
+                            setSpecifications(newSpecs);
+                          }}
+                          className="text-red-400 hover:text-red-600 shrink-0"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    ))}
+                    <button 
+                      onClick={() => {
+                        const newSpecs = [...specifications];
+                        newSpecs[secIdx].fields.push({ name: '', value: '' });
+                        setSpecifications(newSpecs);
+                      }}
+                      className="text-xs font-semibold text-pink-500 hover:text-pink-600 flex items-center gap-1"
+                    >
+                      <Plus size={14} /> Add Field
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <button 
+                onClick={() => setSpecifications([...specifications, { section: '', fields: [{ name: '', value: '' }] }])}
+                className="px-4 py-2 bg-pink-50 text-pink-600 rounded-xl text-sm font-semibold hover:bg-pink-100 transition-all flex items-center gap-2"
+              >
+                <Plus size={16} /> Add Specification Section
+              </button>
             </div>
           </section>
 

@@ -30,6 +30,8 @@ export default function WalletPage() {
   const [historyTab, setHistoryTab] = useState('cash'); // default to cash/wallet transactions
   const [refreshing, setRefreshing] = useState(false);
 
+  const [lockedRewardCoins, setLockedRewardCoins] = useState(0);
+
   const fetchWalletDetails = async () => {
     const token = localStorage.getItem('userToken');
     if (!token) {
@@ -45,6 +47,7 @@ export default function WalletPage() {
       if (data.success) {
         setCoins(data.coins || 0);
         setWalletBalance(data.walletBalance || 0);
+        setLockedRewardCoins(data.lockedRewardCoins || 0);
         setWelcomeBonusRemaining(data.welcomeBonusRemaining || 0);
         setCoinTransactions(data.coinTransactions || []);
         setWalletTransactions(data.walletTransactions || []);
@@ -158,11 +161,32 @@ export default function WalletPage() {
               <div className="w-12 h-12 bg-surface/15 rounded-full flex items-center justify-center mb-3 border border-white/20 shadow-inner">
                 <Coins className="w-6 h-6 text-amber-300 animate-pulse" />
               </div>
-              <p className="text-indigo-200 text-[10px] font-bold tracking-wider uppercase mb-1">Total Wallet Coins Balance</p>
+              <p className="text-indigo-200 text-[10px] font-bold tracking-wider uppercase mb-1">Total Wallet Balance</p>
               <h2 className="text-3xl font-black tracking-tight">₹{walletBalance.toFixed(2)}</h2>
-              <span className="text-[10px] text-indigo-300 font-semibold mt-2.5 bg-white/10 px-3 py-1 rounded-full border border-white/5">
-                Welcome points remaining: ₹{welcomeBonusRemaining.toFixed(2)}
-              </span>
+              
+              <div className="mt-3 pt-3 border-t border-white/10 w-full flex items-center justify-around gap-2 text-xs">
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-emerald-300 font-semibold uppercase">Available to Spend</span>
+                  <span className="text-sm font-extrabold text-emerald-200">₹{Math.max(0, walletBalance - lockedRewardCoins).toFixed(2)}</span>
+                </div>
+                {lockedRewardCoins > 0 && (
+                  <div className="flex flex-col items-center border-l border-white/10 pl-4">
+                    <span className="text-[10px] text-amber-300 font-semibold uppercase flex items-center gap-1">🔒 Locked Coins</span>
+                    <span className="text-sm font-extrabold text-amber-200">₹{lockedRewardCoins.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
+                <span className="text-[10px] text-indigo-300 font-semibold bg-white/10 px-3 py-1 rounded-full border border-white/5">
+                  Welcome points remaining: ₹{welcomeBonusRemaining.toFixed(2)}
+                </span>
+                {lockedRewardCoins > 0 && (
+                  <span className="text-[10px] text-amber-300 font-semibold bg-amber-500/20 px-3 py-1 rounded-full border border-amber-400/30">
+                    🔒 Locked until return window closes
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -185,26 +209,49 @@ export default function WalletPage() {
             ) : (
               <div className="bg-surface rounded-xl shadow-sm border border-white/10 overflow-hidden">
                 {walletTransactions.map((tx, idx) => {
-                  const isCredit = ['Refund', 'Redemption', 'Order Cancellation', 'Welcome Bonus', 'REFUND'].includes(tx.type);
+                  const isCredit = ['Refund', 'Redemption', 'Order Cancellation', 'Welcome Bonus', 'REFUND', 'ORDER_REWARD'].includes(tx.type) && tx.amount > 0;
                   const TxIcon = isCredit ? ArrowDownLeft : ArrowUpRight;
                   
+                  const isLocked = tx.type === 'ORDER_REWARD' && tx.unlocksAt && new Date() < new Date(tx.unlocksAt);
+
                   return (
                     <div 
                       key={tx.id} 
-                      className={`flex items-center justify-between p-4.5 ${idx !== walletTransactions.length - 1 ? 'border-b border-white/10' : ''}`}
+                      className={`flex items-start justify-between p-4 ${idx !== walletTransactions.length - 1 ? 'border-b border-slate-100' : ''}`}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-full flex items-center justify-center ${isCredit ? 'bg-emerald-50 text-emerald-500' : 'bg-rose-50 text-rose-500'}`}>
+                      <div className="flex items-start gap-3 flex-1 min-w-0 pr-3">
+                        <div className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center mt-0.5 ${isCredit ? 'bg-emerald-50 text-emerald-500' : 'bg-rose-50 text-rose-500'}`}>
                           <TxIcon className="w-4 h-4" />
                         </div>
-                        <div>
-                          <p className="text-xs font-bold text-slate-800 leading-tight mb-0.5">{tx.type}</p>
-                          <p className="text-[10px] text-slate-500 leading-relaxed font-semibold">{tx.description}</p>
-                          <p className="text-[9px] font-medium text-slate-400 mt-0.5">{formatTxDate(tx.createdAt)}</p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                            <p className="text-[13px] font-bold text-slate-800 leading-tight mr-1">
+                              {tx.type === 'ORDER_REWARD' ? 'Order Reward' : tx.type}
+                            </p>
+                            {tx.orderId && (
+                              <span 
+                                onClick={() => navigate(`/order/${tx.orderId}`)}
+                                className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 cursor-pointer hover:bg-indigo-100 transition-colors shrink-0 shadow-sm"
+                              >
+                                Order #{tx.orderId.substring(tx.orderId.length - 6).toUpperCase()}
+                              </span>
+                            )}
+                            {isLocked ? (
+                              <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 flex items-center gap-0.5 shrink-0 shadow-sm">
+                                🔒 Locked till {formatTxDate(tx.unlocksAt)}
+                              </span>
+                            ) : tx.type === 'ORDER_REWARD' ? (
+                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 shrink-0 shadow-sm">
+                                ✅ Unlocked
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-snug font-medium line-clamp-2">{tx.description}</p>
+                          <p className="text-[9.5px] font-semibold text-slate-400 mt-1">{formatTxDate(tx.createdAt)}</p>
                         </div>
                       </div>
-                      <div className={`text-xs font-black ${isCredit ? 'text-emerald-500' : 'text-rose-500'}`}>
-                        {isCredit ? '+' : '-'}₹{tx.amount.toFixed(2)}
+                      <div className={`text-sm font-black shrink-0 ${isCredit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {isCredit ? '+' : '-'}₹{Math.abs(tx.amount).toFixed(2)}
                       </div>
                     </div>
                   );

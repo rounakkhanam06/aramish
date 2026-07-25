@@ -430,8 +430,8 @@ const OrderDetail = () => {
                           <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest">Product ID: {item.productId?.substring(item.productId.length - 8).toUpperCase() || 'N/A'}</p>
                           {item.attributes && Object.keys(item.attributes).length > 0 && (
                             <div className="flex flex-wrap gap-1.5 mt-2">
-                              {Object.entries(item.attributes).map(([key, val]) => (
-                                <span key={key} className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold uppercase">
+                              {Object.entries(item.attributes).map(([key, val], idx) => (
+                                <span key={`${key}-${idx}`} className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold uppercase">
                                   {key}: {val}
                                 </span>
                               ))}
