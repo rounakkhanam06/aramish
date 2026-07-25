@@ -2,6 +2,7 @@ const multer = require('multer');
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
 const { getImageUrl } = require('../utils/imageHelper');
 
 // Ensure upload directory exists
@@ -9,6 +10,66 @@ const uploadDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
+
+// Helper to check Cloudinary Credentials
+const isCloudinaryConfigured = () => {
+  return (
+    Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_CLOUD_NAME.trim()) &&
+    Boolean(process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_KEY.trim()) &&
+    Boolean(process.env.CLOUDINARY_API_SECRET && process.env.CLOUDINARY_API_SECRET.trim())
+  );
+};
+
+// Initialize Cloudinary if configured
+const initCloudinary = () => {
+  if (isCloudinaryConfigured()) {
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME.trim(),
+      api_key: process.env.CLOUDINARY_API_KEY.trim(),
+      api_secret: process.env.CLOUDINARY_API_SECRET.trim()
+    });
+  }
+};
+initCloudinary();
+
+// Save image buffer either to Cloudinary or to Local Uploads Folder
+const saveImageBuffer = async (buffer, filename, folderName = 'aramish') => {
+  if (isCloudinaryConfigured()) {
+    try {
+      const uploadResult = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder: folderName,
+            public_id: filename.replace(/\.[^/.]+$/, ''),
+            resource_type: 'image'
+          },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          }
+        );
+        uploadStream.end(buffer);
+      });
+      return {
+        url: uploadResult.secure_url,
+        filename,
+        isCloudinary: true
+      };
+    } catch (err) {
+      console.error('Cloudinary upload failed, falling back to local disk:', err.message);
+    }
+  }
+
+  // Fallback to local storage
+  const outputPath = path.join(uploadDir, filename);
+  await fs.promises.writeFile(outputPath, buffer);
+  return {
+    url: `/uploads/${filename}`,
+    filename,
+    path: outputPath,
+    isCloudinary: false
+  };
+};
 
 // Multer memory storage (buffer is processed by sharp)
 const storage = multer.memoryStorage();
@@ -30,7 +91,7 @@ const upload = multer({
   fileFilter: fileFilter
 });
 
-// Middleware to process image: convert to webp and save to uploads/
+// Middleware to process image: convert to webp and save to Cloudinary or uploads/
 const processImage = async (req, res, next) => {
   if (!req.file) {
     return next();
@@ -38,7 +99,6 @@ const processImage = async (req, res, next) => {
 
   try {
     const filename = `img-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
-    const outputPath = path.join(uploadDir, filename);
     const isBanner = req.originalUrl && req.originalUrl.toLowerCase().includes('banner');
 
     let sharpInstance;
@@ -58,15 +118,16 @@ const processImage = async (req, res, next) => {
         });
     }
 
-    await sharpInstance
+    const processedBuffer = await sharpInstance
       .sharpen({ sigma: 0.5 })
       .webp({ quality: 85, effort: 4 })
-      .toFile(outputPath);
+      .toBuffer();
 
-    // Save details to req.file
-    req.file.filename = filename;
-    req.file.path = outputPath;
-    req.file.url = `/uploads/${filename}`;
+    const saved = await saveImageBuffer(processedBuffer, filename, isBanner ? 'aramish/banners' : 'aramish/products');
+
+    req.file.filename = saved.filename;
+    if (saved.path) req.file.path = saved.path;
+    req.file.url = saved.url;
     next();
   } catch (err) {
     console.error('Sharp processing error:', err);
@@ -96,23 +157,23 @@ const processImages = async (req, res, next) => {
     req.processedFiles = [];
     for (const file of req.files) {
       const filename = `img-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
-      const outputPath = path.join(uploadDir, filename);
 
-      // Standardize new uploads to 1000x1000 WebP centered on a white square canvas
-      await sharp(file.buffer)
+      const processedBuffer = await sharp(file.buffer)
         .resize(1000, 1000, {
           fit: 'contain',
           background: { r: 255, g: 255, b: 255, alpha: 1 }
         })
         .sharpen({ sigma: 0.5 })
         .webp({ quality: 85, effort: 4 })
-        .toFile(outputPath);
+        .toBuffer();
+
+      const saved = await saveImageBuffer(processedBuffer, filename, 'aramish/products');
 
       req.processedFiles.push({
         fieldname: file.fieldname,
-        filename,
-        path: outputPath,
-        url: `/uploads/${filename}`
+        filename: saved.filename,
+        path: saved.path,
+        url: saved.url
       });
     }
     next();
@@ -135,15 +196,15 @@ const processBrandFiles = async (req, res, next) => {
     if (req.files.logo && req.files.logo[0]) {
       const file = req.files.logo[0];
       const filename = `brand-logo-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
-      const outputPath = path.join(uploadDir, filename);
 
-      await sharp(file.buffer)
+      const processedBuffer = await sharp(file.buffer)
         .resize(300, 300, { fit: 'inside', withoutEnlargement: true })
         .sharpen({ sigma: 0.5 })
         .webp({ quality: 85 })
-        .toFile(outputPath);
+        .toBuffer();
 
-      req.logoUrl = getImageUrl(`/uploads/${filename}`);
+      const saved = await saveImageBuffer(processedBuffer, filename, 'aramish/brands');
+      req.logoUrl = getImageUrl(saved.url);
     }
 
     next();
