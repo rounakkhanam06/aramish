@@ -874,15 +874,15 @@ export default function ProductDetailsPage() {
 
           {/* Product Description */}
           {product.desc && (
-            <div className="border-b border-white/10 pb-4">
-              <h3 className="font-bold text-sm text-[#02006c] mb-2">Description</h3>
+            <div className="border-b border-white/10 pb-2.5">
+              <h3 className="font-bold text-sm text-[#02006c] mb-1.5">Description</h3>
               <p className={`text-xs text-slate-500 font-medium leading-relaxed ${!isDescExpanded ? 'line-clamp-3' : ''}`}>
                 {product.desc}
               </p>
               {product.desc.length > 120 && (
                 <button 
                   onClick={() => setIsDescExpanded(!isDescExpanded)} 
-                  className="text-xs font-bold text-[#02006c] flex items-center gap-1 mt-1.5 hover:underline cursor-pointer"
+                  className="text-xs font-bold text-[#02006c] flex items-center gap-1 mt-1 hover:underline cursor-pointer"
                 >
                   {isDescExpanded ? (
                     <>Show Less <ChevronUp className="w-3.5 h-3.5" /></>
@@ -895,8 +895,8 @@ export default function ProductDetailsPage() {
           )}
 
           {/* Delivery Details Section */}
-          <div className="pb-0 border-b-0 md:pb-4 md:border-b md:border-white/10">
-            <h3 className="font-bold text-sm text-[#02006c] mb-3">Delivery Details</h3>
+          <div className="pb-0 border-b-0 md:pb-2.5 md:border-b md:border-white/10">
+            <h3 className="font-bold text-sm text-[#02006c] mb-1.5">Delivery Details</h3>
             <div className="bg-surface border border-white/10 rounded-xl p-3 flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-slate-400" />
@@ -972,12 +972,12 @@ export default function ProductDetailsPage() {
         </div>
 
         {/* Bottom Area (Specs & Reviews & Similar Products) - Spans full 12 columns */}
-        <div className="col-span-1 md:col-span-12 grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-8 mt-0 md:mt-4">
+        <div className="col-span-1 md:col-span-12 grid grid-cols-1 md:grid-cols-12 gap-2.5 md:gap-6 mt-0 md:mt-2">
           
           {/* Specifications, Highlights & Details - col-span-7 */}
-          <div className="md:col-span-7 space-y-6">
+          <div className="md:col-span-7 space-y-2.5">
             {/* Highlights */}
-            <div className="bg-surface p-4 rounded-2xl border border-white/10 shadow-3xs">
+            <div className="bg-surface p-3 md:p-3.5 rounded-2xl border border-white/10 shadow-3xs">
               <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsHighlightsOpen(!isHighlightsOpen)}>
                 <div className="flex flex-col">
                   <span className="font-bold text-base text-[#02006c]">Product Highlights</span>
@@ -1021,7 +1021,7 @@ export default function ProductDetailsPage() {
             </div>
 
             {/* Technical Specifications */}
-            <div className="bg-surface p-4 rounded-2xl border border-white/10 shadow-3xs">
+            <div className="bg-surface p-3 md:p-3.5 rounded-2xl border border-white/10 shadow-3xs">
               <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsDetailsOpen(!isDetailsOpen)}>
                 <div className="flex flex-col">
                   <span className="font-bold text-base text-[#02006c]">All Details & Specs</span>
@@ -1131,7 +1131,7 @@ export default function ProductDetailsPage() {
             </div>
             {/* Product Description Images */}
             {product.descriptionImages && product.descriptionImages.length > 0 && (
-              <div className="bg-surface p-4 rounded-2xl border border-white/10 shadow-3xs">
+              <div className="bg-surface p-3 md:p-3.5 rounded-2xl border border-white/10 shadow-3xs">
                 <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsDescriptionOpen(!isDescriptionOpen)}>
                   <div className="flex flex-col">
                     <span className="font-bold text-base text-[#02006c]">Product Description</span>
@@ -1162,7 +1162,7 @@ export default function ProductDetailsPage() {
           </div>
 
           {/* Ratings, Reviews & Reels - col-span-5 */}
-          <div className="md:col-span-5 bg-surface p-4 rounded-2xl border border-white/10 shadow-3xs space-y-6">
+          <div className="md:col-span-5 bg-surface p-3 md:p-3.5 rounded-2xl border border-white/10 shadow-3xs space-y-4">
             <div className="flex items-center justify-between cursor-pointer animate-fade-in" onClick={() => setIsReviewsOpen(!isReviewsOpen)}>
               <span className="font-bold text-base text-[#02006c]">Ratings & Reviews</span>
               <div className="w-8 h-8 rounded-lg bg-surface flex items-center justify-center transition-transform">
