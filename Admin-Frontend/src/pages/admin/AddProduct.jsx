@@ -1046,7 +1046,7 @@ const AddProduct = () => {
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
               {descriptionImages.map((img, idx) => (
                 <div key={idx} className="relative aspect-square border border-slate-200 rounded-xl overflow-hidden group bg-slate-50 shadow-sm">
-                  <OptimizedImage src={img} alt="Product Description" type="product" className="w-full h-full object-cover" />
+                  <OptimizedImage src={img} alt="Product Description" type="product" objectFit="cover" className="w-full h-full" />
                   <button
                     onClick={() => handleRemoveDescriptionImage(idx)}
                     className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-600"
