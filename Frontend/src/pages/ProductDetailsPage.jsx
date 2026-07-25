@@ -1143,17 +1143,14 @@ export default function ProductDetailsPage() {
                 </div>
 
                 {isDescriptionOpen && (
-                  <div className="mt-4 animate-fade-in border-t border-white/10 pt-4 space-y-4">
+                  <div className="mt-2.5 animate-fade-in border-t border-white/10 pt-2.5 space-y-0.5">
                     {product.descriptionImages.map((img, idx) => (
-                      <div key={idx} className="w-full rounded-xl overflow-hidden bg-slate-50 border border-slate-100">
-                        <OptimizedImage 
-                          src={getImageUrl(img)} 
-                          alt={`Product Description ${idx + 1}`} 
-                          type="product" 
-                          objectFit="contain"
-                          className="w-full h-auto" 
-                        />
-                      </div>
+                      <img 
+                        key={idx} 
+                        src={getImageUrl(img)} 
+                        alt={`Product Description ${idx + 1}`} 
+                        className="w-full h-auto block rounded-lg" 
+                      />
                     ))}
                   </div>
                 )}
