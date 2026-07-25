@@ -158,11 +158,19 @@ const processImages = async (req, res, next) => {
     for (const file of req.files) {
       const filename = `img-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
 
-      const processedBuffer = await sharp(file.buffer)
-        .resize(1000, 1000, {
+      let sharpInstance = sharp(file.buffer);
+      if (file.fieldname === 'descriptionImages') {
+        // Preserve natural aspect ratio for description infographics/banners
+        sharpInstance = sharpInstance.resize(1200, null, { withoutEnlargement: true });
+      } else {
+        // Product thumbnails: 1000x1000 square with white padding canvas
+        sharpInstance = sharpInstance.resize(1000, 1000, {
           fit: 'contain',
           background: { r: 255, g: 255, b: 255, alpha: 1 }
-        })
+        });
+      }
+
+      const processedBuffer = await sharpInstance
         .sharpen({ sigma: 0.5 })
         .webp({ quality: 85, effort: 4 })
         .toBuffer();
