@@ -358,7 +358,8 @@ export default function ProductDetailsPage() {
             manufacturerInfo: p.manufacturerInfo || '',
             shippingSpecs: p.shippingSpecs || {},
             variations: p.variations || [],
-            sizeChart: p.sizeChart || null
+            sizeChart: p.sizeChart || null,
+            descriptionImages: p.descriptionImages || []
           };
           
           if (normalised.variations.length > 0) {
