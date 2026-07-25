@@ -259,7 +259,14 @@ const createProduct = async (req, res) => {
       article,
       highlights: parseJsonField(req.body.highlights),
       technicalSpecs: parseJsonField(req.body.technicalSpecs),
-      specifications: parseJsonField(req.body.specifications),
+      specifications: (() => {
+        const specs = parseJsonField(req.body.specifications, []);
+        if (!Array.isArray(specs)) return [];
+        return specs.map(s => ({
+          ...s,
+          fields: (s.fields || []).filter(f => f.name && f.value && f.name.trim() !== '' && f.value.trim() !== '')
+        })).filter(s => s.section && s.section.trim() !== '' && s.fields.length > 0);
+      })(),
       shippingSpecs: parseJsonField(req.body.shippingSpecs),
       flags: parseJsonField(req.body.flags, { topSection: false, crazyDeals: false, flashSale: false }),
       gstCategory,
@@ -358,7 +365,15 @@ const updateProduct = async (req, res) => {
     if (req.body.highlights !== undefined) product.highlights = parseJsonField(req.body.highlights);
     if (req.body.technicalSpecs !== undefined) product.technicalSpecs = parseJsonField(req.body.technicalSpecs);
     if (req.body.specifications !== undefined) {
-      product.specifications = parseJsonField(req.body.specifications);
+      const parsedSpecs = parseJsonField(req.body.specifications, []);
+      if (Array.isArray(parsedSpecs)) {
+        product.specifications = parsedSpecs.map(s => ({
+          ...s,
+          fields: (s.fields || []).filter(f => f.name && f.value && f.name.trim() !== '' && f.value.trim() !== '')
+        })).filter(s => s.section && s.section.trim() !== '' && s.fields.length > 0);
+      } else {
+        product.specifications = [];
+      }
       product.markModified('specifications');
     }
     if (req.body.shippingSpecs !== undefined) product.shippingSpecs = parseJsonField(req.body.shippingSpecs);
