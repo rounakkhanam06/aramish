@@ -74,6 +74,9 @@ const productSchema = new mongoose.Schema({
   images: [{
     type: String
   }],
+  descriptionImages: [{
+    type: String
+  }],
   brandName: {
     type: String,
     default: 'Generic'

@@ -169,6 +169,9 @@ const AddProduct = () => {
   const [images, setImages] = useState([]); // holds urls or previews
   const [imageFiles, setImageFiles] = useState([]); // holds files for multipart uploading
 
+  const [descriptionImages, setDescriptionImages] = useState([]); 
+  const [descriptionImageFiles, setDescriptionImageFiles] = useState([]);
+
   useEffect(() => {
     if (!isEditMode) return;
     const fetchProduct = async () => {
@@ -205,6 +208,7 @@ const AddProduct = () => {
           setManufacturerInfo(p.manufacturerInfo || '');
           setHsnCode(p.hsnCode || '');
           setImages(p.images || []);
+          setDescriptionImages(p.descriptionImages || []);
           
           if (p.highlights) {
             const h = {};
@@ -467,6 +471,29 @@ const AddProduct = () => {
     setImageFiles(imageFiles.filter(item => item.previewUrl !== target));
   };
 
+  const handleAddDescriptionImageFile = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast.info('Image size cannot exceed 10MB!');
+        return;
+      }
+      if (descriptionImages.length >= 5) {
+        toast.info('You can only upload up to 5 description images!');
+        return;
+      }
+      const previewUrl = URL.createObjectURL(file);
+      setDescriptionImages([...descriptionImages, previewUrl]);
+      setDescriptionImageFiles([...descriptionImageFiles, { previewUrl, file }]);
+    }
+  };
+
+  const handleRemoveDescriptionImage = (index) => {
+    const target = descriptionImages[index];
+    setDescriptionImages(descriptionImages.filter((_, i) => i !== index));
+    setDescriptionImageFiles(descriptionImageFiles.filter(item => item.previewUrl !== target));
+  };
+
   const handleSave = async () => {
     if (!name || !category || !sellingPrice || !article) {
       toast.info('Product Name, Category, Article Number, and Selling Price are required!');
@@ -602,6 +629,18 @@ const AddProduct = () => {
 
       imageFiles.forEach(fileObj => {
         bodyFormData.append('images', fileObj.file);
+      });
+
+      const existingDescImages = [];
+      descriptionImages.forEach(img => {
+        if (typeof img === 'string' && !img.startsWith('blob:')) {
+          existingDescImages.push(img);
+        }
+      });
+      bodyFormData.append('descriptionImagesExisting', JSON.stringify(existingDescImages));
+
+      descriptionImageFiles.forEach(fileObj => {
+        bodyFormData.append('descriptionImages', fileObj.file);
       });
 
       variations.forEach((v, i) => {
@@ -905,6 +944,7 @@ const AddProduct = () => {
                       className="bg-white border border-slate-200 rounded-lg py-2 px-3 text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-pink-100 focus:border-pink-300 transition-all outline-none"
                     />
                     <button 
+                      type="button"
                       onClick={() => {
                         const newSpecs = [...specifications];
                         newSpecs.splice(secIdx, 1);
@@ -942,6 +982,7 @@ const AddProduct = () => {
                           className={tableInputCls}
                         />
                         <button 
+                          type="button"
                           onClick={() => {
                             const newSpecs = [...specifications];
                             newSpecs[secIdx].fields.splice(fieldIdx, 1);
@@ -954,6 +995,7 @@ const AddProduct = () => {
                       </div>
                     ))}
                     <button 
+                      type="button"
                       onClick={() => {
                         const newSpecs = [...specifications];
                         newSpecs[secIdx].fields.push({ name: '', value: '' });
@@ -967,11 +1009,50 @@ const AddProduct = () => {
                 </div>
               ))}
               <button 
+                type="button"
                 onClick={() => setSpecifications([...specifications, { section: '', fields: [{ name: '', value: '' }] }])}
                 className="px-4 py-2 bg-pink-50 text-pink-600 rounded-xl text-sm font-semibold hover:bg-pink-100 transition-all flex items-center gap-2"
               >
                 <Plus size={16} /> Add Specification Section
               </button>
+            </div>
+          </section>
+
+          {/* 3.5. Product Description Images */}
+          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-7 space-y-5">
+            <div className="flex justify-between items-center">
+              <SectionTitle icon={ImageIcon} color="bg-fuchsia-50 text-fuchsia-500">Product Description Images</SectionTitle>
+              <span className="text-xs font-semibold text-slate-400 bg-slate-100 px-2 py-1 rounded-md">
+                {descriptionImages.length} / 5
+              </span>
+            </div>
+            
+            <p className="text-xs text-slate-500 mb-2">
+              Add up to 5 images to show in the "Product Description" section on the customer side. If none are added, this section will remain hidden.
+            </p>
+
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
+              {descriptionImages.map((img, idx) => (
+                <div key={idx} className="relative aspect-square border border-slate-200 rounded-xl overflow-hidden group bg-slate-50 shadow-sm">
+                  <OptimizedImage src={img} alt="Product Description" type="product" className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => handleRemoveDescriptionImage(idx)}
+                    className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-600"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+              
+              {descriptionImages.length < 5 && (
+                <label className="aspect-square border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 hover:border-slate-400 transition-all group bg-white">
+                  <div className="p-3 bg-fuchsia-50 rounded-full group-hover:bg-fuchsia-100 transition-colors mb-2">
+                    <Plus size={20} className="text-fuchsia-500" />
+                  </div>
+                  <span className="text-xs font-semibold text-slate-500">Add Image</span>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleAddDescriptionImageFile} />
+                </label>
+              )}
             </div>
           </section>
 
@@ -983,6 +1064,7 @@ const AddProduct = () => {
                 <h3 className="text-base font-semibold text-slate-700">Variations</h3>
               </div>
               <button 
+                type="button"
                 onClick={handleAddVariation}
                 className="text-sm font-semibold text-blue-500 hover:underline flex items-center gap-1"
               >

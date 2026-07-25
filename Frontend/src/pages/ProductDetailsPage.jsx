@@ -194,8 +194,9 @@ export default function ProductDetailsPage() {
   // Accordion and Tab States
   const [isHighlightsOpen, setIsHighlightsOpen] = useState(true);
   const [isDetailsOpen, setIsDetailsOpen] = useState(true);
-  const [isReviewsOpen, setIsReviewsOpen] = useState(true);
+  const [isDescriptionOpen, setIsDescriptionOpen] = useState(true);
   const [activeDetailTab, setActiveDetailTab] = useState('specifications');
+  const [isReviewsOpen, setIsReviewsOpen] = useState(true);
   
   const videoRef = useRef(null);
   useEffect(() => {
@@ -1043,9 +1044,9 @@ export default function ProductDetailsPage() {
                               <h4 className="font-bold text-[15px] text-black pb-2 border-b border-slate-200">{spec.section}</h4>
                               <div className="divide-y divide-slate-200">
                                 {spec.fields.map((field, fIdx) => (
-                                  <div key={fIdx} className="flex flex-col sm:flex-row sm:items-start py-2.5">
-                                    <span className="text-[13px] text-slate-600 font-bold sm:w-1/3 shrink-0 mb-1 sm:mb-0 pr-4">{field.name}</span>
-                                    <span className="text-[13px] text-slate-800 sm:w-2/3">{field.value}</span>
+                                  <div key={fIdx} className="flex items-start py-2.5">
+                                    <span className="text-[13px] text-slate-600 font-bold w-1/2 md:w-[35%] shrink-0 pr-4 break-words">{field.name}</span>
+                                    <span className="text-[13px] text-slate-800 w-1/2 md:w-[65%] break-words">{field.value}</span>
                                   </div>
                                 ))}
                               </div>
@@ -1114,6 +1115,36 @@ export default function ProductDetailsPage() {
                 </div>
               )}
             </div>
+            {/* Product Description Images */}
+            {product.descriptionImages && product.descriptionImages.length > 0 && (
+              <div className="bg-surface p-4 rounded-2xl border border-white/10 shadow-3xs">
+                <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsDescriptionOpen(!isDescriptionOpen)}>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-base text-[#02006c]">Product Description</span>
+                    {!isDescriptionOpen && <span className="text-xs text-slate-500">More details and images</span>}
+                  </div>
+                  <div className="w-8 h-8 rounded-lg bg-surface flex items-center justify-center transition-transform">
+                    {isDescriptionOpen ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                  </div>
+                </div>
+
+                {isDescriptionOpen && (
+                  <div className="mt-4 animate-fade-in border-t border-white/10 pt-4 space-y-4">
+                    {product.descriptionImages.map((img, idx) => (
+                      <div key={idx} className="w-full rounded-xl overflow-hidden bg-slate-50 border border-slate-100">
+                        <OptimizedImage 
+                          src={getImageUrl(img)} 
+                          alt={`Product Description ${idx + 1}`} 
+                          type="product" 
+                          objectFit="contain"
+                          className="w-full h-auto" 
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Ratings, Reviews & Reels - col-span-5 */}

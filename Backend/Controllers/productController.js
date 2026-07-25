@@ -200,9 +200,14 @@ const createProduct = async (req, res) => {
     }
 
     let imageUrls = [];
+    let descriptionImages = [];
     if (req.processedFiles && req.processedFiles.length > 0) {
       imageUrls = req.processedFiles
         .filter(f => f.fieldname === 'images' || !f.fieldname)
+        .map(f => getImageUrl(f.url));
+        
+      descriptionImages = req.processedFiles
+        .filter(f => f.fieldname === 'descriptionImages')
         .map(f => getImageUrl(f.url));
     }
 
@@ -267,6 +272,7 @@ const createProduct = async (req, res) => {
           fields: (s.fields || []).filter(f => f.name && f.value && f.name.trim() !== '' && f.value.trim() !== '')
         })).filter(s => s.section && s.section.trim() !== '' && s.fields.length > 0);
       })(),
+      descriptionImages,
       shippingSpecs: parseJsonField(req.body.shippingSpecs),
       flags: parseJsonField(req.body.flags, { topSection: false, crazyDeals: false, flashSale: false }),
       gstCategory,
@@ -432,6 +438,21 @@ const updateProduct = async (req, res) => {
     }
 
     product.images = updatedImages;
+
+    // Process Description Images
+    let updatedDescImages = product.descriptionImages || [];
+    if (req.body.descriptionImagesExisting !== undefined) {
+      updatedDescImages = parseJsonField(req.body.descriptionImagesExisting);
+    }
+    if (req.processedFiles && req.processedFiles.length > 0) {
+      const newDescUrls = req.processedFiles
+        .filter(f => f.fieldname === 'descriptionImages')
+        .map(f => getImageUrl(f.url));
+      console.log('[updateProduct] newDescUrls:', newDescUrls);
+      updatedDescImages = [...updatedDescImages, ...newDescUrls];
+    }
+    console.log('[updateProduct] Final descriptionImages:', updatedDescImages);
+    product.descriptionImages = updatedDescImages;
 
     // Fallback: If global product has no images, but a variation does, use it
     const hasValidImages = product.images && product.images.filter(img => img && img.trim() !== '' && img !== 'undefined').length > 0;
