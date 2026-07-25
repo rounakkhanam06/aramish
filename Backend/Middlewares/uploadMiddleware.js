@@ -160,8 +160,10 @@ const processImages = async (req, res, next) => {
 
       let sharpInstance = sharp(file.buffer);
       if (file.fieldname === 'descriptionImages') {
-        // Preserve natural aspect ratio for description infographics/banners
-        sharpInstance = sharpInstance.resize(1200, null, { withoutEnlargement: true });
+        // Automatically crop away any top/bottom empty borders & preserve natural aspect ratio
+        sharpInstance = sharpInstance
+          .trim()
+          .resize(1200, null, { withoutEnlargement: true });
       } else {
         // Product thumbnails: 1000x1000 square with white padding canvas
         sharpInstance = sharpInstance.resize(1000, 1000, {
