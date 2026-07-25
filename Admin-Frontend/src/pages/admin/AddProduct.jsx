@@ -5,7 +5,7 @@ import {
   Info, Image as ImageIcon, Layers,
   DollarSign, Tag, FileText, 
   Truck, ShieldCheck, ToggleLeft, ToggleRight,
-  ArrowLeft, RefreshCw
+  ArrowLeft, RefreshCw, Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '../../utils/toast';
@@ -1030,6 +1030,18 @@ const AddProduct = () => {
             <p className="text-xs text-slate-500 mb-2">
               Add up to 5 images to show in the "Product Description" section on the customer side. If none are added, this section will remain hidden.
             </p>
+
+            <div className="bg-fuchsia-50/60 border border-fuchsia-100 rounded-xl p-3.5 text-xs text-slate-600 space-y-1.5 mt-2">
+              <div className="flex items-center gap-1.5 font-bold text-fuchsia-900">
+                <Sparkles size={15} className="text-fuchsia-500 shrink-0" />
+                <span>Recommended Image Dimensions for Best Fit:</span>
+              </div>
+              <ul className="list-disc list-inside text-[11px] text-slate-600 space-y-0.5 pl-1 leading-relaxed">
+                <li><strong>Width:</strong> <code className="bg-fuchsia-100/70 px-1.5 py-0.5 rounded text-fuchsia-800 font-mono font-semibold">1200px</code> (For HD crispness on all devices)</li>
+                <li><strong>Height:</strong> Flexible (<code className="bg-fuchsia-100/70 px-1.5 py-0.5 rounded text-fuchsia-800 font-mono font-semibold">600px - 900px</code> recommended)</li>
+                <li><strong>Zero-Space Tip:</strong> Ensure your image design has no blank/white padding at top & bottom canvas edges for a seamless fit.</li>
+              </ul>
+            </div>
 
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
               {descriptionImages.map((img, idx) => (
