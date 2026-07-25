@@ -195,6 +195,7 @@ export default function ProductDetailsPage() {
   const [isHighlightsOpen, setIsHighlightsOpen] = useState(true);
   const [isDetailsOpen, setIsDetailsOpen] = useState(true);
   const [isDescriptionOpen, setIsDescriptionOpen] = useState(true);
+  const [isDescExpanded, setIsDescExpanded] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState('specifications');
   const [isReviewsOpen, setIsReviewsOpen] = useState(true);
   
@@ -875,9 +876,21 @@ export default function ProductDetailsPage() {
           {product.desc && (
             <div className="border-b border-white/10 pb-4">
               <h3 className="font-bold text-sm text-[#02006c] mb-2">Description</h3>
-              <p className="text-xs text-slate-500 font-medium">
+              <p className={`text-xs text-slate-500 font-medium leading-relaxed ${!isDescExpanded ? 'line-clamp-3' : ''}`}>
                 {product.desc}
               </p>
+              {product.desc.length > 120 && (
+                <button 
+                  onClick={() => setIsDescExpanded(!isDescExpanded)} 
+                  className="text-xs font-bold text-[#02006c] flex items-center gap-1 mt-1.5 hover:underline cursor-pointer"
+                >
+                  {isDescExpanded ? (
+                    <>Show Less <ChevronUp className="w-3.5 h-3.5" /></>
+                  ) : (
+                    <>Read More <ChevronDown className="w-3.5 h-3.5" /></>
+                  )}
+                </button>
+              )}
             </div>
           )}
 
