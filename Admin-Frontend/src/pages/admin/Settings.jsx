@@ -24,12 +24,17 @@ const Settings = () => {
   const [gstNo, setGstNo] = useState('');
   const [commission, setCommission] = useState(10);
   const [gstPercentage, setGstPercentage] = useState(18);
+  const [codChargeEnabled, setCodChargeEnabled] = useState(true);
+  const [codChargeAmount, setCodChargeAmount] = useState(150);
+  const [prepaidDiscountEnabled, setPrepaidDiscountEnabled] = useState(true);
+  const [prepaidDiscountAmount, setPrepaidDiscountAmount] = useState(100);
 
   // Coins settings states
   const [coinConversionEnabled, setCoinConversionEnabled] = useState(true);
   const [coinsPerRupee, setCoinsPerRupee] = useState(100);
   const [minimumRedeemCoins, setMinimumRedeemCoins] = useState(500);
   const [maximumRedeemPerOrder, setMaximumRedeemPerOrder] = useState(10000);
+  const [welcomeBonusEnabled, setWelcomeBonusEnabled] = useState(true);
   const [welcomeBonusCoins, setWelcomeBonusCoins] = useState(1000);
   const [rewardCoinsEnabled, setRewardCoinsEnabled] = useState(true);
   const [rewardCoinsPerDeliveredOrder, setRewardCoinsPerDeliveredOrder] = useState(100);
@@ -102,10 +107,15 @@ const Settings = () => {
         setGstNo(s.gstNo || '');
         setCommission(s.commission ?? 10);
         setGstPercentage(s.gstPercentage ?? 18);
+        setCodChargeEnabled(s.codChargeEnabled ?? true);
+        setCodChargeAmount(s.codChargeAmount ?? 150);
+        setPrepaidDiscountEnabled(s.prepaidDiscountEnabled ?? true);
+        setPrepaidDiscountAmount(s.prepaidDiscountAmount ?? 100);
         setCoinConversionEnabled(s.coinConversionEnabled ?? true);
         setCoinsPerRupee(s.coinsPerRupee ?? 100);
         setMinimumRedeemCoins(s.minimumRedeemCoins ?? 500);
         setMaximumRedeemPerOrder(s.maximumRedeemPerOrder ?? 10000);
+        setWelcomeBonusEnabled(s.welcomeBonusEnabled ?? true);
         setWelcomeBonusCoins(s.welcomeBonusCoins ?? 1000);
         setRewardCoinsEnabled(s.rewardCoinsEnabled ?? true);
         setRewardCoinsPerDeliveredOrder(s.rewardCoinsPerDeliveredOrder ?? 100);
@@ -224,7 +234,11 @@ const Settings = () => {
             helpline,
             gstNo,
             commission,
-            gstPercentage
+            gstPercentage,
+            codChargeEnabled,
+            codChargeAmount: Number(codChargeAmount),
+            prepaidDiscountEnabled,
+            prepaidDiscountAmount: Number(prepaidDiscountAmount)
           })
         });
         const settingsData = await settingsRes.json();
@@ -250,6 +264,7 @@ const Settings = () => {
             coinsPerRupee: Number(coinsPerRupee),
             minimumRedeemCoins: Number(minimumRedeemCoins),
             maximumRedeemPerOrder: Number(maximumRedeemPerOrder),
+            welcomeBonusEnabled: Boolean(welcomeBonusEnabled),
             welcomeBonusCoins: Number(welcomeBonusCoins),
             rewardCoinsEnabled: Boolean(rewardCoinsEnabled),
             rewardCoinsPerDeliveredOrder: Number(rewardCoinsPerDeliveredOrder),
@@ -504,15 +519,58 @@ const Settings = () => {
                           required 
                         />
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Global GST Percentage (%)</label>
-                        <input 
-                          type="number" 
-                          value={gstPercentage}
-                          onChange={e => setGstPercentage(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
-                          required 
-                        />
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-50">
+                      <h3 className="text-sm font-bold text-slate-900 font-montserrat uppercase mb-4">Payment Methods & Pricing</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-widest">COD Extra Charge</h4>
+                              <p className="text-[10px] text-slate-500 mt-0.5">Apply extra fee on Cash on Delivery orders</p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input type="checkbox" className="sr-only peer" checked={codChargeEnabled} onChange={(e) => setCodChargeEnabled(e.target.checked)} />
+                              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                          </div>
+                          {codChargeEnabled && (
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Charge Amount (₹)</label>
+                              <input 
+                                type="number" 
+                                value={codChargeAmount}
+                                onChange={e => setCodChargeAmount(e.target.value)}
+                                className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 text-xs font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="text-xs font-bold text-emerald-700 uppercase tracking-widest">Prepaid Discount</h4>
+                              <p className="text-[10px] text-slate-500 mt-0.5">Offer discount for online paid orders</p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input type="checkbox" className="sr-only peer" checked={prepaidDiscountEnabled} onChange={(e) => setPrepaidDiscountEnabled(e.target.checked)} />
+                              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                            </label>
+                          </div>
+                          {prepaidDiscountEnabled && (
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Discount Amount (₹)</label>
+                              <input 
+                                type="number" 
+                                value={prepaidDiscountAmount}
+                                onChange={e => setPrepaidDiscountAmount(e.target.value)}
+                                className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 text-xs font-bold focus:ring-4 focus:ring-emerald-50 transition-all outline-none" 
+                              />
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-4">
@@ -640,6 +698,19 @@ const Settings = () => {
                       <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Features Control</h3>
                       
                       <div className="flex flex-col gap-4">
+                        <div className="flex items-center gap-3">
+                          <input 
+                            type="checkbox" 
+                            id="welcomeBonusEnabled" 
+                            checked={welcomeBonusEnabled}
+                            onChange={e => setWelcomeBonusEnabled(e.target.checked)}
+                            className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-50 cursor-pointer"
+                          />
+                          <label htmlFor="welcomeBonusEnabled" className="text-xs font-bold text-slate-700 select-none cursor-pointer">
+                            Enable Welcome Bonus Coins Feature for New Users
+                          </label>
+                        </div>
+
                         <div className="flex items-center gap-3">
                           <input 
                             type="checkbox" 

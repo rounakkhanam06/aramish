@@ -174,13 +174,34 @@ const verifyOtp = async (req, res) => {
           user.referredBy = referrer._id;
           
           const Referral = require('../Models/Referral');
+          const CoinTransaction = require('../Models/CoinTransaction');
+          const SystemConfig = require('../Models/SystemConfig');
+          
           const existingReferral = await Referral.findOne({ referrer: referrer._id, referee: user._id });
           if (!existingReferral) {
+            const config = await SystemConfig.findOne({});
+            const referrerReward = config && config.referralCoinsReferrer !== undefined ? config.referralCoinsReferrer : 200;
+            
             await Referral.create({
               referrer: referrer._id,
               referee: user._id,
               referralCode: uppercaseCode,
-              status: 'pending'
+              status: 'rewarded',
+              completedAt: new Date(),
+              referrerCoinsAwarded: referrerReward,
+              refereeCoinsAwarded: 0
+            });
+            
+            // Credit referrer immediately
+            await User.findByIdAndUpdate(referrer._id, {
+              $inc: { referralCoins: referrerReward }
+            });
+            
+            await CoinTransaction.create({
+              userId: referrer._id,
+              type: 'earned',
+              title: `Referral Reward (Invited new user)`,
+              amount: referrerReward
             });
           }
         }
@@ -196,21 +217,28 @@ const verifyOtp = async (req, res) => {
         const WalletTransaction = require('../Models/WalletTransaction');
         
         const config = await SystemConfig.findOne({});
-        const welcomeAmount = config && config.welcomeBonusCoins !== undefined ? config.welcomeBonusCoins : 1000;
+        const isWelcomeBonusEnabled = config && config.welcomeBonusEnabled !== undefined ? config.welcomeBonusEnabled : true;
         
-        user.walletBalance = (user.walletBalance || 0) + welcomeAmount;
-        user.welcomeBonusRemaining = (user.welcomeBonusRemaining || 0) + welcomeAmount;
-        user.welcomeBonusGiven = true;
-        user.welcomeBonusDate = new Date();
-        
-        await WalletTransaction.create({
-          userId: user._id,
-          type: 'Welcome Bonus',
-          amount: welcomeAmount,
-          description: 'Welcome Bonus Credited'
-        });
-        
-        console.log(`🎁 Welcome bonus of ${welcomeAmount} credited to user ${user._id}`);
+        if (isWelcomeBonusEnabled) {
+          const welcomeAmount = config && config.welcomeBonusCoins !== undefined ? config.welcomeBonusCoins : 1000;
+          
+          user.walletBalance = (user.walletBalance || 0) + welcomeAmount;
+          user.welcomeBonusRemaining = (user.welcomeBonusRemaining || 0) + welcomeAmount;
+          user.welcomeBonusGiven = true;
+          user.welcomeBonusDate = new Date();
+          
+          await WalletTransaction.create({
+            userId: user._id,
+            type: 'Welcome Bonus',
+            amount: welcomeAmount,
+            description: 'Welcome Bonus Credited'
+          });
+          
+          console.log(`🎁 Welcome bonus of ${welcomeAmount} credited to user ${user._id}`);
+        } else {
+          user.welcomeBonusGiven = true; // Mark as given so we don't check again
+          console.log(`ℹ️ Welcome bonus disabled in settings. Skipping for user ${user._id}`);
+        }
       } catch (wbErr) {
         console.error('❌ Error processing welcome bonus:', wbErr.message);
       }
@@ -388,9 +416,14 @@ const getWallet = async (req, res) => {
     const lockedRewardCoins = await getUserLockedRewardCoins(req.user.id);
     const availableWalletBalance = Math.max(0, (user.walletBalance || 0) - lockedRewardCoins);
 
+    const SystemConfig = require('../Models/SystemConfig');
+    const config = await SystemConfig.findOne({});
+    const referralWalletMaxUsagePercentage = config && config.referralWalletMaxUsagePercentage !== undefined ? config.referralWalletMaxUsagePercentage : 25;
+
     res.status(200).json({
       success: true,
       coins: user.referralCoins || 0,
+      referralWalletMaxUsagePercentage,
       walletBalance: user.walletBalance || 0,
       lockedRewardCoins,
       availableWalletBalance,

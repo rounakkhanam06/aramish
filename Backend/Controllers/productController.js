@@ -153,6 +153,7 @@ const createProduct = async (req, res) => {
       sku,
       article,
       gstCategory,
+      gstPercentage,
       hsnCode,
       brandName,
       brandId,
@@ -276,6 +277,7 @@ const createProduct = async (req, res) => {
       shippingSpecs: parseJsonField(req.body.shippingSpecs),
       flags: parseJsonField(req.body.flags, { topSection: false, crazyDeals: false, flashSale: false }),
       gstCategory,
+      gstPercentage: Number(gstPercentage) || 0,
       hsnCode,
       images: imageUrls,
       brandId: brandId || undefined,
@@ -334,13 +336,13 @@ const updateProduct = async (req, res) => {
 
     const fields = [
       'name', 'category', 'subCategory', 'description', 'sellingPrice',
-      'mrp', 'stock', 'discountLabel', 'sku', 'article', 'gstCategory', 'hsnCode',
+      'mrp', 'stock', 'discountLabel', 'sku', 'article', 'gstCategory', 'gstPercentage', 'hsnCode',
       'manufacturerInfo', 'status'
     ];
 
     fields.forEach(f => {
       if (req.body[f] !== undefined) {
-        if (['sellingPrice', 'mrp', 'stock'].includes(f)) {
+        if (['sellingPrice', 'mrp', 'stock', 'gstPercentage'].includes(f)) {
           product[f] = Number(req.body[f]);
         } else {
           product[f] = req.body[f];

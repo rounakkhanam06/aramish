@@ -43,10 +43,12 @@ export default function ReviewOrderPage() {
   const [redeemCoins, setRedeemCoins] = useState(false);
   const [userCoins, setUserCoins] = useState(0);
   const [redeemWallet, setRedeemWallet] = useState(false);
+  const [redeemReferralCoins, setRedeemReferralCoins] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
   const [availableWalletBalance, setAvailableWalletBalance] = useState(0);
   const [lockedRewardCoins, setLockedRewardCoins] = useState(0);
   const [welcomeBonusRemaining, setWelcomeBonusRemaining] = useState(0);
+  const [referralWalletMaxUsagePercentage, setReferralWalletMaxUsagePercentage] = useState(25);
   const [coinsConfig, setCoinsConfig] = useState({
     coinsPerRupee: 100,
     maximumRedeemPerOrder: 10000
@@ -126,6 +128,9 @@ export default function ReviewOrderPage() {
             setAvailableWalletBalance(data.availableWalletBalance !== undefined ? data.availableWalletBalance : (data.walletBalance || 0));
             setLockedRewardCoins(data.lockedRewardCoins || 0);
             setWelcomeBonusRemaining(data.welcomeBonusRemaining || 0);
+            if (data.referralWalletMaxUsagePercentage !== undefined) {
+              setReferralWalletMaxUsagePercentage(data.referralWalletMaxUsagePercentage);
+            }
           }
         } catch (err) {
           console.error("Error fetching user coins:", err);
@@ -455,7 +460,8 @@ export default function ReviewOrderPage() {
           deliveryCharge: deliveryCharge,
           etd: etd,
           redeemCoins: false,
-          redeemWallet: redeemWallet
+          redeemWallet: redeemWallet,
+          redeemReferralCoins: redeemReferralCoins
         })
       });
       
@@ -502,10 +508,25 @@ export default function ReviewOrderPage() {
   const originalTotal = cart.reduce((sum, item) => sum + (item.originalPrice || item.price) * item.quantity, 0);
   const productDiscount = Math.max(0, originalTotal - totalCartPrice);
   const platformCommission = systemSettings?.commission ?? 15;
-  const gstPercentage = systemSettings?.gstPercentage ?? 18;
   
-  const gstAmount = Math.round(Math.max(0, totalCartPrice - discountAmount) * (gstPercentage / 100));
-  const grandTotalBeforeCoins = Math.max(0, totalCartPrice - discountAmount + gstAmount + platformCommission + deliveryCharge);
+  const discountRatio = originalTotal > 0 ? (discountAmount / totalCartPrice) : 0; // Wait, totalCartPrice is originalTotal - productDiscount. discountAmount is the coupon. So discount is on totalCartPrice.
+  let calculatedGstAmount = 0;
+  cart.forEach(item => {
+    const itemTotalPrice = (item.originalPrice || item.price) * item.quantity;
+    const itemAfterProductDiscount = item.price * item.quantity; // price is sellingPrice
+    const itemFinalPrice = Math.max(0, itemAfterProductDiscount - (itemAfterProductDiscount * (totalCartPrice > 0 ? (discountAmount / totalCartPrice) : 0)));
+    calculatedGstAmount += itemFinalPrice * ((item.gstPercentage || 0) / 100);
+  });
+  const gstAmount = Math.round(calculatedGstAmount);
+  const codChargeAmount = systemSettings?.codChargeAmount ?? 150;
+  const isCodChargeEnabled = systemSettings?.codChargeEnabled ?? true;
+  const prepaidDiscountAmount = systemSettings?.prepaidDiscountAmount ?? 100;
+  const isPrepaidDiscountEnabled = systemSettings?.prepaidDiscountEnabled ?? true;
+
+  const codCharge = (isCodChargeEnabled && paymentMethod === 'COD') ? codChargeAmount : 0;
+  const prepaidDiscount = (isPrepaidDiscountEnabled && paymentMethod === 'ONLINE') ? prepaidDiscountAmount : 0;
+
+  const grandTotalBeforeCoins = Math.max(0, totalCartPrice - discountAmount + gstAmount + platformCommission + deliveryCharge + codCharge - prepaidDiscount);
   
   const welcomeBonusCoins = systemSettings?.welcomeBonusCoins ?? 1000;
   const limitPerOrder = welcomeBonusCoins / 4;
@@ -514,7 +535,12 @@ export default function ReviewOrderPage() {
   const otherBalanceToUse = Math.max(0, spendableBalance - (welcomeBonusRemaining || 0));
   const totalUsableWallet = maxWelcomeCoinsToUse + otherBalanceToUse;
   const walletUsedAmount = redeemWallet ? Math.min(totalUsableWallet, grandTotalBeforeCoins) : 0;
-  const grandTotal = Math.max(0, grandTotalBeforeCoins - walletUsedAmount);
+  
+  const grandTotalBeforeReferralCoins = Math.max(0, grandTotalBeforeCoins - walletUsedAmount);
+  const maxUsableReferralCoins = Math.min((userCoins * referralWalletMaxUsagePercentage) / 100, grandTotalBeforeReferralCoins);
+  const referralCoinsUsedAmount = redeemReferralCoins ? Math.min(maxUsableReferralCoins, grandTotalBeforeReferralCoins) : 0;
+  
+  const grandTotal = Math.max(0, grandTotalBeforeReferralCoins - referralCoinsUsedAmount);
 
   const firstItem = cart && cart.length > 0 ? cart[0] : null;
 
@@ -748,6 +774,50 @@ export default function ReviewOrderPage() {
             </div>
           )}
 
+          {/* Referral Coins Redemption */}
+          {userCoins > 0 && systemSettings?.referralEnabled !== false && (
+            <div>
+              <div className="flex items-center gap-2 mb-2 px-1 text-[#02006c] mt-4">
+                <Coins className="w-4 h-4 text-amber-500" />
+                <h2 className="text-xs font-black uppercase tracking-wide">Referral Coins</h2>
+              </div>
+              <div className="bg-surface rounded-2xl p-4 shadow-3xs border border-white/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-800">Use Referral Coins (Max {referralWalletMaxUsagePercentage}%)</span>
+                    <span className="text-[10px] text-slate-500 font-medium mt-0.5">
+                      Available Balance: <span className="font-bold text-slate-700">₹{userCoins.toFixed(2)}</span>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRedeemReferralCoins(!redeemReferralCoins)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      redeemReferralCoins ? 'bg-amber-500' : 'bg-slate-200'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out ${
+                        redeemReferralCoins ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+                
+                {redeemReferralCoins && (
+                  <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-600">
+                    <div>
+                      <p>Coins to use: <span className="text-amber-600">₹{referralCoinsUsedAmount.toFixed(2)}</span></p>
+                    </div>
+                    <div>
+                      <p>Remaining: <span className="text-slate-700">₹{(userCoins - referralCoinsUsedAmount).toFixed(2)}</span></p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Payment Method Selected Dropdown */}
           <div className="bg-surface rounded-2xl shadow-3xs border border-white/10 overflow-hidden">
             <button 
@@ -780,7 +850,12 @@ export default function ReviewOrderPage() {
                       : 'border-white/10 text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="text-xs">Cash on Delivery</span>
+                  <div className="flex flex-col text-left">
+                    <span className="text-xs">Cash on Delivery</span>
+                    {isCodChargeEnabled && (
+                      <span className="text-[10px] text-slate-500 font-medium mt-0.5">₹{codChargeAmount} Additional handling fee applies</span>
+                    )}
+                  </div>
                   {paymentMethod === 'COD' && <span className="w-2 h-2 rounded-full bg-[#0B132B]" />}
                 </button>
 
@@ -797,7 +872,17 @@ export default function ReviewOrderPage() {
                       : 'border-white/10 text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="text-xs">Online</span>
+                  <div className="flex flex-col text-left">
+                    <span className="text-xs">
+                      Online 
+                      {isPrepaidDiscountEnabled && (
+                        <span className="ml-1 text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-black">RECOMMENDED</span>
+                      )}
+                    </span>
+                    {isPrepaidDiscountEnabled && (
+                      <span className="text-[10px] text-emerald-600 font-medium mt-0.5">Save ₹{prepaidDiscountAmount} instantly with prepaid orders!</span>
+                    )}
+                  </div>
                   {paymentMethod === 'ONLINE' && <span className="w-2 h-2 rounded-full bg-[#0B132B]" />}
                 </button>
               </div>
@@ -832,8 +917,14 @@ export default function ReviewOrderPage() {
                 <span className="text-emerald-600 font-medium">- ₹{Number(walletUsedAmount).toFixed(2)}</span>
               </div>
             )}
+            {redeemReferralCoins && referralCoinsUsedAmount > 0 && (
+              <div className="flex justify-between items-center">
+                <span>Referral Coins Used</span>
+                <span className="text-emerald-600 font-medium">- ₹{Number(referralCoinsUsedAmount).toFixed(2)}</span>
+              </div>
+            )}
             <div className="flex justify-between items-center">
-              <span>Product GST ({gstPercentage}%)</span>
+              <span>Product GST</span>
               <span className="text-slate-800">₹{Number(gstAmount).toFixed(2)}</span>
             </div>
             <div className="flex justify-between items-center">
@@ -854,6 +945,18 @@ export default function ReviewOrderPage() {
                 </span>
               )}
             </div>
+            {codCharge > 0 && (
+              <div className="flex justify-between items-center">
+                <span>COD Charge</span>
+                <span className="text-slate-800">₹{Number(codCharge).toFixed(2)}</span>
+              </div>
+            )}
+            {prepaidDiscount > 0 && (
+              <div className="flex justify-between items-center">
+                <span>Prepaid Discount</span>
+                <span className="text-emerald-600 font-medium">- ₹{Number(prepaidDiscount).toFixed(2)}</span>
+              </div>
+            )}
             
             <div className="border-t border-white/10 pt-3.5 flex justify-between items-center text-xs font-bold text-slate-700">
               <span>Total Price</span>
@@ -863,6 +966,12 @@ export default function ReviewOrderPage() {
               <div className="flex justify-between items-center text-xs font-bold text-emerald-600">
                 <span>Wallet Deduction</span>
                 <span>- ₹{Number(walletUsedAmount).toFixed(2)}</span>
+              </div>
+            )}
+            {redeemReferralCoins && referralCoinsUsedAmount > 0 && (
+              <div className="flex justify-between items-center text-xs font-bold text-emerald-600">
+                <span>Referral Coins Deduction</span>
+                <span>- ₹{Number(referralCoinsUsedAmount).toFixed(2)}</span>
               </div>
             )}
             <div className="border-t border-white/10 pt-3.5 flex justify-between items-center text-base font-black text-[#02006c]">

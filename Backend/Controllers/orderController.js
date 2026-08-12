@@ -24,7 +24,7 @@ exports.createOrder = async (req, res) => {
   let walletUsedAmount = 0;
 
   try {
-    const { items, total, deliveryAddress, paymentMethod, paymentStatus, paymentId, couponCode, deliveryCharge, etd, redeemCoins, redeemWallet } = req.body;
+    const { items, total, deliveryAddress, paymentMethod, paymentStatus, paymentId, couponCode, deliveryCharge, etd, redeemCoins, redeemWallet, redeemReferralCoins } = req.body;
 
     if (!items || items.length === 0 || !total || !deliveryAddress || !paymentMethod) {
       return res.status(400).json({ success: false, message: 'Please provide all required fields' });
@@ -83,7 +83,8 @@ exports.createOrder = async (req, res) => {
         image: item.image || (product.images && product.images[0]) || '',
         variationSku: item.variationSku || null,
         article: product.article || null,
-        attributes: item.attributes || {}
+        attributes: item.attributes || {},
+        gstPercentage: product.gstPercentage || 0
       });
     }
 
@@ -189,10 +190,17 @@ exports.createOrder = async (req, res) => {
     // 4. Calculate GST and platform fee
     const SystemConfig = require('../Models/SystemConfig');
     const systemConfig = await SystemConfig.findOne({}, null, sessionOpt);
-    const gstPercentage = systemConfig && systemConfig.gstPercentage !== undefined ? systemConfig.gstPercentage : 18;
     const platformCommission = systemConfig && systemConfig.commission !== undefined ? systemConfig.commission : 15;
     
-    const gstAmount = Math.round(Math.max(0, calculatedSubtotal - discountAmount) * (gstPercentage / 100));
+    // Calculate item-level GST
+    const discountRatio = calculatedSubtotal > 0 ? (discountAmount / calculatedSubtotal) : 0;
+    let totalGstAmount = 0;
+    for (const item of validatedItems) {
+      const itemTotalPrice = item.price * item.quantity;
+      const itemFinalPrice = Math.max(0, itemTotalPrice - (itemTotalPrice * discountRatio));
+      totalGstAmount += itemFinalPrice * ((item.gstPercentage || 0) / 100);
+    }
+    const gstAmount = Math.round(totalGstAmount);
 
     // 5. Calculate delivery charge
     let calculatedDeliveryCharge = 0;
@@ -218,7 +226,15 @@ exports.createOrder = async (req, res) => {
       calculatedDeliveryCharge = Number(deliveryCharge) || 0;
     }
 
-    const finalCalculatedTotal = Math.max(0, calculatedSubtotal - discountAmount + gstAmount + platformCommission + calculatedDeliveryCharge);
+    const isCodChargeEnabled = systemConfig && systemConfig.codChargeEnabled !== undefined ? systemConfig.codChargeEnabled : true;
+    const codChargeAmount = systemConfig && systemConfig.codChargeAmount !== undefined ? systemConfig.codChargeAmount : 150;
+    const isPrepaidDiscountEnabled = systemConfig && systemConfig.prepaidDiscountEnabled !== undefined ? systemConfig.prepaidDiscountEnabled : true;
+    const prepaidDiscountAmount = systemConfig && systemConfig.prepaidDiscountAmount !== undefined ? systemConfig.prepaidDiscountAmount : 100;
+
+    const codCharge = (isCodChargeEnabled && paymentMethod === 'COD') ? codChargeAmount : 0;
+    const prepaidDiscount = (isPrepaidDiscountEnabled && paymentMethod === 'Online') ? prepaidDiscountAmount : 0;
+
+    const finalCalculatedTotal = Math.max(0, calculatedSubtotal - discountAmount + gstAmount + platformCommission + calculatedDeliveryCharge + codCharge - prepaidDiscount);
 
     // Wallet Cash Redemption (Capped welcome bonus + other balance)
     walletDeducted = false;
@@ -275,7 +291,32 @@ exports.createOrder = async (req, res) => {
       }
     }
 
-    const finalPayableTotal = Math.max(0, finalCalculatedTotal - walletUsedAmount);
+    let referralCoinsUsedAmount = 0;
+    if (redeemReferralCoins) {
+      const user = await User.findById(req.user._id, null, sessionOpt);
+      if (user && (user.referralCoins || 0) > 0) {
+        const referralWalletMaxUsagePercentage = systemConfig && systemConfig.referralWalletMaxUsagePercentage !== undefined ? systemConfig.referralWalletMaxUsagePercentage : 25;
+        const maxUsableReferralCoins = Math.min((user.referralCoins * referralWalletMaxUsagePercentage) / 100, finalCalculatedTotal - walletUsedAmount);
+        
+        referralCoinsUsedAmount = Number(maxUsableReferralCoins.toFixed(2));
+        
+        if (referralCoinsUsedAmount > 0) {
+          user.referralCoins -= referralCoinsUsedAmount;
+          user.referralCoins = Number(user.referralCoins.toFixed(2));
+          await user.save(sessionOpt);
+          
+          const CoinTransaction = require('../Models/CoinTransaction');
+          await CoinTransaction.create([{
+            userId: req.user._id,
+            type: 'spent',
+            title: `Used Referral Coins for Order Checkout`,
+            amount: referralCoinsUsedAmount
+          }], sessionOpt);
+        }
+      }
+    }
+
+    const finalPayableTotal = Math.max(0, finalCalculatedTotal - walletUsedAmount - referralCoinsUsedAmount);
 
     // 6. Verify Razorpay payment if paymentMethod is Online
     if (paymentMethod === 'Online') {
@@ -335,12 +376,15 @@ exports.createOrder = async (req, res) => {
       coinsRedeemed: coinsRedeemedAmount,
       walletUsed: walletUsedAmount,
       welcomeCoinsUsed,
+      referralCoinsUsed: referralCoinsUsedAmount,
       deliveryAddress,
       paymentMethod,
       paymentStatus: paymentMethod === 'Online' ? 'Paid' : 'Pending',
       status: 'Pending',
       couponCode: couponCodeClean || null,
       deliveryCharge: calculatedDeliveryCharge,
+      codCharge,
+      prepaidDiscount,
       etd: etd || ''
     };
     if (paymentId) {

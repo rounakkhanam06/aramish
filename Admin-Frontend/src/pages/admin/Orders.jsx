@@ -848,6 +848,20 @@ const Orders = () => {
                   <span className="font-black text-slate-900">₹{(selectedOrder.deliveryCharge || 0).toLocaleString()}</span>
                 </div>
 
+                {selectedOrder.codCharge > 0 && (
+                  <div className="flex justify-between items-center text-xs font-bold text-slate-500">
+                    <span>COD Charge:</span>
+                    <span className="font-black text-slate-900">₹{selectedOrder.codCharge.toLocaleString()}</span>
+                  </div>
+                )}
+
+                {selectedOrder.prepaidDiscount > 0 && (
+                  <div className="flex justify-between items-center text-xs font-bold text-emerald-500">
+                    <span>Prepaid Discount:</span>
+                    <span className="font-black text-emerald-600">-₹{selectedOrder.prepaidDiscount.toLocaleString()}</span>
+                  </div>
+                )}
+
                 {selectedOrder.couponCode && (
                   <div className="flex justify-between items-center text-xs font-bold text-indigo-500 bg-indigo-50/50 px-3 py-2 rounded-xl border border-indigo-100/50">
                     <span className="uppercase">Coupon Used:</span>

@@ -74,6 +74,10 @@ const orderSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  referralCoinsUsed: {
+    type: Number,
+    default: 0
+  },
   status: {
     type: String,
     enum: [
@@ -102,6 +106,14 @@ const orderSchema = new mongoose.Schema({
     default: []
   },
   deliveryCharge: {
+    type: Number,
+    default: 0
+  },
+  codCharge: {
+    type: Number,
+    default: 0
+  },
+  prepaidDiscount: {
     type: Number,
     default: 0
   },

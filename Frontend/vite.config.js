@@ -8,8 +8,7 @@ const require = createRequire(import.meta.url);
 // https://vite.dev/config/
 export default defineConfig({
   server: {
-    port: 5173,
-    strictPort: true
+    port: 5174,
   },
   base: '/',
   build: {

@@ -129,7 +129,8 @@ export const AppProvider = ({ children }) => {
         variationSku: item.variationSku || null,
         selectedColor: colorVal || null,
         selectedSize: sizeVal || null,
-        attributes: typeof attributes.toObject === 'function' ? attributes.toObject() : attributes
+        attributes: typeof attributes.toObject === 'function' ? attributes.toObject() : attributes,
+        gstPercentage: p.gstPercentage || 0
       };
     }).filter(Boolean);
   };

@@ -60,7 +60,7 @@ export default function ReferEarnPage() {
   }, [user]);
 
   const referralCode = referralData?.referralCode || '...';
-  const shareText = `Hey! Join Aramish using my referral code ${referralCode} and we both get ${referralData?.stats?.coinsPerReferral || 100} Aramish Coins! 🎉`;
+  const shareText = `Hey! Join Aramish using my referral code ${referralCode}! 🎉`;
   const shareUrl = `${window.location.origin}/#/login?ref=${referralCode}`;
   const fullShareText = `${shareText}\n\n${shareUrl}`;
 
@@ -174,9 +174,9 @@ export default function ReferEarnPage() {
               </div>
               <h2 className="text-2xl font-black mb-1 tracking-tight">Invite &amp; Earn!</h2>
               <p className="text-sm text-indigo-200 font-medium px-4 leading-snug">
-                You and your friend both get{' '}
-                <span className="text-amber-300 font-black">{referralData?.stats?.coinsPerReferral || 100} Aramish Coins</span>{' '}
-                when they complete their first order.
+                Users will receive <span className="text-amber-300 font-black">₹{referralData?.stats?.coinsPerReferral || 100} referral coins</span> when someone installs the app using their referral code.
+                <br />
+                <span className="text-xs opacity-90 mt-2 block">Users can utilize up to {referralData?.stats?.maxUsagePercentage || 25}% of their referral wallet balance per order.</span>
               </p>
             </div>
           </div>

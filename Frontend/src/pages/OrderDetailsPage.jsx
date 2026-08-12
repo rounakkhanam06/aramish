@@ -192,7 +192,9 @@ export default function OrderDetailsPage() {
     walletUsed: orderData.walletUsed,
     coinsRedeemed: orderData.coinsRedeemed,
     couponCode: orderData.couponCode,
-    createdAt: orderData.createdAt
+    createdAt: orderData.createdAt,
+    codCharge: orderData.codCharge || 0,
+    prepaidDiscount: orderData.prepaidDiscount || 0
   } : null;
 
   const isDelivered = globalOrder ? ['Delivered', 'Return Requested', 'Refunded', 'Partially Refunded'].includes(globalOrder.status) : id !== 'ORD-8X92-K1';
@@ -1363,6 +1365,20 @@ export default function OrderDetailsPage() {
                    )}
                  </div>
 
+                 {globalOrder?.codCharge > 0 && (
+                   <div className="flex justify-between items-center text-xs font-semibold text-slate-600">
+                     <span>COD Charge</span>
+                     <span>₹{globalOrder.codCharge}</span>
+                   </div>
+                 )}
+
+                 {globalOrder?.prepaidDiscount > 0 && (
+                   <div className="flex justify-between items-center text-xs font-semibold text-green-600">
+                     <span>Prepaid Discount</span>
+                     <span>-₹{globalOrder.prepaidDiscount}</span>
+                   </div>
+                 )}
+
                  {deducedDiscount > 0 && (
                    <div className="flex justify-between items-center text-xs font-semibold text-green-600">
                      <span>Discount / Coupon {globalOrder?.couponCode ? `(${globalOrder.couponCode})` : ''}</span>
@@ -1638,19 +1654,38 @@ export default function OrderDetailsPage() {
               </div>
 
               {/* Refund summary */}
-              {returnSelectedItems.length > 0 && (
-                <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-xs">
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-green-700">Estimated Refund</span>
-                    <span className="text-sm font-black text-green-700">₹{returnSelectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0).toLocaleString()}</span>
+              {returnSelectedItems.length > 0 && (() => {
+                const baseRefund = returnSelectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                let estimatedRefundText = `₹${baseRefund.toLocaleString()}`;
+                
+                if (refundMethodOption === 'Wallet') {
+                  const isFullReturn = globalOrder && returnSelectedItems.length === globalOrder.items.length && returnSelectedItems.every(rItem => {
+                    const oItem = globalOrder.items.find(i => (i.productId._id || i.productId) === rItem.productId);
+                    return oItem && rItem.quantity === oItem.quantity;
+                  });
+                  
+                  if (isFullReturn) {
+                    estimatedRefundText = `₹${globalOrder.total.toLocaleString()} (Full Refund)`;
+                  } else {
+                    const proportionalGst = globalOrder && globalOrder.subtotal > 0 ? (baseRefund / globalOrder.subtotal) * (globalOrder.gstAmount || 0) : 0;
+                    estimatedRefundText = `₹${Math.round(baseRefund + proportionalGst).toLocaleString()}`;
+                  }
+                }
+                
+                return (
+                  <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-green-700">Estimated Refund</span>
+                      <span className="text-sm font-black text-green-700">{estimatedRefundText}</span>
+                    </div>
+                    <p className="text-[10px] text-green-600 mt-1 font-semibold leading-relaxed">
+                      {refundMethodOption === 'Wallet' 
+                        ? 'The full eligible refund amount (including GST) will be credited to your wallet. For full returns, shipping and platform fees are also refunded.' 
+                        : `Only the item price will be refunded. GST, Platform fee, and shipping charges will not be refunded for Bank/UPI transfers.`}
+                    </p>
                   </div>
-                  <p className="text-[10px] text-green-600 mt-1 font-semibold">
-                    {refundMethodOption === 'Wallet' 
-                      ? 'Refund will be credited back to your wallet' 
-                      : `Refund will be transferred to your specified ${refundMethodOption === 'Bank' ? 'Bank Account' : 'UPI ID'} by admin`}
-                  </p>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Submit */}
               {returnSelectedItems.length === 0 && (

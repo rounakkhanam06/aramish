@@ -36,11 +36,18 @@ const getMyReferral = async (req, res) => {
       .populate('referee', 'name phone createdAt')
       .sort({ createdAt: -1 });
 
+    const SystemConfig = require('../Models/SystemConfig');
+    const systemConfig = await SystemConfig.findOne({});
+    const coinsPerReferral = systemConfig && systemConfig.referralCoinsReferrer !== undefined ? systemConfig.referralCoinsReferrer : 100;
+    const maxUsagePercentage = systemConfig && systemConfig.referralWalletMaxUsagePercentage !== undefined ? systemConfig.referralWalletMaxUsagePercentage : 25;
+    
     const stats = {
       totalReferrals: referrals.length,
       pendingReferrals: referrals.filter(r => r.status === 'pending').length,
       completedReferrals: referrals.filter(r => r.status !== 'pending').length,
       totalCoinsEarned: user.referralCoins || 0,
+      coinsPerReferral,
+      maxUsagePercentage
     };
 
     res.status(200).json({
@@ -273,7 +280,8 @@ const getConfig = async (req, res) => {
         referralCoinsPerReferral: config.referralCoinsPerReferral || 100,
         referralCoinsReferrer: config.referralCoinsReferrer !== undefined ? config.referralCoinsReferrer : (config.referralCoinsPerReferral || 100),
         referralCoinsReferee: config.referralCoinsReferee !== undefined ? config.referralCoinsReferee : (config.referralCoinsPerReferral || 100),
-        referralEnabled: config.referralEnabled !== false
+        referralEnabled: config.referralEnabled !== false,
+        referralWalletMaxUsagePercentage: config.referralWalletMaxUsagePercentage !== undefined ? config.referralWalletMaxUsagePercentage : 25
       }
     });
   } catch (error) {
@@ -286,7 +294,7 @@ const getConfig = async (req, res) => {
 // @access  Private (Admin)
 const updateConfig = async (req, res) => {
   try {
-    const { referralCoinsPerReferral, referralCoinsReferrer, referralCoinsReferee, referralEnabled } = req.body;
+    const { referralCoinsPerReferral, referralCoinsReferrer, referralCoinsReferee, referralEnabled, referralWalletMaxUsagePercentage } = req.body;
     const SystemConfig = require('../Models/SystemConfig');
     let config = await SystemConfig.findOne({});
     if (!config) config = new SystemConfig();
@@ -295,6 +303,7 @@ const updateConfig = async (req, res) => {
     if (referralCoinsReferrer !== undefined) config.referralCoinsReferrer = Number(referralCoinsReferrer);
     if (referralCoinsReferee !== undefined) config.referralCoinsReferee = Number(referralCoinsReferee);
     if (referralEnabled !== undefined) config.referralEnabled = referralEnabled;
+    if (referralWalletMaxUsagePercentage !== undefined) config.referralWalletMaxUsagePercentage = Number(referralWalletMaxUsagePercentage);
 
     await config.save();
     res.status(200).json({ success: true, message: 'Referral config updated', config });

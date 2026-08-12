@@ -34,17 +34,19 @@ const updateSettings = async (req, res) => {
       'coinConversionEnabled', 'coinsPerRupee', 'minimumRedeemCoins', 'maximumRedeemPerOrder',
       'crazyDealsHeaderName', 'showCrazyDealsTimer', 'crazyDealsDuration',
       'featuredCollectionHeaderName', 'showFeaturedCollectionTimer', 'featuredCollectionDuration',
-      'newArrivalsHeaderName', 'showNewArrivalsTimer', 'newArrivalsDuration'
+      'newArrivalsHeaderName', 'showNewArrivalsTimer', 'newArrivalsDuration',
+      'codChargeEnabled', 'codChargeAmount', 'prepaidDiscountEnabled', 'prepaidDiscountAmount', 'welcomeBonusEnabled'
     ];
 
     fields.forEach(f => {
       if (req.body[f] !== undefined) {
         if ([
           'commission', 'gstPercentage', 'coinsPerRupee', 'minimumRedeemCoins', 'maximumRedeemPerOrder',
-          'returnWindowDays', 'welcomeBonusCoins', 'rewardCoinsPerDeliveredOrder', 'crazyDealsDuration', 'featuredCollectionDuration', 'newArrivalsDuration'
+          'returnWindowDays', 'welcomeBonusCoins', 'rewardCoinsPerDeliveredOrder', 'crazyDealsDuration', 'featuredCollectionDuration', 'newArrivalsDuration',
+          'codChargeAmount', 'prepaidDiscountAmount'
         ].includes(f)) {
           config[f] = Number(req.body[f]);
-        } else if (['coinConversionEnabled', 'rewardCoinsEnabled', 'marqueeEnabled', 'walletEnabled', 'showCrazyDealsTimer', 'showFeaturedCollectionTimer', 'showNewArrivalsTimer'].includes(f)) {
+        } else if (['coinConversionEnabled', 'rewardCoinsEnabled', 'marqueeEnabled', 'walletEnabled', 'showCrazyDealsTimer', 'showFeaturedCollectionTimer', 'showNewArrivalsTimer', 'codChargeEnabled', 'prepaidDiscountEnabled', 'welcomeBonusEnabled'].includes(f)) {
           config[f] = req.body[f] === true || req.body[f] === 'true';
         } else {
           config[f] = req.body[f];

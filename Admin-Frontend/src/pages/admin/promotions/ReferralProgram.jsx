@@ -26,8 +26,9 @@ const ReferralProgram = () => {
   // Config panel
   const [showConfig, setShowConfig] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
-  const [referralCoinsReferrer, setReferralCoinsReferrer] = useState(100);
-  const [referralCoinsReferee, setReferralCoinsReferee] = useState(100);
+  const [referralCoinsReferrer, setReferralCoinsReferrer] = useState(200);
+  const [referralCoinsReferee, setReferralCoinsReferee] = useState(0);
+  const [referralWalletMaxUsagePercentage, setReferralWalletMaxUsagePercentage] = useState(25);
   const [referralEnabled, setReferralEnabled] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
 
@@ -64,6 +65,7 @@ const ReferralProgram = () => {
       if (data.success) {
         setReferralCoinsReferrer(data.config.referralCoinsReferrer);
         setReferralCoinsReferee(data.config.referralCoinsReferee);
+        setReferralWalletMaxUsagePercentage(data.config.referralWalletMaxUsagePercentage ?? 25);
         setReferralEnabled(data.config.referralEnabled);
       }
     } catch { /* silent */ }
@@ -83,6 +85,7 @@ const ReferralProgram = () => {
           referralCoinsReferrer,
           referralCoinsReferee,
           referralCoinsPerReferral: referralCoinsReferrer,
+          referralWalletMaxUsagePercentage,
           referralEnabled
         })
       });
@@ -398,11 +401,27 @@ const ReferralProgram = () => {
                     </div>
                   </div>
 
+                  {/* Max Usage % */}
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
+                      Max Referral Wallet Usage Per Order (%)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={referralWalletMaxUsagePercentage}
+                        onChange={e => setReferralWalletMaxUsagePercentage(Number(e.target.value.replace(/\D/g, '')) || 0)}
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-black focus:ring-4 focus:ring-blue-50 outline-none transition-all"
+                      />
+                      <span className="absolute right-5 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 uppercase tracking-widest">%</span>
+                    </div>
+                  </div>
+
                   {/* Info box */}
                   <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 flex gap-3 items-start">
                     <AlertCircle size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
                     <p className="text-[11px] text-blue-500 font-bold leading-relaxed uppercase tracking-wide">
-                      Coins are credited to both parties automatically when the referred user completes their first order.
+                      Referrer gets coins immediately upon signup. Referee gets no referral coins. Referral wallet usage is capped per order based on the percentage above.
                     </p>
                   </div>
                 </div>

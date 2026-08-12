@@ -101,16 +101,6 @@ exports.createReturnRequest = async (req, res) => {
       });
     }
 
-    // Cap the refund amount by the total amount paid on the order
-    const refundAmount = Math.min(calculatedRefundAmount, order.total);
-
-    let imagePaths = [];
-    if (req.processedFiles && req.processedFiles.length > 0) {
-      imagePaths = req.processedFiles.map(f => f.url);
-    } else if (req.files && req.files.length > 0) {
-      imagePaths = req.files.map(f => `/uploads/${f.filename || f.originalname}`);
-    }
-
     let parsedBankDetails = null;
     if (req.body.bankDetails) {
       try {
@@ -120,6 +110,39 @@ exports.createReturnRequest = async (req, res) => {
       }
     }
 
+    const finalRefundMethod = req.body.refundMethod || (parsedBankDetails ? 'Bank' : 'Original');
+
+    // Cap the refund amount based on user selection (Wallet gets full fees back, Bank/UPI only gets item price)
+    let refundAmount = 0;
+    if (finalRefundMethod === 'Bank' || finalRefundMethod === 'UPI') {
+      refundAmount = Math.min(calculatedRefundAmount, order.total);
+    } else if (finalRefundMethod === 'Wallet') {
+      const isFullReturn = order.items.every(orderItem => {
+        const rItem = validatedReturnItems.find(r => r.productId.toString() === orderItem.productId.toString());
+        return rItem && rItem.quantity === orderItem.quantity;
+      });
+
+      const proportionalGst = (order.subtotal && order.subtotal > 0) ? (calculatedRefundAmount / order.subtotal) * (order.gstAmount || 0) : 0;
+      
+      let walletRefund = calculatedRefundAmount + proportionalGst;
+      if (isFullReturn) {
+        walletRefund += (order.deliveryCharge || 0) + (order.platformCommission || 0);
+      }
+      
+      refundAmount = Math.min(walletRefund, order.total);
+    } else {
+      refundAmount = Math.min(calculatedRefundAmount, order.total);
+    }
+    
+    refundAmount = Math.round(refundAmount * 100) / 100;
+
+    let imagePaths = [];
+    if (req.processedFiles && req.processedFiles.length > 0) {
+      imagePaths = req.processedFiles.map(f => f.url);
+    } else if (req.files && req.files.length > 0) {
+      imagePaths = req.files.map(f => `/uploads/${f.filename || f.originalname}`);
+    }
+
     const returnRequest = await ReturnRequest.create({
       orderId,
       userId: req.user._id,
@@ -127,7 +150,7 @@ exports.createReturnRequest = async (req, res) => {
       reason,
       reasonDetails: reasonDetails || '',
       refundAmount,
-      refundMethod: req.body.refundMethod || (parsedBankDetails ? 'Bank' : 'Original'),
+      refundMethod: finalRefundMethod,
       bankDetails: parsedBankDetails,
       images: imagePaths,
       status: 'Requested'

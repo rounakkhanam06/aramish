@@ -68,6 +68,10 @@ const productSchema = new mongoose.Schema({
   gstCategory: {
     type: String
   },
+  gstPercentage: {
+    type: Number,
+    default: 0
+  },
   hsnCode: {
     type: String
   },

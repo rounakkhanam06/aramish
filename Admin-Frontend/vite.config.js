@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 // https://vite.dev/config/
 export default defineConfig({
   server: {
-    port: 5174,
+    port: 5175,
     strictPort: true
   },
   plugins: [
