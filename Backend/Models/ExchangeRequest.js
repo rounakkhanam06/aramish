@@ -52,6 +52,7 @@ const exchangeRequestSchema = new mongoose.Schema({
   },
   requestedVariant: {
     productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+    name:      { type: String, default: '' },
     color:     { type: String, required: true },
     size:      { type: String, required: true },
     sku:       { type: String, required: true },
@@ -66,6 +67,8 @@ const exchangeRequestSchema = new mongoose.Schema({
     enum: ['Not Required', 'Pending', 'Collected', 'Refunded'],
     default: 'Not Required'
   },
+  paymentMethod: { type: String, enum: ['COD', 'Online', null], default: null },
+  paymentId:     { type: String, default: null },
   reason: {
     type: String,
     enum: ['Size Issue', 'Color Issue', 'Wrong Item Received', 'Defective Product', 'Changed Mind', 'Other'],

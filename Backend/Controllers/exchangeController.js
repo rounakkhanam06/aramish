@@ -3,8 +3,49 @@ const Order = require('../Models/Order');
 const Product = require('../Models/Product');
 const SystemConfig = require('../Models/SystemConfig');
 const User = require('../Models/User');
+const axios = require('axios');
 const shiprocketService = require('../Router/shiprocketService');
 const { EXCHANGE_WEBHOOK_MAP } = require('../Router/shiprocketService');
+const { resolveVariantPrice } = require('../utils/priceHelper');
+
+// Verifies a Razorpay payment covers `expectedAmount` (rupees). Mirrors orderController.js's
+// checkout verification so the same trust model applies to exchange price-difference payments.
+const verifyRazorpayPayment = async (paymentId, expectedAmount) => {
+  const rzpKeyId = process.env.RAZORPAY_KEY_ID;
+  const rzpKeySecret = process.env.RAZORPAY_KEY_SECRET;
+
+  if (!rzpKeyId || !rzpKeySecret) {
+    if (process.env.ENV === 'production') {
+      throw new Error('Razorpay keys not configured on server.');
+    }
+    console.warn('RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET not set in environment. Bypassing live verification.');
+    return;
+  }
+
+  try {
+    const rzpAuth = Buffer.from(`${rzpKeyId}:${rzpKeySecret}`).toString('base64');
+    const rzpResponse = await axios.get(`https://api.razorpay.com/v1/payments/${paymentId}`, {
+      headers: { 'Authorization': `Basic ${rzpAuth}` }
+    });
+
+    const paymentData = rzpResponse.data;
+    if (!paymentData || (paymentData.status !== 'captured' && paymentData.status !== 'authorized')) {
+      throw new Error('Razorpay payment is not captured or authorized.');
+    }
+
+    const paidAmountRupees = paymentData.amount / 100;
+    if (Math.abs(paidAmountRupees - expectedAmount) > 1) {
+      throw new Error(`Payment amount mismatch. Expected: ₹${expectedAmount}, Paid: ₹${paidAmountRupees}`);
+    }
+
+    if (paymentData.currency !== 'INR') {
+      throw new Error('Currency mismatch. Only INR is supported.');
+    }
+  } catch (paymentErr) {
+    console.error('Razorpay verification error:', paymentErr.response?.data || paymentErr.message);
+    throw new Error(`Payment verification failed: ${paymentErr.response?.data?.error?.description || paymentErr.message}`);
+  }
+};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -29,6 +70,92 @@ const releaseReservedStock = async (exchange) => {
     exchange.inventoryReservation.released = true;
     exchange.inventoryReservation.releasedAt = new Date();
   }
+};
+
+// Builds the Shiprocket reverse-shipment payload (pickup of the old item). Priced at the
+// original item's value, since that's what's being returned.
+const buildReversePayload = (exchange, originalOrder, cityState) => ({
+  order_id: `EXC_REV_${exchange._id.toString()}`,
+  order_date: new Date().toISOString().slice(0, 16).replace('T', ' '),
+  channel_id: '',
+  pickup_customer_name: originalOrder.deliveryAddress.name || originalOrder.userId?.name || 'Customer',
+  pickup_last_name: '',
+  pickup_address: originalOrder.deliveryAddress.address,
+  pickup_address_2: '',
+  pickup_city: cityState.city,
+  pickup_state: cityState.state,
+  pickup_country: 'India',
+  pickup_pincode: originalOrder.deliveryAddress.pincode,
+  pickup_email: originalOrder.userId?.email || 'customer@aramish.com',
+  pickup_phone: originalOrder.deliveryAddress.phone || originalOrder.userId?.phone || '9999999999',
+  shipping_customer_name: process.env.RETURN_SHIPPING_NAME || 'Aramish Warehouse',
+  shipping_last_name: '',
+  shipping_address: process.env.RETURN_SHIPPING_ADDRESS || 'Warehouse 12, Sector 63',
+  shipping_address_2: '',
+  shipping_city: process.env.RETURN_SHIPPING_CITY || 'Noida',
+  shipping_state: process.env.RETURN_SHIPPING_STATE || 'Uttar Pradesh',
+  shipping_country: 'India',
+  shipping_pincode: process.env.SHIPROCKET_PICKUP_PINCODE || '201301',
+  shipping_phone: process.env.RETURN_SHIPPING_PHONE || '9876543210',
+  shipping_email: process.env.RETURN_SHIPPING_EMAIL || 'warehouse@aramish.com',
+  order_items: [{
+    name: exchange.originalItem.name,
+    sku: exchange.originalItem.variationSku || exchange.originalItem.productId.toString(),
+    units: 1,
+    selling_price: exchange.originalItem.price,
+    discount: 0,
+    tax: 0,
+    hsn: 441122
+  }],
+  payment_method: 'Prepaid',
+  sub_total: exchange.originalItem.price,
+  length: 10, breadth: 10, height: 10, weight: 0.5
+});
+
+// Builds the Shiprocket forward-shipment payload (delivery of the replacement). Priced at the
+// replacement's actual value. If the price difference is being collected via COD, the courier
+// collects only that delta on delivery — the item itself was already paid for as part of the
+// original order plus (if Online) the difference charge.
+const buildForwardPayload = (exchange, originalOrder, cityState) => {
+  const isCodDifference = exchange.paymentMethod === 'COD' && exchange.additionalAmount > 0;
+  return {
+    order_id: `EXC_FWD_${exchange._id.toString()}`,
+    order_date: new Date().toISOString().slice(0, 16).replace('T', ' '),
+    pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION || 'Primary',
+    billing_customer_name: originalOrder.deliveryAddress.name || originalOrder.userId?.name || 'Customer',
+    billing_last_name: '',
+    billing_address: originalOrder.deliveryAddress.address,
+    billing_address_2: '',
+    billing_city: cityState.city,
+    billing_pincode: originalOrder.deliveryAddress.pincode,
+    billing_state: cityState.state,
+    billing_country: 'India',
+    billing_email: originalOrder.userId?.email || 'customer@aramish.com',
+    billing_phone: originalOrder.deliveryAddress.phone || originalOrder.userId?.phone || '9999999999',
+    shipping_is_billing: true,
+    shipping_customer_name: originalOrder.deliveryAddress.name || originalOrder.userId?.name || 'Customer',
+    shipping_last_name: '',
+    shipping_address: originalOrder.deliveryAddress.address,
+    shipping_address_2: '',
+    shipping_city: cityState.city,
+    shipping_pincode: originalOrder.deliveryAddress.pincode,
+    shipping_state: cityState.state,
+    shipping_country: 'India',
+    shipping_email: originalOrder.userId?.email || 'customer@aramish.com',
+    shipping_phone: originalOrder.deliveryAddress.phone || originalOrder.userId?.phone || '9999999999',
+    order_items: [{
+      name: `${exchange.requestedVariant.name || exchange.originalItem.name} (${exchange.requestedVariant.color}/${exchange.requestedVariant.size})`,
+      sku: exchange.requestedVariant.sku,
+      units: 1,
+      selling_price: exchange.requestedVariant.price,
+      discount: 0,
+      tax: 0,
+      hsn: 441122
+    }],
+    payment_method: isCodDifference ? 'COD' : 'Prepaid',
+    sub_total: isCodDifference ? exchange.additionalAmount : exchange.requestedVariant.price,
+    length: 10, breadth: 10, height: 10, weight: 0.5
+  };
 };
 
 // ─── User: Create Exchange Request ───────────────────────────────────────────
@@ -110,22 +237,68 @@ exports.createExchangeRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Original item not found in this order' });
     }
 
-    // Same variant validation
-    if (parsedOriginalItem.variationSku && parsedRequestedVariant.sku === parsedOriginalItem.variationSku) {
-      return res.status(400).json({ success: false, message: 'Requested variant must be different from the current variant' });
-    }
-
-    // Fetch product to validate requested variant
-    const product = await Product.findById(parsedRequestedVariant.productId || parsedOriginalItem.productId);
+    // Fetch product to validate requested variant (may be any eligible product in the catalog,
+    // not just the original product — falls back to the original product only when the caller
+    // didn't specify one, e.g. a same-product variant swap).
+    const requestedProductId = parsedRequestedVariant.productId || parsedOriginalItem.productId;
+    const product = await Product.findById(requestedProductId);
     if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
+
+    if (product.status !== 'Approved') {
+      return res.status(400).json({ success: false, message: 'This product is not eligible for exchange' });
+    }
 
     const reqVariant = product.variations.find(v => v.sku === parsedRequestedVariant.sku);
     if (!reqVariant) {
       return res.status(400).json({ success: false, message: 'Requested variant not found' });
     }
 
-    // Calculate price difference (stored for reference, no payment action in v1)
-    const priceDifference = (reqVariant.sellingPrice || product.sellingPrice) - orderItem.price;
+    // Same item validation — must differ by product or variant from what's already owned
+    if (requestedProductId.toString() === parsedOriginalItem.productId.toString() &&
+        parsedOriginalItem.variationSku && reqVariant.sku === parsedOriginalItem.variationSku) {
+      return res.status(400).json({ success: false, message: 'Requested item must be different from the current item' });
+    }
+
+    if (reqVariant.stock <= 0) {
+      return res.status(400).json({ success: false, message: 'Requested variant is out of stock' });
+    }
+
+    // Price comparison — replacement must be equal to or higher in value than the original item
+    const replacementPrice = resolveVariantPrice(product, reqVariant);
+    const priceDifference = replacementPrice - orderItem.price;
+
+    if (priceDifference < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Replacement product value must be equal to or higher than the original product value. Please choose a product of equal or greater value.'
+      });
+    }
+
+    // Collect the price difference, if any, before the request is created
+    let paymentStatus = 'Not Required';
+    let resolvedPaymentMethod = null;
+    let resolvedPaymentId = null;
+
+    if (priceDifference > 0) {
+      const { paymentMethod: difPaymentMethod, paymentId: difPaymentId } = req.body;
+      if (!['COD', 'Online'].includes(difPaymentMethod)) {
+        return res.status(400).json({ success: false, message: 'A payment method (COD or Online) is required to pay the price difference' });
+      }
+
+      resolvedPaymentMethod = difPaymentMethod;
+
+      if (difPaymentMethod === 'Online') {
+        if (!difPaymentId) {
+          return res.status(400).json({ success: false, message: 'paymentId is required for Online payment of the price difference' });
+        }
+        await verifyRazorpayPayment(difPaymentId, priceDifference);
+        resolvedPaymentId = difPaymentId;
+        paymentStatus = 'Collected';
+      } else {
+        // COD: collected by the courier when the replacement is delivered
+        paymentStatus = 'Pending';
+      }
+    }
 
     const exchange = await ExchangeRequest.create({
       orderId,
@@ -142,13 +315,18 @@ exports.createExchangeRequest = async (req, res) => {
       },
       requestedVariant: {
         productId: product._id,
+        name:      product.name,
         color:     reqVariant.color,
         size:      reqVariant.size,
         sku:       reqVariant.sku,
         image:     (reqVariant.images && reqVariant.images[0]) || (product.images && product.images[0]) || '',
-        price:     reqVariant.sellingPrice || product.sellingPrice
+        price:     replacementPrice
       },
       priceDifference,
+      additionalAmount: Math.max(0, priceDifference),
+      paymentStatus,
+      paymentMethod: resolvedPaymentMethod,
+      paymentId: resolvedPaymentId,
       reason,
       comments: comments || '',
       images:   imagePaths,
@@ -280,6 +458,12 @@ exports.updateExchangeStatus = async (req, res) => {
 
     // ── APPROVE ──────────────────────────────────────────────────────────────
     if (status === 'Approved') {
+      // Defensive gate: an exchange should never reach Approve with an uncollected
+      // online price-difference payment (guards against races/manual API calls).
+      if (exchange.additionalAmount > 0 && exchange.paymentMethod === 'Online' && exchange.paymentStatus !== 'Collected') {
+        return res.status(400).json({ success: false, message: 'Price difference payment has not been completed for this exchange.' });
+      }
+
       if (adminNotes) exchange.adminNotes = adminNotes;
 
       // Hard stock check with atomic reservation
@@ -312,47 +496,10 @@ exports.updateExchangeStatus = async (req, res) => {
 
       const originalOrder = await Order.findById(exchange.orderId).populate('userId');
       const cityState = shiprocketService.parseCityState(originalOrder.deliveryAddress.address);
-      const exchangeId = exchange._id.toString();
 
       // ── Create Reverse Shipment (pickup old item) ──────────────────────────
       try {
-        const reversePayload = {
-          order_id: `EXC_REV_${exchangeId}`,
-          order_date: new Date().toISOString().slice(0, 16).replace('T', ' '),
-          channel_id: '',
-          pickup_customer_name: originalOrder.deliveryAddress.name || originalOrder.userId?.name || 'Customer',
-          pickup_last_name: '',
-          pickup_address: originalOrder.deliveryAddress.address,
-          pickup_address_2: '',
-          pickup_city: cityState.city,
-          pickup_state: cityState.state,
-          pickup_country: 'India',
-          pickup_pincode: originalOrder.deliveryAddress.pincode,
-          pickup_email: originalOrder.userId?.email || 'customer@aramish.com',
-          pickup_phone: originalOrder.deliveryAddress.phone || originalOrder.userId?.phone || '9999999999',
-          shipping_customer_name: process.env.RETURN_SHIPPING_NAME || 'Aramish Warehouse',
-          shipping_last_name: '',
-          shipping_address: process.env.RETURN_SHIPPING_ADDRESS || 'Warehouse 12, Sector 63',
-          shipping_address_2: '',
-          shipping_city: process.env.RETURN_SHIPPING_CITY || 'Noida',
-          shipping_state: process.env.RETURN_SHIPPING_STATE || 'Uttar Pradesh',
-          shipping_country: 'India',
-          shipping_pincode: process.env.SHIPROCKET_PICKUP_PINCODE || '201301',
-          shipping_phone: process.env.RETURN_SHIPPING_PHONE || '9876543210',
-          shipping_email: process.env.RETURN_SHIPPING_EMAIL || 'warehouse@aramish.com',
-          order_items: [{
-            name: exchange.originalItem.name,
-            sku: exchange.originalItem.variationSku || exchange.originalItem.productId.toString(),
-            units: 1,
-            selling_price: exchange.originalItem.price,
-            discount: 0,
-            tax: 0,
-            hsn: 441122
-          }],
-          payment_method: 'Prepaid',
-          sub_total: exchange.originalItem.price,
-          length: 10, breadth: 10, height: 10, weight: 0.5
-        };
+        const reversePayload = buildReversePayload(exchange, originalOrder, cityState);
 
         const reverseResp = await shiprocketService.createShiprocketReturnOrder(reversePayload);
         exchange.reverse = {
@@ -393,44 +540,7 @@ exports.updateExchangeStatus = async (req, res) => {
 
       // ── Create Forward Shipment (deliver replacement) ──────────────────────
       try {
-        const forwardPayload = {
-          order_id: `EXC_FWD_${exchangeId}`,
-          order_date: new Date().toISOString().slice(0, 16).replace('T', ' '),
-          pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION || 'Primary',
-          billing_customer_name: originalOrder.deliveryAddress.name || originalOrder.userId?.name || 'Customer',
-          billing_last_name: '',
-          billing_address: originalOrder.deliveryAddress.address,
-          billing_address_2: '',
-          billing_city: cityState.city,
-          billing_pincode: originalOrder.deliveryAddress.pincode,
-          billing_state: cityState.state,
-          billing_country: 'India',
-          billing_email: originalOrder.userId?.email || 'customer@aramish.com',
-          billing_phone: originalOrder.deliveryAddress.phone || originalOrder.userId?.phone || '9999999999',
-          shipping_is_billing: true,
-          shipping_customer_name: originalOrder.deliveryAddress.name || originalOrder.userId?.name || 'Customer',
-          shipping_last_name: '',
-          shipping_address: originalOrder.deliveryAddress.address,
-          shipping_address_2: '',
-          shipping_city: cityState.city,
-          shipping_pincode: originalOrder.deliveryAddress.pincode,
-          shipping_state: cityState.state,
-          shipping_country: 'India',
-          shipping_email: originalOrder.userId?.email || 'customer@aramish.com',
-          shipping_phone: originalOrder.deliveryAddress.phone || originalOrder.userId?.phone || '9999999999',
-          order_items: [{
-            name: `${exchange.originalItem.name} (${exchange.requestedVariant.color}/${exchange.requestedVariant.size})`,
-            sku: exchange.requestedVariant.sku,
-            units: 1,
-            selling_price: exchange.originalItem.price,
-            discount: 0,
-            tax: 0,
-            hsn: 441122
-          }],
-          payment_method: 'Prepaid',
-          sub_total: exchange.originalItem.price,
-          length: 10, breadth: 10, height: 10, weight: 0.5
-        };
+        const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState);
 
         const forwardResp = await shiprocketService.createExchangeForwardOrder(forwardPayload);
         exchange.forward = {
@@ -733,47 +843,10 @@ exports.retryExchangeShipment = async (req, res) => {
       }
 
       const cityState = shiprocketService.parseCityState(originalOrder.deliveryAddress.address);
-      const exchangeId = exchange._id.toString();
 
       if (leg === 'reverse') {
         // Create Reverse Shipment
-        const reversePayload = {
-          order_id: `EXC_REV_${exchangeId}`,
-          order_date: new Date().toISOString().slice(0, 16).replace('T', ' '),
-          channel_id: '',
-          pickup_customer_name: originalOrder.deliveryAddress.name || originalOrder.userId?.name || 'Customer',
-          pickup_last_name: '',
-          pickup_address: originalOrder.deliveryAddress.address,
-          pickup_address_2: '',
-          pickup_city: cityState.city,
-          pickup_state: cityState.state,
-          pickup_country: 'India',
-          pickup_pincode: originalOrder.deliveryAddress.pincode,
-          pickup_email: originalOrder.userId?.email || 'customer@aramish.com',
-          pickup_phone: originalOrder.deliveryAddress.phone || originalOrder.userId?.phone || '9999999999',
-          shipping_customer_name: process.env.RETURN_SHIPPING_NAME || 'Aramish Warehouse',
-          shipping_last_name: '',
-          shipping_address: process.env.RETURN_SHIPPING_ADDRESS || 'Warehouse 12, Sector 63',
-          shipping_address_2: '',
-          shipping_city: process.env.RETURN_SHIPPING_CITY || 'Noida',
-          shipping_state: process.env.RETURN_SHIPPING_STATE || 'Uttar Pradesh',
-          shipping_country: 'India',
-          shipping_pincode: process.env.SHIPROCKET_PICKUP_PINCODE || '201301',
-          shipping_phone: process.env.RETURN_SHIPPING_PHONE || '9876543210',
-          shipping_email: process.env.RETURN_SHIPPING_EMAIL || 'warehouse@aramish.com',
-          order_items: [{
-            name: exchange.originalItem.name,
-            sku: exchange.originalItem.variationSku || exchange.originalItem.productId.toString(),
-            units: 1,
-            selling_price: exchange.originalItem.price,
-            discount: 0,
-            tax: 0,
-            hsn: 441122
-          }],
-          payment_method: 'Prepaid',
-          sub_total: exchange.originalItem.price,
-          length: 10, breadth: 10, height: 10, weight: 0.5
-        };
+        const reversePayload = buildReversePayload(exchange, originalOrder, cityState);
 
         const reverseResp = await shiprocketService.createShiprocketReturnOrder(reversePayload);
         exchange.reverse = {
@@ -802,44 +875,7 @@ exports.retryExchangeShipment = async (req, res) => {
         }
       } else {
         // Create Forward Shipment
-        const forwardPayload = {
-          order_id: `EXC_FWD_${exchangeId}`,
-          order_date: new Date().toISOString().slice(0, 16).replace('T', ' '),
-          pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION || 'Primary',
-          billing_customer_name: originalOrder.deliveryAddress.name || originalOrder.userId?.name || 'Customer',
-          billing_last_name: '',
-          billing_address: originalOrder.deliveryAddress.address,
-          billing_address_2: '',
-          billing_city: cityState.city,
-          billing_pincode: originalOrder.deliveryAddress.pincode,
-          billing_state: cityState.state,
-          billing_country: 'India',
-          billing_email: originalOrder.userId?.email || 'customer@aramish.com',
-          billing_phone: originalOrder.deliveryAddress.phone || originalOrder.userId?.phone || '9999999999',
-          shipping_is_billing: true,
-          shipping_customer_name: originalOrder.deliveryAddress.name || originalOrder.userId?.name || 'Customer',
-          shipping_last_name: '',
-          shipping_address: originalOrder.deliveryAddress.address,
-          shipping_address_2: '',
-          shipping_city: cityState.city,
-          shipping_pincode: originalOrder.deliveryAddress.pincode,
-          shipping_state: cityState.state,
-          shipping_country: 'India',
-          shipping_email: originalOrder.userId?.email || 'customer@aramish.com',
-          shipping_phone: originalOrder.deliveryAddress.phone || originalOrder.userId?.phone || '9999999999',
-          order_items: [{
-            name: `${exchange.originalItem.name} (${exchange.requestedVariant.color}/${exchange.requestedVariant.size})`,
-            sku: exchange.requestedVariant.sku,
-            units: 1,
-            selling_price: exchange.originalItem.price,
-            discount: 0,
-            tax: 0,
-            hsn: 441122
-          }],
-          payment_method: 'Prepaid',
-          sub_total: exchange.originalItem.price,
-          length: 10, breadth: 10, height: 10, weight: 0.5
-        };
+        const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState);
 
         const forwardResp = await shiprocketService.createExchangeForwardOrder(forwardPayload);
         exchange.forward = {
@@ -877,7 +913,7 @@ exports.retryExchangeShipment = async (req, res) => {
       await exchange.save();
 
       // Trigger user notification (mock or trigger email/SMS as required)
-      console.log(`Notification: Shipment for ${leg} leg of Exchange ${exchangeId} has been successfully created. Tracking URL: ${exchange[leg].trackingUrl}`);
+      console.log(`Notification: Shipment for ${leg} leg of Exchange ${exchange._id} has been successfully created. Tracking URL: ${exchange[leg].trackingUrl}`);
 
       res.json({ success: true, message: `Shipment successfully created for ${leg} leg`, exchange });
     } catch (err) {

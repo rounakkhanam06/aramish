@@ -260,14 +260,85 @@ export default function OrderDetailsPage() {
     (existingExchange.status === 'Failed' && (existingExchange.retryCount || 0) >= 3)
   );
   const [showExchangeSheet, setShowExchangeSheet] = useState(false);
-  const [exchangeStep, setExchangeStep] = useState(1); // 1=reason, 2=variant
+  const [exchangeStep, setExchangeStep] = useState(1); // 1=reason, 2=replacement, 3=payment
   const [exchangeReason, setExchangeReason] = useState('');
   const [exchangeComments, setExchangeComments] = useState('');
-  const [exchangeSelectedVariant, setExchangeSelectedVariant] = useState(null);
+  const [exchangeSelectedVariant, setExchangeSelectedVariant] = useState(null); // enriched: {..., resolvedPrice, productId, productName}
   const [submittingExchange, setSubmittingExchange] = useState(false);
   const [exchangeProduct, setExchangeProduct] = useState(null);
   const [fetchingProduct, setFetchingProduct] = useState(false);
   const EXCHANGE_REASONS = ['Size Issue', 'Color Issue', 'Wrong Item Received', 'Defective Product', 'Changed Mind', 'Other'];
+
+  // Exchange: browse other products (not just same-product variants)
+  const [exchangeBrowseMode, setExchangeBrowseMode] = useState(false);
+  const [exchangeSearchQuery, setExchangeSearchQuery] = useState('');
+  const [exchangeSearchResults, setExchangeSearchResults] = useState([]);
+  const [searchingExchangeProducts, setSearchingExchangeProducts] = useState(false);
+  const [browsedExchangeProduct, setBrowsedExchangeProduct] = useState(null);
+  const [loadingBrowsedProduct, setLoadingBrowsedProduct] = useState(false);
+
+  // Exchange: pay the price difference (if replacement costs more)
+  const [exchangePaymentMethod, setExchangePaymentMethod] = useState(null); // 'COD' | 'Online'
+  const [payingExchangeDifference, setPayingExchangeDifference] = useState(false);
+
+  const resolveVariantPrice = (product, variant) =>
+    (!variant.useDefaultPricing && variant.sellingPrice !== undefined && variant.sellingPrice !== null)
+      ? variant.sellingPrice
+      : product?.sellingPrice;
+
+  const exchangeOriginalPrice = globalOrder?.items?.[0]?.price || 0;
+  const exchangePriceDifference = exchangeSelectedVariant
+    ? (exchangeSelectedVariant.resolvedPrice - exchangeOriginalPrice)
+    : 0;
+
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if (window.Razorpay) { resolve(true); return; }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  const searchExchangeProducts = async (query) => {
+    setExchangeSearchQuery(query);
+    if (!query || query.trim().length < 2) { setExchangeSearchResults([]); return; }
+    try {
+      setSearchingExchangeProducts(true);
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetch(`${apiBase}/admin/catalog/products/combined?search=${encodeURIComponent(query.trim())}&limit=15`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setExchangeSearchResults((data.products || []).filter(p => p._id !== exchangeProduct?._id));
+      }
+    } catch (err) {
+      console.error('Exchange product search error:', err);
+    } finally {
+      setSearchingExchangeProducts(false);
+    }
+  };
+
+  const selectExchangeBrowseProduct = async (productId) => {
+    try {
+      setLoadingBrowsedProduct(true);
+      setBrowsedExchangeProduct(null);
+      setExchangeSelectedVariant(null);
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetch(`${apiBase}/admin/catalog/products/${productId}`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setBrowsedExchangeProduct(data.product);
+      } else {
+        toast.error('Could not load product details');
+      }
+    } catch (err) {
+      toast.error('Could not load product details');
+    } finally {
+      setLoadingBrowsedProduct(false);
+    }
+  };
 
   const RETURN_REASONS = ['Damaged Product', 'Wrong Item Sent', 'Defective Unit', 'Not As Described', 'Size/Fit Issue', 'Changed Mind', 'Other'];
 
@@ -441,11 +512,15 @@ export default function OrderDetailsPage() {
     checkExistingExchange();
   }, [id, globalOrder?.status]);
 
-  const handleSubmitExchange = async () => {
+  const handleSubmitExchange = async (razorpayPaymentId) => {
     if (!exchangeReason) { toast.info('Select a reason for exchange'); return; }
-    if (!exchangeSelectedVariant) { toast.info('Select a replacement size/color'); return; }
+    if (!exchangeSelectedVariant) { toast.info('Select a replacement product'); return; }
     if (exchangeImages.length < 1) { toast.info('Please upload at least 1 image of the product'); return; }
     if (exchangeImages.length > 3) { toast.info('You can upload a maximum of 3 images'); return; }
+    if (exchangePriceDifference > 0 && !exchangePaymentMethod && !razorpayPaymentId) {
+      toast.info('Choose how you want to pay the price difference');
+      return;
+    }
 
     const token = localStorage.getItem('userToken');
     if (!token) { toast.error('Please login'); return; }
@@ -458,7 +533,7 @@ export default function OrderDetailsPage() {
       formData.append('orderId', id);
       formData.append('reason', exchangeReason);
       formData.append('comments', exchangeComments);
-      
+
       const originalItemPayload = {
         productId: orderItem.productId,
         variationSku: orderItem.variationSku || null,
@@ -472,14 +547,19 @@ export default function OrderDetailsPage() {
       formData.append('originalItem', JSON.stringify(originalItemPayload));
 
       const requestedVariantPayload = {
-        productId: orderItem.productId,
+        productId: exchangeSelectedVariant.productId,
         sku: exchangeSelectedVariant.sku,
         color: exchangeSelectedVariant.color,
         size: exchangeSelectedVariant.size,
-        image: (exchangeSelectedVariant.images && exchangeSelectedVariant.images[0]) || exchangeProduct.images?.[0] || '',
-        price: exchangeSelectedVariant.sellingPrice || exchangeProduct.sellingPrice || 0
+        image: exchangeSelectedVariant.image || '',
+        price: exchangeSelectedVariant.resolvedPrice
       };
       formData.append('requestedVariant', JSON.stringify(requestedVariantPayload));
+
+      if (exchangePriceDifference > 0) {
+        formData.append('paymentMethod', razorpayPaymentId ? 'Online' : exchangePaymentMethod);
+        if (razorpayPaymentId) formData.append('paymentId', razorpayPaymentId);
+      }
 
       exchangeImages.forEach(file => {
         formData.append('images', file);
@@ -505,6 +585,36 @@ export default function OrderDetailsPage() {
     } finally {
       setSubmittingExchange(false);
     }
+  };
+
+  const handlePayExchangeDifference = async () => {
+    const loaded = await loadRazorpayScript();
+    if (!loaded) { toast.error('Razorpay SDK failed to load. Are you offline?'); return; }
+
+    setPayingExchangeDifference(true);
+    const options = {
+      key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_mockkey',
+      amount: Math.round(exchangePriceDifference * 100),
+      currency: 'INR',
+      name: 'Aramish',
+      description: 'Exchange price difference',
+      handler: function (response) {
+        setPayingExchangeDifference(false);
+        handleSubmitExchange(response.razorpay_payment_id);
+      },
+      prefill: {
+        name: user?.name || 'Customer',
+        email: user?.email || 'customer@example.com',
+        contact: user?.phone || ''
+      },
+      theme: { color: '#0B132B' },
+      modal: {
+        ondismiss: function () { setPayingExchangeDifference(false); }
+      }
+    };
+
+    const rzp = new window.Razorpay(options);
+    rzp.open();
   };
 
   const fetchExchangeProduct = async (productId) => {
@@ -533,6 +643,59 @@ export default function OrderDetailsPage() {
     }
   };
 
+  // Shared row renderer for a selectable variant, used for both the same-product
+  // fast path and any product found via "Browse other products".
+  const renderExchangeVariantOption = (product, variant) => {
+    const isOriginal =
+      product._id === globalOrder?.items?.[0]?.productId &&
+      variant.size === globalOrder?.items?.[0]?.attributes?.size &&
+      variant.color === globalOrder?.items?.[0]?.attributes?.color;
+    const outOfStock = variant.stock <= 0;
+    const price = resolveVariantPrice(product, variant);
+    const isLowerValue = price < exchangeOriginalPrice;
+    const disabled = isOriginal || outOfStock || isLowerValue;
+    const isSelected = exchangeSelectedVariant?.sku === variant.sku && exchangeSelectedVariant?.productId === product._id;
+
+    return (
+      <button
+        key={`${product._id}-${variant.sku}`}
+        disabled={disabled}
+        onClick={() => setExchangeSelectedVariant({
+          ...variant,
+          resolvedPrice: price,
+          productId: product._id,
+          productName: product.name,
+          image: (variant.images && variant.images[0]) || product.images?.[0] || ''
+        })}
+        className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all ${
+          isSelected
+            ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
+            : disabled
+              ? 'border-slate-100 bg-slate-50 opacity-60 cursor-not-allowed'
+              : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50'
+        }`}
+      >
+        <div className="flex items-center gap-3">
+          {(variant.images?.[0] || product.images?.[0]) ? (
+            <OptimizedImage src={variant.images?.[0] || product.images?.[0]} alt="" type="product" className="w-10 h-10 rounded-md object-cover border border-slate-100" />
+          ) : (
+            <div className="w-10 h-10 bg-slate-100 rounded-md flex items-center justify-center border border-slate-200"><ImageIcon className="w-4 h-4 text-slate-400" /></div>
+          )}
+          <div>
+            <p className="text-xs font-black text-slate-800">{product.name !== globalOrder?.items?.[0]?.name ? `${product.name} — ` : ''}{variant.size} / {variant.color}</p>
+            <p className={`text-[10px] font-bold ${isLowerValue ? 'text-red-500' : 'text-slate-500'}`}>₹{price?.toLocaleString()}</p>
+          </div>
+        </div>
+        <div className="text-right">
+          {isOriginal && <span className="text-[9px] font-bold uppercase bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full tracking-widest">Current</span>}
+          {outOfStock && !isOriginal && <span className="text-[9px] font-bold uppercase bg-red-100 text-red-600 px-2 py-0.5 rounded-full tracking-widest">Out of Stock</span>}
+          {isLowerValue && !isOriginal && !outOfStock && <span className="text-[9px] font-bold uppercase bg-red-100 text-red-600 px-2 py-0.5 rounded-full tracking-widest">Lower Value</span>}
+          {isSelected && <CheckCircle2 className="w-5 h-5 text-blue-600 ml-auto" />}
+        </div>
+      </button>
+    );
+  };
+
   const handleOpenExchangeSheet = () => {
     const item = globalOrder?.items?.[0];
     if (item?.productId) fetchExchangeProduct(item.productId);
@@ -540,6 +703,11 @@ export default function OrderDetailsPage() {
     setExchangeReason('');
     setExchangeComments('');
     setExchangeSelectedVariant(null);
+    setExchangeBrowseMode(false);
+    setExchangeSearchQuery('');
+    setExchangeSearchResults([]);
+    setBrowsedExchangeProduct(null);
+    setExchangePaymentMethod(null);
     setShowExchangeSheet(true);
   };
 
@@ -1802,7 +1970,7 @@ export default function OrderDetailsPage() {
                     }}
                     className="w-full bg-[#0B132B] text-white font-bold text-xs py-3.5 rounded-xl hover:bg-opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 uppercase tracking-wider mt-4"
                   >
-                    Select Replacement Size/Color <ArrowRight className="w-4 h-4" />
+                    Select Replacement Product <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
               )}
@@ -1812,83 +1980,194 @@ export default function OrderDetailsPage() {
                   <button onClick={() => setExchangeStep(1)} className="text-xs font-bold text-blue-600 flex items-center gap-1 mb-2">
                     <ArrowLeft className="w-3 h-3" /> Back
                   </button>
-                  
-                  {fetchingProduct ? (
-                    <div className="flex flex-col items-center justify-center py-10">
-                      <Loader2 className="w-6 h-6 animate-spin text-slate-400 mb-2" />
-                      <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Loading options...</p>
+
+                  {/* Original Item context */}
+                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white rounded-lg border border-slate-100 overflow-hidden">
+                      {globalOrder?.items?.[0]?.image ? <OptimizedImage src={globalOrder?.items?.[0]?.image} alt="" type="product" className="w-full h-full object-cover" /> : <Package size={16} className="m-auto text-slate-300 mt-2.5" />}
                     </div>
-                  ) : !exchangeProduct ? (
-                    <div className="py-10 text-center text-sm text-red-500">Could not load product options.</div>
-                  ) : (
                     <div>
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Select Replacement Variant</p>
-                      
-                      {/* Original Item context */}
-                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 mb-4 flex items-center gap-3">
-                        <div className="w-10 h-10 bg-white rounded-lg border border-slate-100 overflow-hidden">
-                          {globalOrder?.items?.[0]?.image ? <OptimizedImage src={globalOrder?.items?.[0]?.image} alt="" type="product" className="w-full h-full object-cover" /> : <Package size={16} className="m-auto text-slate-300 mt-2.5" />}
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">You are returning:</p>
-                          <p className="text-xs font-black text-slate-700">{globalOrder?.items?.[0]?.attributes?.size} / {globalOrder?.items?.[0]?.attributes?.color}</p>
-                        </div>
-                      </div>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">You are returning:</p>
+                      <p className="text-xs font-black text-slate-700">{globalOrder?.items?.[0]?.name} — {globalOrder?.items?.[0]?.attributes?.size} / {globalOrder?.items?.[0]?.attributes?.color} <span className="text-slate-400 font-bold">(₹{exchangeOriginalPrice?.toLocaleString()})</span></p>
+                    </div>
+                  </div>
 
+                  {/* Mode toggle */}
+                  <div className="flex bg-slate-100 rounded-xl p-1">
+                    <button
+                      onClick={() => setExchangeBrowseMode(false)}
+                      className={`flex-1 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wide transition-all ${!exchangeBrowseMode ? 'bg-white shadow text-[#0B132B]' : 'text-slate-500'}`}
+                    >
+                      Same Product
+                    </button>
+                    <button
+                      onClick={() => setExchangeBrowseMode(true)}
+                      className={`flex-1 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wide transition-all ${exchangeBrowseMode ? 'bg-white shadow text-[#0B132B]' : 'text-slate-500'}`}
+                    >
+                      Browse Other Products
+                    </button>
+                  </div>
+
+                  <p className="text-[10px] text-slate-400 leading-snug">Replacement value must be equal to or higher than ₹{exchangeOriginalPrice?.toLocaleString()}. Lower-value items can't be selected.</p>
+
+                  {!exchangeBrowseMode ? (
+                    fetchingProduct ? (
+                      <div className="flex flex-col items-center justify-center py-10">
+                        <Loader2 className="w-6 h-6 animate-spin text-slate-400 mb-2" />
+                        <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Loading options...</p>
+                      </div>
+                    ) : !exchangeProduct ? (
+                      <div className="py-10 text-center text-sm text-red-500">Could not load product options.</div>
+                    ) : (
                       <div className="space-y-2 max-h-[35vh] overflow-y-auto pr-1">
-                        {exchangeProduct.variations?.map((variant) => {
-                          const isOriginal = 
-                            variant.size === globalOrder?.items?.[0]?.attributes?.size && 
-                            variant.color === globalOrder?.items?.[0]?.attributes?.color;
-                          const outOfStock = variant.stock <= 0;
-                          
-                          return (
-                            <button
-                              key={variant.sku}
-                              disabled={isOriginal || outOfStock}
-                              onClick={() => setExchangeSelectedVariant(variant)}
-                              className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all ${
-                                exchangeSelectedVariant?.sku === variant.sku 
-                                  ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' 
-                                  : isOriginal || outOfStock
-                                    ? 'border-slate-100 bg-slate-50 opacity-60 cursor-not-allowed'
-                                    : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50'
-                              }`}
-                            >
-                              <div className="flex items-center gap-3">
-                                {variant.images?.[0] ? (
-                                  <OptimizedImage src={variant.images[0]} alt="" type="product" className="w-10 h-10 rounded-md object-cover border border-slate-100" />
-                                ) : (
-                                  <div className="w-10 h-10 bg-slate-100 rounded-md flex items-center justify-center border border-slate-200"><ImageIcon className="w-4 h-4 text-slate-400" /></div>
-                                )}
-                                <div>
-                                  <p className="text-xs font-black text-slate-800">{variant.size} / {variant.color}</p>
-                                  <p className="text-[10px] font-bold text-slate-500">₹{variant.sellingPrice?.toLocaleString() || exchangeProduct.sellingPrice?.toLocaleString()}</p>
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                {isOriginal && <span className="text-[9px] font-bold uppercase bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full tracking-widest">Current</span>}
-                                {outOfStock && !isOriginal && <span className="text-[9px] font-bold uppercase bg-red-100 text-red-600 px-2 py-0.5 rounded-full tracking-widest">Out of Stock</span>}
-                                {exchangeSelectedVariant?.sku === variant.sku && <CheckCircle2 className="w-5 h-5 text-blue-600 ml-auto" />}
-                              </div>
-                            </button>
-                          );
-                        })}
+                        {exchangeProduct.variations?.map((variant) => renderExchangeVariantOption(exchangeProduct, variant))}
                       </div>
+                    )
+                  ) : (
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        value={exchangeSearchQuery}
+                        onChange={(e) => searchExchangeProducts(e.target.value)}
+                        placeholder="Search products to exchange with..."
+                        className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                      />
 
-                      <button
-                        onClick={handleSubmitExchange}
-                        disabled={submittingExchange || !exchangeSelectedVariant || exchangeImages.length < 1}
-                        className="w-full bg-[#0B132B] text-white font-bold text-xs py-3.5 rounded-xl hover:bg-opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 uppercase tracking-wider mt-5"
-                      >
-                        {submittingExchange ? (
-                          <><Loader2 className="w-4 h-4 animate-spin" /> Submitting...</>
-                        ) : (
-                          <><ArrowLeftRight className="w-4 h-4" /> Submit Exchange</>
-                        )}
-                      </button>
+                      {!browsedExchangeProduct ? (
+                        <div className="space-y-2 max-h-[35vh] overflow-y-auto pr-1">
+                          {searchingExchangeProducts ? (
+                            <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+                          ) : exchangeSearchResults.length === 0 ? (
+                            <p className="text-[11px] text-slate-400 text-center py-6">{exchangeSearchQuery.trim().length < 2 ? 'Type at least 2 characters to search' : 'No products found'}</p>
+                          ) : (
+                            exchangeSearchResults.map((p) => (
+                              <button
+                                key={p._id}
+                                onClick={() => selectExchangeBrowseProduct(p._id)}
+                                className="w-full flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50 transition-all text-left"
+                              >
+                                <div className="w-10 h-10 bg-slate-100 rounded-md overflow-hidden border border-slate-200 shrink-0">
+                                  {p.images?.[0] ? <OptimizedImage src={p.images[0]} alt="" type="product" className="w-full h-full object-cover" /> : <ImageIcon className="w-4 h-4 text-slate-400 m-auto mt-3" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-bold text-slate-800 truncate">{p.name}</p>
+                                  <p className="text-[10px] font-bold text-slate-500">₹{p.sellingPrice?.toLocaleString()}</p>
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      ) : (
+                        <div>
+                          <button onClick={() => setBrowsedExchangeProduct(null)} className="text-[11px] font-bold text-blue-600 flex items-center gap-1 mb-2">
+                            <ArrowLeft className="w-3 h-3" /> Choose a different product
+                          </button>
+                          {loadingBrowsedProduct ? (
+                            <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+                          ) : (
+                            <div className="space-y-2 max-h-[30vh] overflow-y-auto pr-1">
+                              {browsedExchangeProduct.variations?.map((variant) => renderExchangeVariantOption(browsedExchangeProduct, variant))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
+
+                  {exchangeSelectedVariant && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs">
+                      {exchangePriceDifference > 0 ? (
+                        <p className="font-bold text-blue-800">You'll pay ₹{exchangePriceDifference.toLocaleString()} extra for this replacement.</p>
+                      ) : (
+                        <p className="font-bold text-blue-800">No extra payment needed — equal value exchange.</p>
+                      )}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      if (!exchangeSelectedVariant) { toast.info('Select a replacement product'); return; }
+                      if (exchangePriceDifference > 0) {
+                        setExchangeStep(3);
+                      } else {
+                        handleSubmitExchange();
+                      }
+                    }}
+                    disabled={submittingExchange || !exchangeSelectedVariant}
+                    className="w-full bg-[#0B132B] text-white font-bold text-xs py-3.5 rounded-xl hover:bg-opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 uppercase tracking-wider mt-2"
+                  >
+                    {submittingExchange ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Submitting...</>
+                    ) : exchangePriceDifference > 0 ? (
+                      <>Continue to Payment <ArrowRight className="w-4 h-4" /></>
+                    ) : (
+                      <><ArrowLeftRight className="w-4 h-4" /> Submit Exchange</>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {exchangeStep === 3 && (
+                <div className="space-y-4 animate-slide-left">
+                  <button onClick={() => setExchangeStep(2)} className="text-xs font-bold text-blue-600 flex items-center gap-1 mb-2">
+                    <ArrowLeft className="w-3 h-3" /> Back
+                  </button>
+
+                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-1.5">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Original item</span>
+                      <span className="font-bold text-slate-700">₹{exchangeOriginalPrice?.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Replacement</span>
+                      <span className="font-bold text-slate-700">₹{exchangeSelectedVariant?.resolvedPrice?.toLocaleString()}</span>
+                    </div>
+                    <div className="border-t border-slate-200 my-1.5"></div>
+                    <div className="flex justify-between text-sm">
+                      <span className="font-bold text-slate-800">You pay extra</span>
+                      <span className="font-black text-blue-700">₹{exchangePriceDifference.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Choose payment method</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setExchangePaymentMethod('Online')}
+                      className={`px-3 py-3 rounded-xl text-xs font-bold border transition-all ${exchangePaymentMethod === 'Online' ? 'border-[#0B132B] bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      Pay Online
+                    </button>
+                    <button
+                      onClick={() => setExchangePaymentMethod('COD')}
+                      className={`px-3 py-3 rounded-xl text-xs font-bold border transition-all ${exchangePaymentMethod === 'COD' ? 'border-[#0B132B] bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      Pay via COD
+                    </button>
+                  </div>
+                  {exchangePaymentMethod === 'COD' && (
+                    <p className="text-[10px] text-slate-400 leading-snug">The courier will collect ₹{exchangePriceDifference.toLocaleString()} when your replacement is delivered.</p>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      if (!exchangePaymentMethod) { toast.info('Choose a payment method'); return; }
+                      if (exchangePaymentMethod === 'Online') {
+                        handlePayExchangeDifference();
+                      } else {
+                        handleSubmitExchange();
+                      }
+                    }}
+                    disabled={submittingExchange || payingExchangeDifference || !exchangePaymentMethod}
+                    className="w-full bg-[#0B132B] text-white font-bold text-xs py-3.5 rounded-xl hover:bg-opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 uppercase tracking-wider mt-2"
+                  >
+                    {submittingExchange || payingExchangeDifference ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> {payingExchangeDifference ? 'Opening payment...' : 'Submitting...'}</>
+                    ) : exchangePaymentMethod === 'Online' ? (
+                      <>Pay ₹{exchangePriceDifference.toLocaleString()} & Submit</>
+                    ) : (
+                      <><ArrowLeftRight className="w-4 h-4" /> Submit Exchange</>
+                    )}
+                  </button>
                 </div>
               )}
             </div>
