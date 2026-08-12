@@ -479,28 +479,83 @@ const Exchanges = () => {
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Exchange</p>
                       <div className="flex items-center gap-4">
                         {/* Original */}
-                        <div className="flex-1 text-center">
-                          <div className="w-16 h-16 mx-auto bg-white rounded-xl overflow-hidden border border-slate-200 mb-2">
+                        <button
+                          onClick={() => selectedExchange.originalItem?.productId && window.open(`/admin/inventory/view/${selectedExchange.originalItem.productId}`, '_blank')}
+                          className="flex-1 text-center group cursor-pointer"
+                          title="View full product details"
+                        >
+                          <div className="w-16 h-16 mx-auto bg-white rounded-xl overflow-hidden border border-slate-200 mb-2 group-hover:border-slate-400 transition-colors">
                             {selectedExchange.originalItem?.image
                               ? <OptimizedImage src={selectedExchange.originalItem.image} alt="" type="product" className="w-full h-full object-contain" />
                               : <Package size={20} className="m-auto text-slate-300 mt-3" />}
                           </div>
-                          <p className="text-[10px] font-bold text-slate-700 line-clamp-2">{selectedExchange.originalItem?.name}</p>
+                          <p className="text-[10px] font-bold text-slate-700 line-clamp-2 group-hover:underline">{selectedExchange.originalItem?.name}</p>
                           <p className="text-[10px] text-slate-500">{selectedExchange.originalItem?.size} / {selectedExchange.originalItem?.color}</p>
                           <p className="text-[10px] text-slate-400">₹{selectedExchange.originalItem?.price}</p>
-                        </div>
+                        </button>
                         <ArrowRight size={20} className="text-slate-400 flex-shrink-0" />
                         {/* Replacement */}
-                        <div className="flex-1 text-center">
-                          <div className="w-16 h-16 mx-auto bg-white rounded-xl overflow-hidden border border-blue-200 mb-2">
+                        <button
+                          onClick={() => selectedExchange.requestedVariant?.productId && window.open(`/admin/inventory/view/${selectedExchange.requestedVariant.productId}`, '_blank')}
+                          className="flex-1 text-center group cursor-pointer"
+                          title="View full product details"
+                        >
+                          <div className="w-16 h-16 mx-auto bg-white rounded-xl overflow-hidden border border-blue-200 mb-2 group-hover:border-blue-500 transition-colors">
                             {selectedExchange.requestedVariant?.image
                               ? <OptimizedImage src={selectedExchange.requestedVariant.image} alt="" type="product" className="w-full h-full object-contain" />
                               : <Package size={20} className="m-auto text-blue-200 mt-3" />}
                           </div>
-                          <p className="text-[10px] font-bold text-blue-700 line-clamp-2">{selectedExchange.originalItem?.name}</p>
+                          <p className="text-[10px] font-bold text-blue-700 line-clamp-2 group-hover:underline">{selectedExchange.requestedVariant?.name || selectedExchange.originalItem?.name}</p>
                           <p className="text-[10px] text-blue-600 font-bold">{selectedExchange.requestedVariant?.size} / {selectedExchange.requestedVariant?.color}</p>
-                          <p className="text-[10px] text-slate-400">₹{selectedExchange.originalItem?.price} (fixed)</p>
+                          <p className="text-[10px] text-slate-400">₹{selectedExchange.requestedVariant?.price}</p>
+                        </button>
+                      </div>
+                      <p className="text-[9px] text-slate-400 text-center mt-2">Tap a product to view full details (article no., stock, specs)</p>
+                    </div>
+
+                    {/* Payment Summary */}
+                    <div className="bg-white rounded-2xl p-4 border border-slate-200">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Payment Summary</p>
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-500">Original item value</span>
+                          <span className="font-bold text-slate-700">₹{selectedExchange.originalItem?.price}</span>
                         </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-500">Replacement item value</span>
+                          <span className="font-bold text-slate-700">₹{selectedExchange.requestedVariant?.price}</span>
+                        </div>
+                        <div className="border-t border-slate-100 my-1.5"></div>
+                        {selectedExchange.additionalAmount > 0 ? (
+                          <>
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-bold text-slate-800">Extra amount paid by customer</span>
+                              <span className="text-sm font-black text-blue-700">₹{selectedExchange.additionalAmount}</span>
+                            </div>
+                            <div className="flex justify-between items-center mt-1">
+                              <span className="text-[10px] text-slate-500">
+                                Paid via {selectedExchange.paymentMethod === 'Online' ? 'Online Payment' : selectedExchange.paymentMethod === 'COD' ? 'Cash on Delivery' : '—'}
+                              </span>
+                              <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full tracking-widest ${
+                                selectedExchange.paymentStatus === 'Collected'
+                                  ? 'bg-emerald-100 text-emerald-600'
+                                  : selectedExchange.paymentStatus === 'Pending'
+                                    ? 'bg-amber-100 text-amber-600'
+                                    : 'bg-slate-200 text-slate-500'
+                              }`}>
+                                {selectedExchange.paymentStatus === 'Pending' ? 'Pending COD Collection' : selectedExchange.paymentStatus}
+                              </span>
+                            </div>
+                            {selectedExchange.paymentId && (
+                              <p className="text-[9px] text-slate-400 font-mono mt-1">Payment ID: {selectedExchange.paymentId}</p>
+                            )}
+                          </>
+                        ) : (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold text-slate-800">Extra amount paid by customer</span>
+                            <span className="text-xs font-bold text-slate-400">No extra payment required</span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
