@@ -411,7 +411,7 @@ exports.createOrder = async (req, res) => {
       const shiprocketOrderData = {
         order_id: `ORD_${order._id}`,
         order_date: new Date().toISOString().slice(0, 16).replace('T', ' '),
-        pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION || 'Home',
+        pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION || 'Primary',
         billing_customer_name: user.name || deliveryAddress.name || 'Customer',
         billing_last_name: '',
         billing_address: deliveryAddress.address,

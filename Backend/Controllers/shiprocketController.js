@@ -609,7 +609,7 @@ exports.createShiprocketOrderForExisting = async (req, res) => {
         const shiprocketOrderData = {
             order_id: `ORD_${order._id}`,
             order_date: new Date(order.createdAt).toISOString().slice(0, 16).replace('T', ' '),
-            pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION || 'Home',
+            pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION || 'Primary',
             billing_customer_name: user.name || order.deliveryAddress.name || 'Customer',
             billing_last_name: '',
             billing_address: order.deliveryAddress.address,

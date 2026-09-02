@@ -310,7 +310,7 @@ exports.webhookReceiver = async (req, res) => {
         const shiprocketOrderData = {
           order_id: `ORD_${newOrder._id}`,
           order_date: new Date().toISOString().slice(0, 16).replace('T', ' '),
-          pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION || 'Home',
+          pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION || 'Primary',
           billing_customer_name: addressDoc.name || user.name || 'Customer',
           billing_last_name: '',
           billing_address: addressDoc.address,
