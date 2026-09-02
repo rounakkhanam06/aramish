@@ -4,12 +4,12 @@ importScripts("https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-comp
 
 // Initialize Firebase App in the service worker
 firebase.initializeApp({
-  apiKey: "AIzaSyDqQfly14F7Z4YHv6i1UVPyxuNMNYLSEuM",
-  authDomain: "aramish-814fe.firebaseapp.com",
-  projectId: "aramish-814fe",
-  storageBucket: "aramish-814fe.firebasestorage.app",
-  messagingSenderId: "483350764702",
-  appId: "1:483350764702:web:fdce822d002adcd3012f8f"
+  apiKey: "AIzaSyCUOAGEtCCTGrpj7OIvcJKD_5tvA4qXyK8",
+  authDomain: "aramish-17001.firebaseapp.com",
+  projectId: "aramish-17001",
+  storageBucket: "aramish-17001.firebasestorage.app",
+  messagingSenderId: "166724734983",
+  appId: "1:166724734983:web:2107ff64b1f0c24ff61aa2"
 });
 
 // Retrieve an instance of Firebase Messaging so that it can handle background messages

@@ -16,10 +16,20 @@ const memCache = new Map();
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 console.log('--- API Base URL loaded in frontend apiCache.js: ---', API_BASE);
 
+// Cache prefix with versioning to ensure old cached data is purged
+const CACHE_PREFIX = 'apicache_v2:';
+
+// Auto-cleanup legacy apicache entries on script load
+try {
+  Object.keys(sessionStorage)
+    .filter(k => k.startsWith('apicache:') || (k.startsWith('apicache_') && !k.startsWith(CACHE_PREFIX)))
+    .forEach(k => sessionStorage.removeItem(k));
+} catch (_) {}
+
 export function invalidateCache(path) {
   const key = API_BASE + path;
   memCache.delete(key);
-  try { sessionStorage.removeItem(`apicache:${key}`); } catch (_) {}
+  try { sessionStorage.removeItem(`${CACHE_PREFIX}${key}`); } catch (_) {}
 }
 
 /** Clear all cached entries */
@@ -27,7 +37,7 @@ export function clearAllCache() {
   memCache.clear();
   try {
     Object.keys(sessionStorage)
-      .filter(k => k.startsWith('apicache:'))
+      .filter(k => k.startsWith(CACHE_PREFIX) || k.startsWith('apicache:'))
       .forEach(k => sessionStorage.removeItem(k));
   } catch (_) {}
 }
@@ -40,7 +50,7 @@ export function clearAllCache() {
 export async function cachedFetch(path, { ttl = 300, persist = true, signal } = {}) {
   const url = API_BASE + path;
   const cacheKey = url;
-  const storageKey = `apicache:${cacheKey}`;
+  const storageKey = `${CACHE_PREFIX}${cacheKey}`;
   const now = Date.now();
 
   // 1. Check in-memory cache first (fastest)

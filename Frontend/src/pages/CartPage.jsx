@@ -367,8 +367,6 @@ export default function CartPage() {
                             </div>
                           )}
 
-                          <p className="text-[10px] md:text-xs text-slate-400 mt-1 font-semibold">{item.desc || "Pack of 1, Standard Fit"}</p>
-                          
                           {/* Rating */}
                           <div className="flex items-center gap-1.5 mt-2">
                             <div className="flex items-center gap-0.5 bg-green-600 text-white px-1 py-[2px] rounded-sm text-[10px] font-bold leading-none">

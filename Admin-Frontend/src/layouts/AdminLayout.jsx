@@ -61,6 +61,10 @@ const AdminLayout = () => {
           'Authorization': `Bearer ${token}`
         }
       });
+      if (res.status === 401) {
+        handleLogout();
+        return;
+      }
       const data = await res.json();
       if (res.ok && data.success) {
         setNotifications(data.notifications);

@@ -31,7 +31,7 @@ const SubCategoryForm = ({ onSave, onCancel, label, formData, setFormData, image
         >
           <option value="">Select Category</option>
           {categories.map(cat => (
-            <option key={cat._id} value={cat._id}>
+            <option key={cat._id || cat.id} value={cat.id || cat._id}>
               {cat.categoryName || cat.name}
             </option>
           ))}
@@ -216,7 +216,9 @@ const SubCategoryChipsManager = () => {
 
   const handleEdit = (sub) => {
     setEditingId(sub.id);
-    setFormData({ categoryId: sub.categoryId, subCategoryName: sub.subCategoryName, image: sub.image, active: sub.active });
+    const parentCat = categories.find(c => c._id === sub.categoryId || c.id === sub.categoryId);
+    const resolvedCatId = parentCat ? (parentCat.id || parentCat._id) : sub.categoryId;
+    setFormData({ categoryId: resolvedCatId, subCategoryName: sub.subCategoryName, image: sub.image, active: sub.active });
     setImagePreview(sub.image || '');
     setImageFile(null);
     setIsAdding(false);
@@ -316,7 +318,14 @@ const SubCategoryChipsManager = () => {
 
   const filteredSubCategories = filterCategoryId === 'all'
     ? subCategories
-    : subCategories.filter(sub => sub.categoryId === filterCategoryId);
+    : subCategories.filter(sub => {
+        if (sub.categoryId === filterCategoryId) return true;
+        const parent = categories.find(c => c._id === filterCategoryId || c.id === filterCategoryId);
+        if (parent) {
+          return sub.categoryId === parent.id || sub.categoryId === parent._id;
+        }
+        return false;
+      });
 
   const activeCount = filteredSubCategories.filter(c => c.active).length;
 
@@ -397,7 +406,7 @@ const SubCategoryChipsManager = () => {
             >
               <option value="all">All Categories</option>
               {categories.map(cat => (
-                <option key={cat._id} value={cat._id}>
+                <option key={cat._id || cat.id} value={cat.id || cat._id}>
                   {cat.categoryName || cat.name}
                 </option>
               ))}
@@ -408,7 +417,7 @@ const SubCategoryChipsManager = () => {
         <div className="space-y-2">
           <AnimatePresence>
             {filteredSubCategories.map((sub, index) => {
-              const parentCat = categories.find(c => c._id === sub.categoryId);
+              const parentCat = categories.find(c => c._id === sub.categoryId || c.id === sub.categoryId);
               const parentName = parentCat ? (parentCat.categoryName || parentCat.name) : sub.categoryId;
 
               return (

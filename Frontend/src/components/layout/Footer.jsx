@@ -24,10 +24,11 @@ export default function Footer() {
             <div className="space-y-3">
               <h4 className="text-white font-bold uppercase tracking-wider text-[10px]">Categories</h4>
               <ul className="space-y-2 text-slate-400 font-medium">
-                <li><a href="#/categories?cat=mens-footwear" className="hover:text-[#0B132B] transition-colors">Men's Footwear</a></li>
-                <li><a href="#/categories?cat=women" className="hover:text-[#0B132B] transition-colors">Women's Shoes</a></li>
-                <li><a href="#/categories?cat=kids" className="hover:text-[#0B132B] transition-colors">Kids</a></li>
-                <li><a href="#/categories?cat=brands" className="hover:text-[#0B132B] transition-colors">Top Brands</a></li>
+                <li><a href="#/categories?cat=formal-shoes" className="hover:text-[#0B132B] transition-colors">Formal Shoes</a></li>
+                <li><a href="#/categories?cat=casual-shoes" className="hover:text-[#0B132B] transition-colors">Casual Shoes</a></li>
+                <li><a href="#/categories?cat=boots" className="hover:text-[#0B132B] transition-colors">Boots</a></li>
+                <li><a href="#/categories?cat=sandals" className="hover:text-[#0B132B] transition-colors">Sandals</a></li>
+                <li><a href="#/categories?cat=ethnic-footwear" className="hover:text-[#0B132B] transition-colors">Ethnic Footwear</a></li>
               </ul>
             </div>
             <div className="space-y-3">

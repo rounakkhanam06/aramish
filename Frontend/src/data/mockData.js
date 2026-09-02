@@ -61,12 +61,11 @@ import catGifting from '../assets/CategorySection/Category7-removebg-preview.web
 
 export const CATEGORIES = [
   { id: 'for-you', name: 'For You', icon: 'ShoppingBag', image: catForYou },
-  { id: 'mens-footwear', name: "Men's Footwear", icon: 'Shirt', image: catBeauty },
-  { id: 'kids', name: 'Kids', icon: 'Gamepad2', image: catToys },
-  { id: 'women', name: 'Women', icon: 'Sparkles', image: catJewellery },
-  { id: 'brands', name: 'Brands', icon: 'Monitor', image: catElectronics },
-  { id: 'new-launch', name: 'New Launch', icon: 'Gift', image: catStationery },
-  { id: 'trendy', name: 'Trendy', icon: 'Zap', image: catFashion },
+  { id: 'formal-shoes', name: 'Formal Shoes', icon: 'Shirt', image: catBeauty },
+  { id: 'casual-shoes', name: 'Casual Shoes', icon: 'Gamepad2', image: catToys },
+  { id: 'boots', name: 'Boots', icon: 'Sparkles', image: catJewellery },
+  { id: 'sandals', name: 'Sandals', icon: 'Monitor', image: catElectronics },
+  { id: 'ethnic-footwear', name: 'Ethnic Footwear', icon: 'Gift', image: catStationery },
 ];
 
 import banner1 from '../assets/Banner/footwear1.png';

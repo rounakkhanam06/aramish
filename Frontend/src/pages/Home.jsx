@@ -617,12 +617,24 @@ export default function Home() {
           )}
         </div>
 
+        {/* Refer & Earn Banner */}
+        <div 
+          onClick={() => navigate('/refer')}
+          className="bg-gradient-to-r from-[#02006c] to-purple-800 text-white text-center py-2.5 px-4 rounded-2xl cursor-pointer hover:opacity-95 transition-opacity flex justify-center items-center gap-2 shadow-md"
+        >
+          <span className="animate-pulse">🎁</span>
+          <p className="text-[11px] md:text-sm font-black tracking-wide">
+            Refer friends and Earn <span className="text-amber-300 font-extrabold">{systemSettings?.referralCoinsPerReferral || 200} coins</span> on successful download of our mobile application!
+          </p>
+          <span className="animate-pulse">🎁</span>
+        </div>
+
         {/* CONDITIONAL RENDER: "For You" vs Other Categories */}
         {selectedCategory === 'for-you' ? (
           <>
             {/* Marquee Banner above Crazy Deals */}
             {(systemSettings?.marqueeEnabled !== false) && !user && (
-              <div className="w-full bg-[#0B132B] rounded-xl py-2 overflow-hidden select-none marquee-container relative mb-2">
+              <div className="w-full bg-[#0B132B] rounded-xl py-4 overflow-hidden select-none marquee-container relative mb-2">
                 <div className="animate-marquee flex items-center gap-8 text-[11px] font-bold text-amber-400 tracking-wider uppercase font-sans">
                   <span>Download the Aramish App, Login & Get {systemSettings?.welcomeBonusCoins || 1000} Welcome Coins.</span>
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400/50 flex-shrink-0" />

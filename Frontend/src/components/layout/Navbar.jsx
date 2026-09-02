@@ -296,15 +296,6 @@ export default function Navbar() {
 
   return (
     <>
-      {/* Global Announcement Banner */}
-      <div className="bg-gradient-to-r from-[#02006c] to-purple-800 text-white text-center py-2 px-4 cursor-pointer hover:opacity-95 transition-opacity flex justify-center items-center gap-2 shadow-md relative z-[70]" onClick={() => navigate('/refer')}>
-        <span className="animate-pulse">🎁</span>
-        <p className="text-[11px] md:text-sm font-black tracking-wide">
-          Refer friends and Earn <span className="text-amber-300 font-extrabold">200 coins</span> on successful download of our mobile application!
-        </p>
-        <span className="animate-pulse">🎁</span>
-      </div>
-
       {/* MOBILE HEADER: Visible only on screen sizes < md */}
       <header className="sticky top-0 z-50 bg-white text-[#0B132B] shadow-sm transition-all duration-300 pb-2 md:hidden">
         {/* Compact Main top header */}

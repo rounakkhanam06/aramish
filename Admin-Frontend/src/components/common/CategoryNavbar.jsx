@@ -85,13 +85,12 @@ const IconElectrical = ({ size = 24, active }) => (
    Category list — project ki actual categories
 ───────────────────────────────────────────── */
 const CATEGORIES = [
-  { id: 'for-you',       label: 'For You',        Svg: IconForYou     },
-  { id: 'mens-footwear', label: "Men's Footwear", Svg: IconFashion    },
-  { id: 'kids',          label: 'Kids',           Svg: IconToys       },
-  { id: 'women',         label: 'Women',          Svg: IconFashion    },
-  { id: 'brands',        label: 'Brands',         Svg: IconElectronics},
-  { id: 'new-launch',    label: 'New Launch',     Svg: IconGifting    },
-  { id: 'trendy',        label: 'Trendy',         Svg: IconElectrical },
+  { id: 'for-you',         label: 'For You',         Svg: IconForYou     },
+  { id: 'formal-shoes',    label: 'Formal Shoes',    Svg: IconFashion    },
+  { id: 'casual-shoes',    label: 'Casual Shoes',    Svg: IconToys       },
+  { id: 'boots',           label: 'Boots',           Svg: IconFashion    },
+  { id: 'sandals',         label: 'Sandals',         Svg: IconElectronics},
+  { id: 'ethnic-footwear', label: 'Ethnic Footwear', Svg: IconGifting    },
 ];
 
 const CategoryNavbar = ({ selectedCategory, setSelectedCategory }) => {
