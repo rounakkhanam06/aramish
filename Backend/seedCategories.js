@@ -61,7 +61,10 @@ const data = [
 
 const seedCategories = async () => {
   try {
-    const mongoUri = process.env.MONGODB_URL || 'mongodb+srv://aramishshoes_db_user:veNWqLILbVZBoUF2@cluster0.o1aejqd.mongodb.net/Aramish?retryWrites=true&w=majority';
+    const mongoUri = process.env.MONGODB_URL;
+    if (!mongoUri) {
+      throw new Error('MONGODB_URL environment variable is not set.');
+    }
     console.log('Connecting to MongoDB...');
     await mongoose.connect(mongoUri);
     console.log('MongoDB Connected successfully.');
