@@ -3,6 +3,7 @@ import { HashRouter as Router, Routes, Route, useNavigate, useLocation } from 'r
 import { Toaster } from 'react-hot-toast';
 import { AppProvider, useApp } from './context/AppContext';
 import Layout from './components/layout/Layout';
+import MaintenanceGate from './components/MaintenanceGate';
 
 // Lazy-loaded pages — each becomes its own JS chunk (code splitting)
 const Home               = lazy(() => import('./pages/Home'));
@@ -134,11 +135,13 @@ function AppContent() {
 
 function App() {
   return (
-    <AppProvider>
-      <Router>
-        <AppContent />
-      </Router>
-    </AppProvider>
+    <MaintenanceGate>
+      <AppProvider>
+        <Router>
+          <AppContent />
+        </Router>
+      </AppProvider>
+    </MaintenanceGate>
   );
 }
 

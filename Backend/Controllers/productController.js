@@ -3,6 +3,7 @@ const Brand = require('../Models/Brand');
 const { getImageUrl } = require('../utils/imageHelper');
 const ExcelJS = require('exceljs');
 const XLSX = require('xlsx');
+const JSZip = require('jszip');
 const axios = require('axios');
 const sharp = require('sharp');
 const fs = require('fs');
@@ -966,49 +967,135 @@ const processImageUrl = async (imageUrl) => {
   }
 };
 
+// Same standardization pipeline as processImageUrl, but for a raw buffer (e.g. extracted from a ZIP)
+const processImageBuffer = async (buffer) => {
+  try {
+    const uploadDir = path.join(__dirname, '../uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    const filename = `img-${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
+    const outputPath = path.join(uploadDir, filename);
+
+    await sharp(buffer)
+      .resize(1000, 1000, {
+        fit: 'contain',
+        background: { r: 255, g: 255, b: 255, alpha: 1 }
+      })
+      .sharpen({ sigma: 0.5 })
+      .webp({ quality: 85, effort: 4 })
+      .toFile(outputPath);
+
+    return `/uploads/${filename}`;
+  } catch (err) {
+    console.error('Failed to process image extracted from ZIP:', err.message);
+    return null;
+  }
+};
+
+// Reads an optional images ZIP into a lowercased-filename -> Buffer map, ignoring folders and OS/junk entries
+const buildZipImageMap = async (zipFile) => {
+  const map = {};
+  if (!zipFile) return map;
+  try {
+    const zip = await JSZip.loadAsync(zipFile.buffer);
+    for (const entryPath of Object.keys(zip.files)) {
+      const entry = zip.files[entryPath];
+      if (entry.dir) continue;
+      const baseName = entryPath.split('/').pop();
+      if (!baseName || baseName.startsWith('.') || entryPath.startsWith('__MACOSX')) continue;
+      map[baseName.toLowerCase()] = await entry.async('nodebuffer');
+    }
+  } catch (err) {
+    console.error('Failed to read images ZIP:', err.message);
+  }
+  return map;
+};
+
+// Resolves one entry from an "Image URLs" style column: an http(s) URL is downloaded as before,
+// anything else is looked up by filename inside the uploaded images ZIP.
+const resolveImageEntry = async (rawValue, zipImageMap, warningsList, rowLabel) => {
+  const value = (rawValue || '').toString().trim();
+  if (!value) return null;
+
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    return await processImageUrl(value);
+  }
+
+  const key = value.split('/').pop().toLowerCase();
+  const buffer = zipImageMap[key];
+  if (!buffer) {
+    warningsList.push({ row: rowLabel, message: `Image "${value}" was not found in the uploaded ZIP.` });
+    return null;
+  }
+  const processed = await processImageBuffer(buffer);
+  if (!processed) {
+    warningsList.push({ row: rowLabel, message: `Image "${value}" could not be processed (invalid or corrupt image file).` });
+  }
+  return processed;
+};
+
+const GST_PERCENTAGE_OPTIONS = [0, 5, 12, 18, 28];
+
 const bulkUploadProducts = async (req, res) => {
   try {
-    if (!req.file) {
+    const excelFile = req.files && req.files.file && req.files.file[0];
+    if (!excelFile) {
       return res.status(400).json({ success: false, message: 'No file uploaded' });
     }
 
-    // Read the sheet using XLSX
+    // Read the workbook using XLSX
     let workbook;
     try {
-      workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      workbook = XLSX.read(excelFile.buffer, { type: 'buffer' });
     } catch (err) {
       return res.status(400).json({ success: false, message: 'Failed to parse file. Make sure it is a valid Excel or CSV file.' });
     }
 
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    // Convert sheet to a 2D array of rows
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
-      .filter(row => row.length > 0 && row.some(val => val !== undefined && val !== null && val.toString().trim() !== ''));
+    // Optional ZIP of local image files, referenced by filename from the Image URL columns
+    const zipFile = req.files && req.files.imagesZip && req.files.imagesZip[0];
+    const zipImageMap = await buildZipImageMap(zipFile);
 
-    if (rows.length < 2) {
+    const readSheetRows = (name) => {
+      const sheet = workbook.Sheets[name];
+      if (!sheet) return null;
+      return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
+        .filter(row => row.length > 0 && row.some(val => val !== undefined && val !== null && val.toString().trim() !== ''));
+    };
+
+    // The Products sheet is named 'Products' in our template, but fall back to the
+    // first sheet so a plain CSV export (single sheet, no name) still works.
+    const productsSheetName = workbook.SheetNames.includes('Products') ? 'Products' : workbook.SheetNames[0];
+    const rows = readSheetRows(productsSheetName);
+
+    if (!rows || rows.length < 2) {
       return res.status(400).json({ success: false, message: 'Excel/CSV file must contain headers and at least one product row.' });
     }
 
     const headers = rows[0].map(h => (h || '').toString().trim());
-    const requiredFields = ['Name', 'Category', 'Selling Price'];
-    
-    // Support aliases like 'Product Name' and 'Price'
-    const hasNameCol = headers.includes('Name') || headers.includes('Product Name');
-    const hasCategoryCol = headers.includes('Category');
-    const hasPriceCol = headers.includes('Selling Price') || headers.includes('Price');
 
-    if (!hasNameCol || !hasCategoryCol || !hasPriceCol) {
+    // Support the 'Name'/'Product Name' and 'Selling Price'/'Price' aliases for convenience
+    const hasNameCol = headers.includes('Name') || headers.includes('Product Name');
+    const hasArticleCol = headers.includes('Article Number');
+    const hasCategoryCol = headers.includes('Category');
+    const hasMrpCol = headers.includes('MRP');
+    const hasPriceCol = headers.includes('Selling Price') || headers.includes('Price');
+    const hasWeightCol = headers.includes('Weight (kg)');
+
+    if (!hasNameCol || !hasArticleCol || !hasCategoryCol || !hasMrpCol || !hasPriceCol || !hasWeightCol) {
       const missing = [];
-      if (!hasNameCol) missing.push('Name/Product Name');
+      if (!hasNameCol) missing.push('Name');
+      if (!hasArticleCol) missing.push('Article Number');
       if (!hasCategoryCol) missing.push('Category');
-      if (!hasPriceCol) missing.push('Selling Price/Price');
-      return res.status(400).json({ success: false, message: `Missing required columns: ${missing.join(', ')}` });
+      if (!hasMrpCol) missing.push('MRP');
+      if (!hasPriceCol) missing.push('Selling Price');
+      if (!hasWeightCol) missing.push('Weight (kg)');
+      return res.status(400).json({ success: false, message: `Missing required columns: ${missing.join(', ')}. Please download the latest template.` });
     }
 
     const CategoryChip = require('../Models/CategoryChip');
     const SubCategoryChip = require('../Models/SubCategoryChip');
-    const Brand = require('../Models/Brand');
     const mongoose = require('mongoose');
 
     // 1. Fetch all records from database for in-memory caching
@@ -1114,16 +1201,85 @@ const bulkUploadProducts = async (req, res) => {
       return null;
     };
 
-    let successCount = 0;
-    let failedCount = 0;
-    const errorsList = [];
-
     const cleanNumber = (val, defaultVal = undefined) => {
       if (val === undefined || val === null || val === '') return defaultVal;
       const cleaned = val.toString().replace(/[^\d.]/g, '');
       const num = Number(cleaned);
       return isNaN(num) ? defaultVal : num;
     };
+
+    const parseBoolValue = (val) => {
+      if (val === true) return true;
+      if (val === false || val === undefined || val === null || val === '') return false;
+      const s = val.toString().trim().toLowerCase();
+      return s === 'true' || s === 'yes' || s === '1';
+    };
+
+    let successCount = 0;
+    let failedCount = 0;
+    const errorsList = [];
+
+    // ---- Parse the optional 'Variations' sheet, grouped by Article Number ----
+    const variationsByArticle = {};
+    if (workbook.SheetNames.includes('Variations')) {
+      const varRows = readSheetRows('Variations');
+      if (varRows && varRows.length > 1) {
+        const varHeaders = varRows[0].map(h => (h || '').toString().trim());
+        const getVarValue = (rowData, colName) => {
+          const idx = varHeaders.indexOf(colName);
+          return (idx !== -1 && idx < rowData.length) ? rowData[idx] : undefined;
+        };
+
+        for (let i = 1; i < varRows.length; i++) {
+          const rowData = varRows[i];
+          if (rowData.every(val => val === undefined || val === null || val === '')) continue;
+
+          const articleKey = (getVarValue(rowData, 'Article Number') || '').toString().trim();
+          const color = (getVarValue(rowData, 'Color') || '').toString().trim();
+          const size = (getVarValue(rowData, 'Size') || '').toString().trim();
+
+          if (!articleKey || !color || !size) {
+            errorsList.push({ row: `Variations!${i + 1}`, message: 'Article Number, Color, and Size are required for each variant row.' });
+            continue;
+          }
+
+          const useDefaultPricing = varHeaders.includes('Use Default Pricing')
+            ? parseBoolValue(getVarValue(rowData, 'Use Default Pricing'))
+            : true;
+
+          const variant = {
+            color,
+            size,
+            stock: cleanNumber(getVarValue(rowData, 'Stock'), 1),
+            sku: (getVarValue(rowData, 'Variant SKU') || '').toString().trim() || `${articleKey}-${color}-${size}`.replace(/\s+/g, '-'),
+            useDefaultPricing,
+            mrp: useDefaultPricing ? undefined : cleanNumber(getVarValue(rowData, 'MRP')),
+            sellingPrice: useDefaultPricing ? undefined : cleanNumber(getVarValue(rowData, 'Selling Price')),
+            images: []
+          };
+
+          const varImageUrls = getVarValue(rowData, 'Image URLs');
+          if (varImageUrls) {
+            const entries = varImageUrls.toString().split(',').map(u => u.trim()).filter(Boolean);
+            for (const entry of entries) {
+              const resolved = await resolveImageEntry(entry, zipImageMap, errorsList, `Variations!${i + 1}`);
+              if (resolved) variant.images.push(resolved);
+            }
+          }
+
+          const key = articleKey.toLowerCase();
+          if (!variationsByArticle[key]) variationsByArticle[key] = [];
+          variationsByArticle[key].push(variant);
+        }
+      }
+    }
+    const consumedVariationArticles = new Set();
+
+    // Existing article numbers in the DB, to catch duplicates before Mongo does
+    const existingArticles = new Set(
+      (await Product.find({}, 'article').lean()).map(p => (p.article || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const seenArticlesInFile = new Set();
 
     for (let i = 1; i < rows.length; i++) {
       const rowData = rows[i];
@@ -1137,14 +1293,31 @@ const bulkUploadProducts = async (req, res) => {
       };
 
       const name = getValue('Name') || getValue('Product Name');
+      const article = (getValue('Article Number') || '').toString().trim();
       const rawCategory = getValue('Category');
       const rawSubCategory = getValue('Sub Category');
       const sellingPrice = getValue('Selling Price') || getValue('Price');
       const cleanSellingPrice = cleanNumber(sellingPrice);
+      const cleanMrp = cleanNumber(getValue('MRP'));
+      const weight = cleanNumber(getValue('Weight (kg)'));
 
       if (!name) {
         failedCount++;
         errorsList.push({ row: i + 1, message: 'Product Name is required.' });
+        continue;
+      }
+      if (!article) {
+        failedCount++;
+        errorsList.push({ row: i + 1, message: 'Article Number is required.' });
+        continue;
+      }
+
+      const articleLower = article.toLowerCase();
+      if (variationsByArticle[articleLower]) consumedVariationArticles.add(articleLower);
+
+      if (existingArticles.has(articleLower) || seenArticlesInFile.has(articleLower)) {
+        failedCount++;
+        errorsList.push({ row: i + 1, message: `Article Number "${article}" already exists.` });
         continue;
       }
       if (!rawCategory) {
@@ -1152,10 +1325,37 @@ const bulkUploadProducts = async (req, res) => {
         errorsList.push({ row: i + 1, message: 'Category is required.' });
         continue;
       }
-      if (cleanSellingPrice === undefined) {
+      if (cleanMrp === undefined || cleanMrp <= 0) {
         failedCount++;
-        errorsList.push({ row: i + 1, message: 'Valid Price/Selling Price is required.' });
+        errorsList.push({ row: i + 1, message: 'A valid MRP greater than zero is required.' });
         continue;
+      }
+      if (cleanSellingPrice === undefined || cleanSellingPrice <= 0) {
+        failedCount++;
+        errorsList.push({ row: i + 1, message: 'A valid Selling Price greater than zero is required.' });
+        continue;
+      }
+      if (cleanMrp < cleanSellingPrice) {
+        failedCount++;
+        errorsList.push({ row: i + 1, message: 'MRP cannot be less than Selling Price.' });
+        continue;
+      }
+      if (weight === undefined || weight <= 0) {
+        failedCount++;
+        errorsList.push({ row: i + 1, message: 'A valid Weight (kg) greater than zero is required.' });
+        continue;
+      }
+
+      const gstPercentageRaw = getValue('GST Percentage');
+      let gstPercentage = 0;
+      if (gstPercentageRaw !== undefined && gstPercentageRaw !== '') {
+        const parsedGst = cleanNumber(gstPercentageRaw, 0);
+        if (!GST_PERCENTAGE_OPTIONS.includes(parsedGst)) {
+          failedCount++;
+          errorsList.push({ row: i + 1, message: `GST Percentage must be one of: ${GST_PERCENTAGE_OPTIONS.join(', ')}.` });
+          continue;
+        }
+        gstPercentage = parsedGst;
       }
 
       // Resolve Category
@@ -1177,76 +1377,103 @@ const bulkUploadProducts = async (req, res) => {
         }
       }
 
+      const discountLabelRaw = getValue('Discount Label (%)') || getValue('Discount Label');
+      let discountLabel = '';
+      if (discountLabelRaw !== undefined && discountLabelRaw !== '') {
+        const parsedDiscount = parseFloat(discountLabelRaw);
+        discountLabel = !isNaN(parsedDiscount) ? `-${Math.round(parsedDiscount)}% OFF` : String(discountLabelRaw).trim();
+      }
+
       const productData = {
         name,
+        article,
         category: categoryDoc._id.toString(),
         subCategory: subCategoryDoc ? subCategoryDoc._id.toString() : undefined,
         description: getValue('Description') || '',
         sellingPrice: cleanSellingPrice,
-        mrp: cleanNumber(getValue('MRP')),
+        mrp: cleanMrp,
         stock: cleanNumber(getValue('Stock'), 1),
-        discountLabel: (() => {
-          let rawDiscount = getValue('Discount Label') || '';
-          if (rawDiscount) {
-            const parsed = parseFloat(rawDiscount);
-            if (!isNaN(parsed) && parsed > 0 && parsed < 1) {
-              return `${Math.round(parsed * 100)}%`;
-            }
-            return String(rawDiscount).trim();
-          }
-          return '';
-        })(),
-        sku: getValue('SKU') || `SKU-${Date.now()}-${i}-${Math.random().toString().slice(2, 6)}`,
+        discountLabel,
+        sku: (getValue('SKU') || '').toString().trim() || `SKU-${Date.now()}-${i}-${Math.random().toString().slice(2, 6)}`,
         highlights: {
-          packOf: getValue('Pack Of') || '',
-          fabric: getValue('Fabric') || '',
-          material: getValue('Material') || '',
-          sleeve: getValue('Sleeve') || '',
+          idealFor: getValue('Ideal For') || '',
+          outerMaterial: getValue('Outer Material') || '',
+          soleMaterial: getValue('Sole Material') || '',
+          occasion: getValue('Occasion') || '',
+          color: getValue('Color') || '',
           pattern: getValue('Pattern') || '',
-          collar: getValue('Collar') || '',
-          color: getValue('Color') || ''
+          fastening: getValue('Fastening') || ''
         },
         technicalSpecs: {
+          type: getValue('Type') || '',
+          toeShape: getValue('Toe Shape') || '',
+          careInstructions: getValue('Care Instructions') || '',
           fit: getValue('Fit') || '',
-          fabricCare: getValue('Fabric Care') || '',
-          suitableFor: getValue('Suitable For') || '',
-          hem: getValue('Hem') || ''
+          warranty: getValue('Warranty') || ''
         },
         shippingSpecs: {
-          weight: cleanNumber(getValue('Weight (kg)'), 0),
+          weight,
           length: cleanNumber(getValue('Length (cm)')),
           width: cleanNumber(getValue('Width (cm)')),
           height: cleanNumber(getValue('Height (cm)'))
         },
         flags: {
-          topSection: getValue('Top Section') === 'true' || getValue('Top Section') === true,
-          crazyDeals: getValue('Crazy Deals') === 'true' || getValue('Crazy Deals') === true,
-          flashSale: getValue('Flash Sale') === 'true' || getValue('Flash Sale') === true
+          topSection: parseBoolValue(getValue('Featured Collection')),
+          crazyDeals: parseBoolValue(getValue('Crazy Deals')),
+          flashSale: parseBoolValue(getValue('New Arrivals'))
         },
-        brandName: 'Generic',
-        brandId: undefined,
-        tags: getValue('Tags') ? getValue('Tags').split(',').map(t => t.trim()).filter(Boolean) : [],
+        brandName: getValue('Brand Name') || 'Generic',
+        tags: getValue('Tags') ? getValue('Tags').toString().split(',').map(t => t.trim()).filter(Boolean) : [],
         manufacturerInfo: getValue('Manufacturer Info') || '',
         hsnCode: getValue('HSN Code') || '',
-        gstCategory: getValue('GST Category') || '',
-        isTrending: getValue('Is Trending') === 'true' || getValue('Is Trending') === true,
+        gstPercentage,
+        isTrending: parseBoolValue(getValue('Is Trending')),
         status: 'Approved'
       };
 
+      const specificationsRaw = getValue('Specifications (JSON)');
+      if (specificationsRaw) {
+        try {
+          const parsedSpecs = JSON.parse(specificationsRaw);
+          if (Array.isArray(parsedSpecs)) productData.specifications = parsedSpecs;
+        } catch (e) {
+          // Malformed JSON in the optional advanced column — ignore and keep default specifications
+        }
+      }
+
       const imageURLsStr = getValue('Image URLs');
       if (imageURLsStr) {
-        const urls = imageURLsStr.toString().split(',').map(url => url.trim()).filter(Boolean);
+        const entries = imageURLsStr.toString().split(',').map(url => url.trim()).filter(Boolean);
         const processedUrls = [];
-        for (const url of urls) {
-          const processed = await processImageUrl(url);
-          processedUrls.push(processed);
+        for (const entry of entries) {
+          const resolved = await resolveImageEntry(entry, zipImageMap, errorsList, i + 1);
+          if (resolved) processedUrls.push(resolved);
         }
         productData.images = processedUrls;
       }
 
+      const descImageURLsStr = getValue('Description Image URLs');
+      if (descImageURLsStr) {
+        const entries = descImageURLsStr.toString().split(',').map(url => url.trim()).filter(Boolean).slice(0, 5);
+        const processedUrls = [];
+        for (const entry of entries) {
+          const resolved = await resolveImageEntry(entry, zipImageMap, errorsList, i + 1);
+          if (resolved) processedUrls.push(resolved);
+        }
+        productData.descriptionImages = processedUrls;
+      }
+
+      const variants = variationsByArticle[articleLower];
+      if (variants && variants.length > 0) {
+        productData.variations = variants;
+      }
+
+      seenArticlesInFile.add(articleLower);
+
       try {
         const newProduct = new Product(productData);
         await newProduct.save();
+        existingArticles.add(articleLower);
         successCount++;
       } catch (err) {
         if (err.code === 11000) {
@@ -1255,6 +1482,7 @@ const bulkUploadProducts = async (req, res) => {
           try {
             const retryProduct = new Product(productData);
             await retryProduct.save();
+            existingArticles.add(articleLower);
             successCount++;
           } catch (retryErr) {
             failedCount++;
@@ -1266,6 +1494,13 @@ const bulkUploadProducts = async (req, res) => {
         }
       }
     }
+
+    // Flag any Variations rows whose Article Number never matched a product row
+    Object.keys(variationsByArticle).forEach(key => {
+      if (!consumedVariationArticles.has(key)) {
+        errorsList.push({ row: 'Variations', message: `No product row found with Article Number "${key}" — its variants were skipped.` });
+      }
+    });
 
     res.status(200).json({
       success: true,
@@ -1291,50 +1526,96 @@ const downloadTemplate = async (req, res) => {
     const subcategories = await SubCategoryChip.find({ active: { $ne: false } }).sort({ subCategoryName: 1 });
 
     const workbook = new ExcelJS.Workbook();
-    
-    // 1. Products Sheet
+    const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E3A8A' } };
+    const HEADER_FONT = { name: 'Arial', family: 4, size: 10, bold: true, color: { argb: 'FFFFFF' } };
+    const BOOL_LIST = '"TRUE,FALSE"';
+
+    // 1. Products Sheet — mirrors the fields on the Add Product page
     const sheet = workbook.addWorksheet('Products');
-    
+
     const headers = [
-      'Name', 'Category', 'Sub Category', 'Description', 'Selling Price', 'MRP', 'Stock', 'Discount Label', 'SKU',
-      'Pack Of', 'Fabric', 'Material', 'Sleeve', 'Pattern', 'Collar', 'Color',
-      'Fit', 'Fabric Care', 'Suitable For', 'Hem',
+      'Name', 'Article Number', 'Category', 'Sub Category', 'Description',
+      'MRP', 'Selling Price', 'Discount Label (%)', 'Stock', 'SKU',
+      'Ideal For', 'Outer Material', 'Sole Material', 'Occasion', 'Color', 'Pattern', 'Fastening',
+      'Type', 'Toe Shape', 'Care Instructions', 'Fit', 'Warranty',
       'Weight (kg)', 'Length (cm)', 'Width (cm)', 'Height (cm)',
-      'Top Section', 'Crazy Deals', 'Flash Sale',
-      'Tags', 'Manufacturer Info', 'HSN Code', 'GST Category', 'Is Trending', 'Image URLs'
+      'Featured Collection', 'Crazy Deals', 'New Arrivals', 'Is Trending',
+      'HSN Code', 'GST Percentage', 'Brand Name', 'Tags', 'Manufacturer Info',
+      'Image URLs', 'Description Image URLs', 'Specifications (JSON)'
     ];
 
     const headerRow = sheet.getRow(1);
     headerRow.values = headers;
-    headerRow.font = { name: 'Arial', family: 4, size: 10, bold: true, color: { argb: 'FFFFFF' } };
-    headerRow.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: '1E3A8A' } // Professional Dark Blue
-    };
+    headerRow.font = HEADER_FONT;
+    headerRow.fill = HEADER_FILL;
     headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
-    
+
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
 
+    const wideCols = ['Description', 'Image URLs', 'Description Image URLs', 'Specifications (JSON)'];
     sheet.columns = headers.map(h => ({
       header: h,
-      width: h === 'Description' || h === 'Image URLs' ? 30 : 15
+      width: wideCols.includes(h) ? 34 : 16
     }));
 
     const sampleRow = [
-      'Premium Leather Satchel', 'Fashion', 'Accessories', 'A high-quality leather satchel for everyday use.', 2999, 4999, 100, '-40% OFF', 'FSH-SAT-001',
-      '1', 'Leather', 'Pure Leather', '', 'Solid', '', 'Brown',
-      'Regular', 'Wipe with damp cloth', 'Casual', '',
+      'Premium Leather Satchel', 'FSH-SAT-001', 'Fashion', 'Accessories', 'A high-quality leather satchel for everyday use.',
+      4999, 2999, 40, 100, '',
+      'Women', 'Leather', '', 'Casual', 'Brown', 'Solid', 'Zip Closure',
+      'Satchel', '', 'Wipe with a damp cloth', 'Regular', '6 Months',
       0.8, 30, 20, 10,
-      'false', 'true', 'false',
-      'bags, leather, premium', 'LeatherCraft Mfg.', '4202', 'Standard GST', 'true', 'https://example.com/img1.jpg, https://example.com/img2.jpg'
+      'FALSE', 'TRUE', 'FALSE', 'TRUE',
+      '4202', 5, 'Generic', 'bags, leather, premium', 'LeatherCraft Mfg.',
+      'https://example.com/img1.jpg, https://example.com/img2.jpg', '', ''
     ];
     sheet.addRow(sampleRow);
+    sheet.getRow(2).font = { italic: true, color: { argb: '94A3B8' } };
 
-    // 2. Lists Sheet
+    // 2. Variations Sheet — optional, one row per color/size combination
+    const varSheet = workbook.addWorksheet('Variations');
+    const varHeaders = ['Article Number', 'Color', 'Size', 'Stock', 'Variant SKU', 'Use Default Pricing', 'MRP', 'Selling Price', 'Image URLs'];
+    const varHeaderRow = varSheet.getRow(1);
+    varHeaderRow.values = varHeaders;
+    varHeaderRow.font = HEADER_FONT;
+    varHeaderRow.fill = HEADER_FILL;
+    varHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    varSheet.views = [{ state: 'frozen', ySplit: 1 }];
+    varSheet.columns = varHeaders.map(h => ({ header: h, width: h === 'Image URLs' ? 34 : 18 }));
+
+    const varSampleRows = [
+      ['FSH-SAT-001', 'Brown', 'Standard', 10, '', 'TRUE', '', '', ''],
+      ['FSH-SAT-001', 'Black', 'Standard', 10, '', 'TRUE', '', '', '']
+    ];
+    varSampleRows.forEach(r => varSheet.addRow(r));
+    [2, 3].forEach(r => { varSheet.getRow(r).font = { italic: true, color: { argb: '94A3B8' } }; });
+
+    // 3. Instructions Sheet
+    const infoSheet = workbook.addWorksheet('Instructions');
+    infoSheet.columns = [{ width: 26 }, { width: 90 }];
+    const infoRows = [
+      ['Sheet', 'Purpose'],
+      ['Products', 'One row per product. Article Number must be unique — it links a product to its rows on the Variations sheet.'],
+      ['Variations', "Optional. Add one row per color/size combination. Leave 'Use Default Pricing' as TRUE to inherit the product's MRP/Selling Price, or FALSE plus your own MRP/Selling Price to override it for that variant."],
+      ['', ''],
+      ['Required columns', 'Name, Article Number, Category, MRP, Selling Price, Weight (kg)'],
+      ['Category / Sub Category', "Pick a value from the dropdown (see the 'Lists' sheet) or check 'Auto-Create Missing' in the admin panel to create new ones automatically on upload."],
+      ['GST Percentage', `Must be one of: ${GST_PERCENTAGE_OPTIONS.join(', ')}.`],
+      ['TRUE/FALSE columns', 'Featured Collection, Crazy Deals, New Arrivals, Is Trending, Use Default Pricing — pick TRUE or FALSE from the dropdown.'],
+      ['Image URLs', "Comma-separate multiple entries, e.g. https://.../a.jpg, https://.../b.jpg. Description Image URLs supports up to 5."],
+      ['Local image files', "Instead of a URL, you can put a bare filename here (e.g. satchel-1.jpg) if you also attach a ZIP of your images when uploading (use the 'Attach Images (ZIP)' button next to Upload Excel). Filenames are matched inside the ZIP regardless of folder — just make sure each name is unique across the ZIP. URLs and local filenames can be mixed in the same cell."],
+      ['Specifications (JSON)', 'Advanced/optional. Paste an array like [{"section":"Style","fields":[{"name":"Color","value":"Brown"}]}]. Leave blank to skip.'],
+      ['SKU / Variant SKU', 'Leave blank to auto-generate.']
+    ];
+    infoRows.forEach((r, idx) => {
+      const row = infoSheet.addRow(r);
+      if (idx === 0) row.font = { bold: true };
+    });
+
+    // 4. Lists Sheet — backs the dropdowns above
     const listsSheet = workbook.addWorksheet('Lists');
     listsSheet.getCell('A1').value = 'Categories';
     listsSheet.getCell('B1').value = 'Sub Categories';
+    listsSheet.getCell('C1').value = 'GST Percentage';
     listsSheet.getRow(1).font = { bold: true };
 
     categories.forEach((cat, idx) => {
@@ -1343,36 +1624,52 @@ const downloadTemplate = async (req, res) => {
     subcategories.forEach((sub, idx) => {
       listsSheet.getCell(`B${idx + 2}`).value = sub.subCategoryName;
     });
+    GST_PERCENTAGE_OPTIONS.forEach((pct, idx) => {
+      listsSheet.getCell(`C${idx + 2}`).value = pct;
+    });
 
     const categoryFormula = `Lists!$A$2:$A$${Math.max(2, categories.length + 1)}`;
     const subCategoryFormula = `Lists!$B$2:$B$${Math.max(2, subcategories.length + 1)}`;
+    const gstFormula = `Lists!$C$2:$C$${GST_PERCENTAGE_OPTIONS.length + 1}`;
 
     const categoryColIndex = headers.indexOf('Category') + 1;
     const subCategoryColIndex = headers.indexOf('Sub Category') + 1;
+    const gstColIndex = headers.indexOf('GST Percentage') + 1;
+    const boolColIndexes = ['Featured Collection', 'Crazy Deals', 'New Arrivals', 'Is Trending'].map(h => headers.indexOf(h) + 1);
 
     for (let r = 2; r <= 1000; r++) {
-      sheet.getRow(r).getCell(categoryColIndex).dataValidation = {
-        type: 'list',
-        allowBlank: true,
-        formulae: [categoryFormula],
-        showErrorMessage: true,
-        errorTitle: 'Invalid Category',
-        error: 'Please select a Category from the dropdown.'
+      const row = sheet.getRow(r);
+      row.getCell(categoryColIndex).dataValidation = {
+        type: 'list', allowBlank: true, formulae: [categoryFormula],
+        showErrorMessage: true, errorTitle: 'Invalid Category', error: 'Please select a Category from the dropdown.'
       };
+      row.getCell(subCategoryColIndex).dataValidation = {
+        type: 'list', allowBlank: true, formulae: [subCategoryFormula],
+        showErrorMessage: true, errorTitle: 'Invalid Sub Category', error: 'Please select a Sub Category from the dropdown.'
+      };
+      row.getCell(gstColIndex).dataValidation = {
+        type: 'list', allowBlank: true, formulae: [gstFormula],
+        showErrorMessage: true, errorTitle: 'Invalid GST Percentage', error: `GST Percentage must be one of: ${GST_PERCENTAGE_OPTIONS.join(', ')}.`
+      };
+      boolColIndexes.forEach(colIdx => {
+        row.getCell(colIdx).dataValidation = {
+          type: 'list', allowBlank: true, formulae: [BOOL_LIST],
+          showErrorMessage: true, errorTitle: 'Invalid Value', error: 'Please select TRUE or FALSE.'
+        };
+      });
+    }
 
-      sheet.getRow(r).getCell(subCategoryColIndex).dataValidation = {
-        type: 'list',
-        allowBlank: true,
-        formulae: [subCategoryFormula],
-        showErrorMessage: true,
-        errorTitle: 'Invalid Sub Category',
-        error: 'Please select a Sub Category from the dropdown.'
+    const useDefaultPricingColIndex = varHeaders.indexOf('Use Default Pricing') + 1;
+    for (let r = 2; r <= 1000; r++) {
+      varSheet.getRow(r).getCell(useDefaultPricingColIndex).dataValidation = {
+        type: 'list', allowBlank: true, formulae: [BOOL_LIST],
+        showErrorMessage: true, errorTitle: 'Invalid Value', error: 'Please select TRUE or FALSE.'
       };
     }
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=product_upload_template.xlsx');
-    
+
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const uploadCSV = multer({ storage: multer.memoryStorage() });
+const uploadCSV = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 const {
   getProducts,
   getProductById,
@@ -27,7 +27,7 @@ router.get('/download-template', protectAdmin, downloadTemplate);
 router.get('/:id', getProductById);
 
 // Admin protected routes
-router.post('/bulk-upload', protectAdmin, uploadCSV.single('file'), bulkUploadProducts);
+router.post('/bulk-upload', protectAdmin, uploadCSV.fields([{ name: 'file', maxCount: 1 }, { name: 'imagesZip', maxCount: 1 }]), bulkUploadProducts);
 router.post('/', protectAdmin, uploadImagesAny, processImages, handleUploadError, createProduct);
 router.post('/bulk-delete', protectAdmin, bulkDeleteProducts);
 router.put('/:id', protectAdmin, uploadImagesAny, processImages, handleUploadError, updateProduct);

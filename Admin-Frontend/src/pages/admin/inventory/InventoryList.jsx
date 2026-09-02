@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Search, Plus, Package, Edit3, Trash2,
   CheckCircle2, XCircle, AlertTriangle, ChevronDown,
-  ArrowUpDown, Download, RefreshCw, Upload, FileSpreadsheet, ChevronLeft, ChevronRight, Eye
+  ArrowUpDown, Download, RefreshCw, Upload, FileSpreadsheet, ChevronLeft, ChevronRight, Eye,
+  FileArchive, X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -63,6 +64,7 @@ export default function InventoryList() {
   const [loading, setLoading] = useState(true);
   const [autoCreate, setAutoCreate] = useState(true);
   const [uploadReport, setUploadReport] = useState(null);
+  const [imagesZipFile, setImagesZipFile] = useState(null);
 
 
   // Confirm Modal state
@@ -196,10 +198,13 @@ export default function InventoryList() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      
+      if (imagesZipFile) {
+        formData.append('imagesZip', imagesZipFile);
+      }
+
       const token = localStorage.getItem('adminToken');
       const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      
+
       const res = await fetch(`${apiBase}/admin/catalog/products/bulk-upload?autoCreate=${autoCreate}`, {
         method: 'POST',
         headers: {
@@ -232,7 +237,20 @@ export default function InventoryList() {
       toast.error('Failed to connect to server for upload.');
     } finally {
       e.target.value = ''; // Reset file input
+      setImagesZipFile(null);
     }
+  };
+
+  const handleImagesZipSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      toast.info('Please select a .zip file');
+      e.target.value = '';
+      return;
+    }
+    setImagesZipFile(file);
+    e.target.value = '';
   };
 
   useEffect(() => {
@@ -559,6 +577,31 @@ export default function InventoryList() {
             <FileSpreadsheet size={15} />
             Download Template
           </button>
+          {imagesZipFile ? (
+            <div
+              title="This ZIP will be sent along with the next Excel upload"
+              className="flex items-center gap-2 px-4 py-2.5 bg-purple-50 border border-purple-200 rounded-xl text-sm font-bold text-purple-700 shadow-sm"
+            >
+              <FileArchive size={15} />
+              <span className="max-w-[140px] truncate">{imagesZipFile.name}</span>
+              <button
+                type="button"
+                onClick={() => setImagesZipFile(null)}
+                className="text-purple-400 hover:text-purple-700 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ) : (
+            <label
+              title="Optional: attach a ZIP of local product images, then reference their filenames in the Excel's Image URL columns"
+              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-purple-600 hover:bg-purple-50 transition-all shadow-sm cursor-pointer"
+            >
+              <FileArchive size={15} />
+              Attach Images (ZIP)
+              <input type="file" accept=".zip" className="hidden" onChange={handleImagesZipSelect} />
+            </label>
+          )}
           <label className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-green-600 hover:bg-green-50 transition-all shadow-sm cursor-pointer">
             <Upload size={15} />
             Upload Excel
