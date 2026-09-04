@@ -421,26 +421,23 @@ exports.syncOrderStatus = async (req, res) => {
 exports.webhookReceiver = async (req, res) => {
     try {
         const payload = req.body;
-        const signature = req.headers['x-shiprocket-signature'];
+        // Shiprocket's webhook dashboard sends back a static token in a header you choose
+        // (Auth Token Type — configured here as x-api-key), not an HMAC signature.
+        const token = req.headers['x-api-key'];
         const webhookSecret = process.env.SHIPROCKET_WEBHOOK_SECRET;
 
         if (webhookSecret || process.env.ENV === 'production') {
-            if (!signature) {
-                console.error('Shiprocket Webhook signature missing.');
-                return res.status(401).json({ success: false, message: 'Unauthorized: Missing signature' });
-            }
             if (!webhookSecret) {
                 console.error('SHIPROCKET_WEBHOOK_SECRET is not set in environment.');
                 return res.status(500).json({ success: false, message: 'Server configuration error' });
             }
-            const expectedSig = crypto
-                .createHmac('sha256', webhookSecret)
-                .update(req.rawBody)
-                .digest('hex');
+            const tokenBuf = Buffer.from(token || '');
+            const secretBuf = Buffer.from(webhookSecret);
+            const isValid = tokenBuf.length === secretBuf.length && crypto.timingSafeEqual(tokenBuf, secretBuf);
 
-            if (signature !== expectedSig) {
-                console.error('Shiprocket Webhook signature mismatch.');
-                return res.status(401).json({ success: false, message: 'Unauthorized: Invalid signature' });
+            if (!isValid) {
+                console.error('Shiprocket Webhook token missing or invalid.');
+                return res.status(401).json({ success: false, message: 'Unauthorized: Invalid token' });
             }
         }
 
