@@ -4,16 +4,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
 const LegalPolicies = () => {
-  const [activeTab, setActiveTab] = useState('privacy'); // 'privacy' or 'terms'
+  const [activeTab, setActiveTab] = useState('privacy'); // 'privacy', 'terms', or 'returnExchange'
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
-  
+
   const [privacyPolicy, setPrivacyPolicy] = useState('');
   const [termsConditions, setTermsConditions] = useState('');
+  const [returnExchangePolicy, setReturnExchangePolicy] = useState('');
 
   // Keep original copies to discard changes correctly
   const [originalPrivacy, setOriginalPrivacy] = useState('');
   const [originalTerms, setOriginalTerms] = useState('');
+  const [originalReturnExchange, setOriginalReturnExchange] = useState('');
 
   const [isSaving, setIsSaving] = useState(false);
   const [showToast, setShowToast] = useState(false);
@@ -26,8 +28,10 @@ const LegalPolicies = () => {
       if (res.ok && data.success) {
         setPrivacyPolicy(data.privacy || '');
         setTermsConditions(data.terms || '');
+        setReturnExchangePolicy(data.returnExchange || '');
         setOriginalPrivacy(data.privacy || '');
         setOriginalTerms(data.terms || '');
+        setOriginalReturnExchange(data.returnExchange || '');
       }
     } catch (err) {
       console.error(err);
@@ -51,7 +55,7 @@ const LegalPolicies = () => {
     setIsSaving(true);
     try {
       const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      const content = activeTab === 'privacy' ? privacyPolicy : termsConditions;
+      const content = activeTab === 'privacy' ? privacyPolicy : activeTab === 'terms' ? termsConditions : returnExchangePolicy;
       const res = await fetch(`${apiBase}/admin/content/legal`, {
         method: 'PUT',
         headers: {
@@ -67,8 +71,10 @@ const LegalPolicies = () => {
       if (res.ok && data.success) {
         if (activeTab === 'privacy') {
           setOriginalPrivacy(privacyPolicy);
-        } else {
+        } else if (activeTab === 'terms') {
           setOriginalTerms(termsConditions);
+        } else {
+          setOriginalReturnExchange(returnExchangePolicy);
         }
         setIsEditing(false);
         setShowToast(true);
@@ -89,6 +95,7 @@ const LegalPolicies = () => {
     // Reset to the original fetched data
     setPrivacyPolicy(originalPrivacy);
     setTermsConditions(originalTerms);
+    setReturnExchangePolicy(originalReturnExchange);
   };
 
   return (
@@ -148,13 +155,21 @@ const LegalPolicies = () => {
             Privacy Policy
             {activeTab === 'privacy' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />}
           </button>
-          <button 
+          <button
             disabled={isEditing || loading}
             onClick={() => setActiveTab('terms')}
             className={`flex-1 py-5 text-sm font-bold transition-all relative ${activeTab === 'terms' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'} ${isEditing || loading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             Terms & Conditions
             {activeTab === 'terms' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />}
+          </button>
+          <button
+            disabled={isEditing || loading}
+            onClick={() => setActiveTab('returnExchange')}
+            className={`flex-1 py-5 text-sm font-bold transition-all relative ${activeTab === 'returnExchange' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'} ${isEditing || loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            Return & Exchange
+            {activeTab === 'returnExchange' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />}
           </button>
         </div>
 
@@ -172,7 +187,7 @@ const LegalPolicies = () => {
                   <div>
                     <p className="text-sm font-bold text-amber-900">Editor Mode Active</p>
                     <p className="text-xs text-amber-600 mt-1 leading-relaxed">
-                      You are currently editing the <strong>{activeTab === 'privacy' ? 'Privacy Policy' : 'Terms & Conditions'}</strong>. 
+                      You are currently editing the <strong>{activeTab === 'privacy' ? 'Privacy Policy' : activeTab === 'terms' ? 'Terms & Conditions' : 'Return & Exchange Policy'}</strong>.
                       Remember to save your changes to push them live to the platform.
                     </p>
                   </div>
@@ -184,7 +199,7 @@ const LegalPolicies = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between px-1">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                {activeTab === 'privacy' ? 'Privacy Policy Content' : 'Terms & Conditions Content'}
+                {activeTab === 'privacy' ? 'Privacy Policy Content' : activeTab === 'terms' ? 'Terms & Conditions Content' : 'Return & Exchange Policy Content'}
               </label>
               {!isEditing && (
                 <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">Read-Only Mode</span>
@@ -197,8 +212,8 @@ const LegalPolicies = () => {
             ) : (
               <textarea
                 readOnly={!isEditing}
-                value={activeTab === 'privacy' ? privacyPolicy : termsConditions}
-                onChange={(e) => activeTab === 'privacy' ? setPrivacyPolicy(e.target.value) : setTermsConditions(e.target.value)}
+                value={activeTab === 'privacy' ? privacyPolicy : activeTab === 'terms' ? termsConditions : returnExchangePolicy}
+                onChange={(e) => activeTab === 'privacy' ? setPrivacyPolicy(e.target.value) : activeTab === 'terms' ? setTermsConditions(e.target.value) : setReturnExchangePolicy(e.target.value)}
                 className={`w-full h-[500px] border rounded-2xl p-8 text-slate-700 font-medium leading-relaxed transition-all resize-none outline-none ${isEditing 
                   ? 'bg-slate-50 border-blue-200 focus:ring-4 focus:ring-blue-50 focus:border-blue-400' 
                   : 'bg-slate-50/30 border-slate-100 cursor-not-allowed'}`}

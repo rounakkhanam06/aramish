@@ -40,7 +40,6 @@ export default function ReviewOrderPage() {
   const [feeInfoModal, setFeeInfoModal] = useState(null);
   
   // Coins states
-  const [redeemCoins, setRedeemCoins] = useState(false);
   const [userCoins, setUserCoins] = useState(0);
   const [redeemWallet, setRedeemWallet] = useState(false);
   const [redeemReferralCoins, setRedeemReferralCoins] = useState(false);
@@ -459,7 +458,6 @@ export default function ReviewOrderPage() {
           couponCode: appliedCoupon ? appliedCoupon.code : undefined,
           deliveryCharge: deliveryCharge,
           etd: etd,
-          redeemCoins: false,
           redeemWallet: redeemWallet,
           redeemReferralCoins: redeemReferralCoins
         })

@@ -71,6 +71,8 @@ export default function Layout({ children }) {
                            location.pathname.toLowerCase().startsWith('/help') ||
                            location.pathname.toLowerCase().startsWith('/support') ||
                            location.pathname.toLowerCase().startsWith('/privacy') ||
+                           location.pathname.toLowerCase().startsWith('/terms') ||
+                           location.pathname.toLowerCase().startsWith('/return-exchange-policy') ||
                            location.pathname.toLowerCase().startsWith('/account') ||
                            location.pathname.toLowerCase().startsWith('/security') ||
                            location.pathname.toLowerCase().startsWith('/settings') ||
@@ -98,8 +100,10 @@ export default function Layout({ children }) {
                               location.pathname.toLowerCase().startsWith('/order-details') || 
                               location.pathname.toLowerCase().startsWith('/saved-addresses') || 
                               location.pathname.toLowerCase().startsWith('/cart') || 
-                              location.pathname.toLowerCase().startsWith('/support') || 
-                              location.pathname.toLowerCase().startsWith('/privacy');
+                              location.pathname.toLowerCase().startsWith('/support') ||
+                              location.pathname.toLowerCase().startsWith('/privacy') ||
+                              location.pathname.toLowerCase().startsWith('/terms') ||
+                              location.pathname.toLowerCase().startsWith('/return-exchange-policy');
 
   // Desktop/Tablet overrides:
   // - Show Top Navbar on all pages except login, studio, and search

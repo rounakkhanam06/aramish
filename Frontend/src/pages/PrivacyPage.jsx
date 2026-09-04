@@ -9,7 +9,7 @@ const sections = [
     iconColor: 'text-sky-500',
     title: 'Information We Collect',
     content:
-      'We collect information you provide directly to us — such as your name, email address, phone number, delivery address, and payment details when you register, place an order, or contact us. We also automatically collect certain usage data like device type, browser, IP address, and pages visited to improve your experience.',
+      'We collect information you provide directly to us on aramishshoes.com — such as your name, email address, phone number, delivery address, shoe size/fit preferences, and payment details when you register, place an order, or contact us. We also automatically collect usage data like device type, browser, IP address, and pages visited to improve your shopping experience.',
   },
   {
     icon: Database,
@@ -17,7 +17,7 @@ const sections = [
     iconColor: 'text-violet-500',
     title: 'How We Use Your Data',
     content:
-      'Your data is used to process and fulfil your orders, personalise your shopping experience, send order confirmations and delivery updates, improve our platform, and provide customer support. We may also use anonymised data for analytics and to develop new features.',
+      'Your data is used to process and fulfil your footwear orders, personalise product and size recommendations, send order confirmations and delivery/tracking updates, improve our catalogue and platform, and provide customer support. We may also use anonymised data for analytics and to develop new features.',
   },
   {
     icon: Share2,
@@ -25,7 +25,7 @@ const sections = [
     iconColor: 'text-amber-500',
     title: 'Sharing of Information',
     content:
-      'We do not sell or rent your personal information to third parties. We share your data only with trusted service providers (such as payment processors and logistics partners) who need it to deliver services on our behalf, and only under strict confidentiality agreements.',
+      'We do not sell or rent your personal information to third parties. We share your data only with trusted service providers — such as payment gateways, and shipping/courier partners (e.g. Shiprocket) — who need it to process payments and deliver your orders, and only under strict confidentiality agreements.',
   },
   {
     icon: Lock,
@@ -41,7 +41,7 @@ const sections = [
     iconColor: 'text-[#0B132B]',
     title: 'Cookies & Tracking',
     content:
-      'We use cookies and similar technologies to remember your preferences, keep you logged in, and analyse how our platform is used. You can control cookies through your browser settings, though disabling them may affect some features of the app.',
+      'We use cookies and similar technologies to remember your cart, size preferences, keep you logged in, and analyse how our platform is used. You can control cookies through your browser settings, though disabling them may affect some features of aramishshoes.com.',
   },
   {
     icon: UserX,

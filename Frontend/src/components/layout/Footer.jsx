@@ -37,6 +37,7 @@ export default function Footer() {
                 <li><a href="#" className="hover:text-[#0B132B] transition-colors">About Aramish</a></li>
                 <li><a href="#/privacy" className="hover:text-[#0B132B] transition-colors">Privacy Policy</a></li>
                 <li><a href="#/terms" className="hover:text-[#0B132B] transition-colors">Terms of Service</a></li>
+                <li><a href="#/return-exchange-policy" className="hover:text-[#0B132B] transition-colors">Return & Exchange Policy</a></li>
                 <li><a href="#/support" className="hover:text-[#0B132B] transition-colors">Support Center</a></li>
               </ul>
             </div>

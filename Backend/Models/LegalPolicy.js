@@ -5,7 +5,7 @@ const legalPolicySchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
-    enum: ['privacy', 'terms']
+    enum: ['privacy', 'terms', 'returnExchange']
   },
   content: {
     type: String,

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronDown, Scale, BookOpen, ShieldCheck, ShoppingBag, AlertTriangle, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronDown, Scale, BookOpen, ShieldCheck, ShoppingBag, AlertTriangle, FileText, Truck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const sections = [
@@ -25,13 +25,21 @@ const sections = [
     iconColor: 'text-amber-500',
     title: '3. Purchases & Payments',
     content:
-      'If you wish to purchase any product made available through the Service, you may be asked to supply certain information relevant to your Purchase including, without limitation, your credit card number, expiration date, billing address, and shipping information.',
+      'If you wish to purchase any product made available through aramishshoes.com, you may be asked to supply information relevant to your purchase, including your billing address, shipping information, and payment details, processed through our secure payment gateway. Prices are listed in INR and are inclusive of applicable taxes unless stated otherwise.',
+  },
+  {
+    icon: Truck,
+    iconBg: 'bg-teal-50',
+    iconColor: 'text-teal-500',
+    title: '4. Shipping',
+    content:
+      'Orders are shipped through our logistics partners and the delivery timeline shown at checkout is an estimate. You can track your shipment from the Orders section once it is dispatched.',
   },
   {
     icon: Scale,
     iconBg: 'bg-emerald-50',
     iconColor: 'text-emerald-500',
-    title: '4. Intellectual Property',
+    title: '5. Intellectual Property',
     content:
       'The Service and its original content, features, and functionality are and will remain the exclusive property of Aramish and its licensors. Our trademarks and trade dress may not be used in connection with any product or service without prior written consent.',
   },
@@ -39,7 +47,7 @@ const sections = [
     icon: AlertTriangle,
     iconBg: 'bg-rose-50',
     iconColor: 'text-rose-500',
-    title: '5. Limitation of Liability',
+    title: '6. Limitation of Liability',
     content:
       'In no event shall Aramish, nor its directors, employees, partners, agents, suppliers, or affiliates, be liable for any indirect, incidental, special, consequential, or punitive damages, including without limitation, loss of profits, data, use, goodwill, or other intangible losses.',
   },
@@ -47,7 +55,7 @@ const sections = [
     icon: FileText,
     iconBg: 'bg-gold/10',
     iconColor: 'text-[#0B132B]',
-    title: '6. Changes to Terms',
+    title: '7. Changes to Terms',
     content:
       'We reserve the right, at our sole discretion, to modify or replace these Terms at any time. If a revision is material, we will try to provide at least 30 days notice prior to any new terms taking effect. What constitutes a material change will be determined at our sole discretion.',
   },

@@ -23,6 +23,7 @@ const SimilarProductsPage= lazy(() => import('./pages/SimilarProductsPage'));
 const HelpSupportPage    = lazy(() => import('./pages/HelpSupportPage'));
 const PrivacyPage        = lazy(() => import('./pages/PrivacyPage'));
 const TermsPage          = lazy(() => import('./pages/TermsPage'));
+const ReturnExchangePage = lazy(() => import('./pages/ReturnExchangePage'));
 const AccountInfoPage    = lazy(() => import('./pages/AccountInfoPage'));
 const SecurityPage       = lazy(() => import('./pages/SecurityPage'));
 const SettingsPage       = lazy(() => import('./pages/SettingsPage'));
@@ -114,6 +115,7 @@ function AppContent() {
         <Route path="/support" element={<HelpSupportPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
+        <Route path="/return-exchange-policy" element={<ReturnExchangePage />} />
         <Route path="/account" element={<AccountInfoPage />} />
         <Route path="/security" element={<SecurityPage />} />
         <Route path="/settings" element={<SettingsPage />} />

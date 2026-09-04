@@ -18,13 +18,11 @@ exports.createOrder = async (req, res) => {
   
   const session = await mongoose.startSession();
   let transactionActive = false;
-  let coinsDeducted = false;
-  let coinsRedeemedAmount = 0;
   let walletDeducted = false;
   let walletUsedAmount = 0;
 
   try {
-    const { items, total, deliveryAddress, paymentMethod, paymentStatus, paymentId, couponCode, deliveryCharge, etd, redeemCoins, redeemWallet, redeemReferralCoins } = req.body;
+    const { items, total, deliveryAddress, paymentMethod, paymentStatus, paymentId, couponCode, deliveryCharge, etd, redeemWallet, redeemReferralCoins } = req.body;
 
     if (!items || items.length === 0 || !total || !deliveryAddress || !paymentMethod) {
       return res.status(400).json({ success: false, message: 'Please provide all required fields' });
@@ -373,7 +371,6 @@ exports.createOrder = async (req, res) => {
       gstAmount,
       platformCommission,
       total: finalPayableTotal,
-      coinsRedeemed: coinsRedeemedAmount,
       walletUsed: walletUsedAmount,
       welcomeCoinsUsed,
       referralCoinsUsed: referralCoinsUsedAmount,

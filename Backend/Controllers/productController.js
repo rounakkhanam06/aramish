@@ -1224,6 +1224,7 @@ const bulkUploadProducts = async (req, res) => {
 
     // ---- Parse the optional 'Variations' sheet, grouped by Article Number ----
     const variationsByArticle = {};
+    const variationArticleDisplay = {}; // key (lowercase) -> Article Number as typed, for readable error messages
     if (workbook.SheetNames.includes('Variations')) {
       const varRows = readSheetRows('Variations');
       if (varRows && varRows.length > 1) {
@@ -1273,6 +1274,7 @@ const bulkUploadProducts = async (req, res) => {
           const key = articleKey.toLowerCase();
           if (!variationsByArticle[key]) variationsByArticle[key] = [];
           variationsByArticle[key].push(variant);
+          if (!variationArticleDisplay[key]) variationArticleDisplay[key] = articleKey;
         }
       }
     }
@@ -1490,12 +1492,14 @@ const bulkUploadProducts = async (req, res) => {
             existingArticles.add(articleLower);
             successCount++;
           } catch (retryErr) {
+            console.error(`Bulk Upload row ${i + 1} save failed after SKU retry:`, retryErr);
             failedCount++;
-            errorsList.push({ row: i + 1, message: `Database error (SKU retry failed): ${retryErr.message}` });
+            errorsList.push({ row: i + 1, message: 'Could not save this product because its SKU or Article Number conflicts with an existing product. Please use a different SKU and try again.' });
           }
         } else {
+          console.error(`Bulk Upload row ${i + 1} save failed:`, err);
           failedCount++;
-          errorsList.push({ row: i + 1, message: `Database error: ${err.message}` });
+          errorsList.push({ row: i + 1, message: `Could not save this product: ${err.message.includes('validation failed') ? 'one or more fields have an invalid value. Please double-check this row.' : 'an unexpected error occurred. Please check this row and try again.'}` });
         }
       }
     }
@@ -1503,7 +1507,11 @@ const bulkUploadProducts = async (req, res) => {
     // Flag any Variations rows whose Article Number never matched a product row
     Object.keys(variationsByArticle).forEach(key => {
       if (!consumedVariationArticles.has(key)) {
-        errorsList.push({ row: 'Variations', message: `No product row found with Article Number "${key}" — its variants were skipped.` });
+        const displayArticle = variationArticleDisplay[key] || key;
+        errorsList.push({
+          row: 'Variations',
+          message: `Variants for Article Number "${displayArticle}" were not added: no matching row was found on the Products sheet. Check that the Article Number is typed exactly the same (no extra spaces or typos) on both the Products and Variations sheets, then re-upload.`
+        });
       }
     });
 
