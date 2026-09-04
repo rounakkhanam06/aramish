@@ -15,7 +15,7 @@ const {
   bulkUploadProducts,
   downloadTemplate
 } = require('../Controllers/productController');
-const { protectAdmin } = require('../Middlewares/authMiddleware');
+const { protectAdmin, attachAdminIfPresent } = require('../Middlewares/authMiddleware');
 const { uploadImagesAny, processImages, handleUploadError } = require('../Middlewares/uploadMiddleware');
 
 // Public routes to list products/brands
@@ -24,7 +24,7 @@ router.get('/combined', getCombinedCatalog);
 router.get('/top-buys', getTopBuys);
 router.get('/trending-brands', getTrendingBrands);
 router.get('/download-template', protectAdmin, downloadTemplate);
-router.get('/:id', getProductById);
+router.get('/:id', attachAdminIfPresent, getProductById);
 
 // Admin protected routes
 router.post('/bulk-upload', protectAdmin, uploadCSV.fields([{ name: 'file', maxCount: 1 }, { name: 'imagesZip', maxCount: 1 }]), bulkUploadProducts);

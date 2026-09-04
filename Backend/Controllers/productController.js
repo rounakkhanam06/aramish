@@ -127,9 +127,7 @@ const getProducts = async (req, res) => {
     }
 
     let query = Product.find(filter);
-    if (full !== 'true') {
-      query = query.select('-highlights -technicalSpecs -description -shippingSpecs');
-    }
+    query = query.select(full !== 'true' ? '-highlights -technicalSpecs -description -shippingSpecs -costPrice' : '-costPrice');
     const products = await query.sort({ createdAt: -1 }).lean();
     res.status(200).json({ success: true, products });
   } catch (error) {
@@ -260,6 +258,7 @@ const createProduct = async (req, res) => {
       description,
       sellingPrice: Number(sellingPrice),
       mrp: mrp ? Number(mrp) : undefined,
+      costPrice: req.body.costPrice !== undefined && req.body.costPrice !== '' ? Number(req.body.costPrice) : undefined,
       stock: stock ? Number(stock) : 1,
       discountLabel,
       sku: sku || `SKU-${Date.now()}`,
@@ -337,14 +336,14 @@ const updateProduct = async (req, res) => {
 
     const fields = [
       'name', 'category', 'subCategory', 'description', 'sellingPrice',
-      'mrp', 'stock', 'discountLabel', 'sku', 'article', 'gstCategory', 'gstPercentage', 'hsnCode',
+      'mrp', 'costPrice', 'stock', 'discountLabel', 'sku', 'article', 'gstCategory', 'gstPercentage', 'hsnCode',
       'manufacturerInfo', 'status'
     ];
 
     fields.forEach(f => {
       if (req.body[f] !== undefined) {
-        if (['sellingPrice', 'mrp', 'stock', 'gstPercentage'].includes(f)) {
-          product[f] = Number(req.body[f]);
+        if (['sellingPrice', 'mrp', 'costPrice', 'stock', 'gstPercentage'].includes(f)) {
+          product[f] = req.body[f] === '' ? undefined : Number(req.body[f]);
         } else {
           product[f] = req.body[f];
         }
@@ -574,6 +573,10 @@ const getProductById = async (req, res) => {
       sizeChart: cat ? cat.sizeChart : null
     };
 
+    if (!req.admin) {
+      delete enrichedProduct.costPrice;
+    }
+
     res.status(200).json({ success: true, product: enrichedProduct });
   } catch (error) {
     console.error('Get Product By ID Error:', error);
@@ -710,7 +713,7 @@ const getHomepageData = async (req, res) => {
       SubCategoryChip.find({}).lean(),
       Banner.find({}).sort({ createdAt: -1 }).lean(),
       Product.find({ status: 'Approved' })
-        .select('-highlights -technicalSpecs -description -shippingSpecs')
+        .select('-highlights -technicalSpecs -description -shippingSpecs -costPrice')
         .sort({ createdAt: -1 })
         .lean(),
       fetchDynamicTopBuys(),
@@ -863,7 +866,7 @@ const getCombinedCatalog = async (req, res) => {
 
     // 4. Sorting option & Projection
     let sortOption = { createdAt: -1 };
-    let projection = { highlights: 0, technicalSpecs: 0, description: 0, variations: 0, shippingSpecs: 0 };
+    let projection = { highlights: 0, technicalSpecs: 0, description: 0, variations: 0, shippingSpecs: 0, costPrice: 0 };
     
     if (isTextSearch) {
       projection.score = { $meta: 'textScore' };
@@ -1299,6 +1302,7 @@ const bulkUploadProducts = async (req, res) => {
       const sellingPrice = getValue('Selling Price') || getValue('Price');
       const cleanSellingPrice = cleanNumber(sellingPrice);
       const cleanMrp = cleanNumber(getValue('MRP'));
+      const cleanCostPrice = cleanNumber(getValue('Cost Price (₹)'));
       const weight = cleanNumber(getValue('Weight (kg)'));
 
       if (!name) {
@@ -1392,6 +1396,7 @@ const bulkUploadProducts = async (req, res) => {
         description: getValue('Description') || '',
         sellingPrice: cleanSellingPrice,
         mrp: cleanMrp,
+        costPrice: cleanCostPrice,
         stock: cleanNumber(getValue('Stock'), 1),
         discountLabel,
         sku: (getValue('SKU') || '').toString().trim() || `SKU-${Date.now()}-${i}-${Math.random().toString().slice(2, 6)}`,
@@ -1535,7 +1540,7 @@ const downloadTemplate = async (req, res) => {
 
     const headers = [
       'Name', 'Article Number', 'Category', 'Sub Category', 'Description',
-      'MRP', 'Selling Price', 'Discount Label (%)', 'Stock', 'SKU',
+      'MRP', 'Cost Price (₹)', 'Selling Price', 'Discount Label (%)', 'Stock', 'SKU',
       'Ideal For', 'Outer Material', 'Sole Material', 'Occasion', 'Color', 'Pattern', 'Fastening',
       'Type', 'Toe Shape', 'Care Instructions', 'Fit', 'Warranty',
       'Weight (kg)', 'Length (cm)', 'Width (cm)', 'Height (cm)',
@@ -1559,13 +1564,13 @@ const downloadTemplate = async (req, res) => {
     }));
 
     const sampleRow = [
-      'Premium Leather Satchel', 'FSH-SAT-001', 'Fashion', 'Accessories', 'A high-quality leather satchel for everyday use.',
-      4999, 2999, 40, 100, '',
-      'Women', 'Leather', '', 'Casual', 'Brown', 'Solid', 'Zip Closure',
-      'Satchel', '', 'Wipe with a damp cloth', 'Regular', '6 Months',
+      'Men\'s Formal Oxford Shoes', 'FSH-OXF-001', 'Formal Shoes', 'Oxford', 'Premium leather Oxford shoes crafted for a sharp, formal look.',
+      4999, 1800, 2999, 40, 100, '',
+      'Men', 'Leather', 'Rubber', 'Formal', 'Brown', 'Solid', 'Lace-Up',
+      'Oxford', 'Round Toe', 'Wipe with a damp cloth', 'Regular', '6 Months',
       0.8, 30, 20, 10,
       'FALSE', 'TRUE', 'FALSE', 'TRUE',
-      '4202', 5, 'Generic', 'bags, leather, premium', 'LeatherCraft Mfg.',
+      '6403', 5, 'Generic', 'shoes, leather, formal', 'FootCraft Mfg.',
       'https://example.com/img1.jpg, https://example.com/img2.jpg', '', ''
     ];
     sheet.addRow(sampleRow);
@@ -1583,11 +1588,12 @@ const downloadTemplate = async (req, res) => {
     varSheet.columns = varHeaders.map(h => ({ header: h, width: h === 'Image URLs' ? 34 : 18 }));
 
     const varSampleRows = [
-      ['FSH-SAT-001', 'Brown', 'Standard', 10, '', 'TRUE', '', '', ''],
-      ['FSH-SAT-001', 'Black', 'Standard', 10, '', 'TRUE', '', '', '']
+      ['FSH-OXF-001', 'Brown', '8', 10, '', 'TRUE', '', '', ''],
+      ['FSH-OXF-001', 'Brown', '9', 10, '', 'TRUE', '', '', ''],
+      ['FSH-OXF-001', 'Black', '8', 10, '', 'TRUE', '', '', '']
     ];
     varSampleRows.forEach(r => varSheet.addRow(r));
-    [2, 3].forEach(r => { varSheet.getRow(r).font = { italic: true, color: { argb: '94A3B8' } }; });
+    [2, 3, 4].forEach(r => { varSheet.getRow(r).font = { italic: true, color: { argb: '94A3B8' } }; });
 
     // 3. Instructions Sheet
     const infoSheet = workbook.addWorksheet('Instructions');
@@ -1598,6 +1604,7 @@ const downloadTemplate = async (req, res) => {
       ['Variations', "Optional. Add one row per color/size combination. Leave 'Use Default Pricing' as TRUE to inherit the product's MRP/Selling Price, or FALSE plus your own MRP/Selling Price to override it for that variant."],
       ['', ''],
       ['Required columns', 'Name, Article Number, Category, MRP, Selling Price, Weight (kg)'],
+      ['Cost Price (₹)', 'Optional. What the item costs you to source — used only to show your profit margin in the admin panel. Never shown to customers.'],
       ['Category / Sub Category', "Pick a value from the dropdown (see the 'Lists' sheet) or check 'Auto-Create Missing' in the admin panel to create new ones automatically on upload."],
       ['GST Percentage', `Must be one of: ${GST_PERCENTAGE_OPTIONS.join(', ')}.`],
       ['TRUE/FALSE columns', 'Featured Collection, Crazy Deals, New Arrivals, Is Trending, Use Default Pricing — pick TRUE or FALSE from the dropdown.'],

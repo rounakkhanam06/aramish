@@ -46,7 +46,7 @@ const AddProduct = () => {
   const [description, setDescription] = useState('');
   const [sellingPrice, setSellingPrice] = useState('');
   const [mrp, setMrp] = useState('');
-  const [discountPercent, setDiscountPercent] = useState('');
+  const [costPrice, setCostPrice] = useState('');
   const [stock, setStock] = useState(1);
   const [discountLabel, setDiscountLabel] = useState('');
   const [sku, setSku] = useState('');
@@ -54,16 +54,18 @@ const AddProduct = () => {
   const [categories, setCategories] = useState([]);
   const [subCategoriesMap, setSubCategoriesMap] = useState({});
 
-  useEffect(() => {
-    if (mrp && discountPercent) {
-      const discount = Number(discountPercent);
-      if (!isNaN(discount) && discount >= 0 && discount <= 100) {
-        const calculatedPrice = Math.round(Number(mrp) * (1 - discount / 100));
-        setSellingPrice(calculatedPrice);
-        setDiscountLabel(String(discount));
-      }
-    }
-  }, [mrp, discountPercent]);
+  // Discount % is derived from MRP and Selling Price, not entered manually.
+  const discountPercent = (mrp && sellingPrice && Number(mrp) > 0)
+    ? Math.round((1 - Number(sellingPrice) / Number(mrp)) * 100)
+    : '';
+
+  // Profit is derived from Selling Price and Cost Price (what the item costs to source).
+  const profit = (sellingPrice !== '' && costPrice !== '')
+    ? Number(sellingPrice) - Number(costPrice)
+    : null;
+  const profitMargin = (profit !== null && Number(sellingPrice) > 0)
+    ? Math.round((profit / Number(sellingPrice)) * 100)
+    : null;
 
   // Highlights
   const [highlights, setHighlights] = useState({
@@ -178,7 +180,10 @@ const AddProduct = () => {
     const fetchProduct = async () => {
       try {
         const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-        const res = await fetch(`${apiBase}/admin/catalog/products/${id}`);
+        const token = localStorage.getItem('adminToken');
+        const res = await fetch(`${apiBase}/admin/catalog/products/${id}`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
         const data = await res.json();
         if (res.ok && data.success && data.product) {
           const p = data.product;
@@ -188,6 +193,7 @@ const AddProduct = () => {
           setDescription(p.description || '');
           setSellingPrice(p.sellingPrice || '');
           setMrp(p.mrp || '');
+          setCostPrice(p.costPrice ?? '');
           setStock(p.stock || 1);
           if (p.discountLabel) {
              const parsed = parseFloat(p.discountLabel);
@@ -600,6 +606,7 @@ const AddProduct = () => {
       bodyFormData.append('description', description);
       bodyFormData.append('sellingPrice', sellingPrice);
       if (mrp) bodyFormData.append('mrp', mrp);
+      bodyFormData.append('costPrice', costPrice);
       bodyFormData.append('stock', stock);
       bodyFormData.append('discountLabel', discountLabel ? `-${discountLabel}% OFF` : '');
       bodyFormData.append('sku', sku);
@@ -797,17 +804,12 @@ const AddProduct = () => {
               </div>
               <div>
                 <Label>Discount (%)</Label>
-                <input 
-                  type="number" 
-                  value={discountPercent}
-                  onChange={e => {
-                    const val = e.target.value;
-                    if (val === '' || (Number(val) >= 0 && Number(val) <= 100)) setDiscountPercent(val);
-                  }}
-                  placeholder="e.g. 20" 
-                  className={inputCls} 
-                  min="0"
-                  max="100"
+                <input
+                  type="text"
+                  readOnly
+                  value={discountPercent === '' ? '' : `${discountPercent}%`}
+                  placeholder="Auto-calculated"
+                  className={`${inputCls} bg-slate-100 text-slate-500 cursor-not-allowed`}
                 />
               </div>
               <div>
@@ -835,6 +837,32 @@ const AddProduct = () => {
                   placeholder="1" 
                   className={inputCls} 
                 />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <Label>Cost Price (₹)</Label>
+                <input
+                  type="number"
+                  value={costPrice}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (val === '' || Number(val) >= 0) setCostPrice(val);
+                  }}
+                  placeholder="What you pay to source it"
+                  className={inputCls}
+                />
+                <p className="text-xs text-slate-400 mt-1.5">Only visible to admins, never shown to customers.</p>
+              </div>
+              <div>
+                <Label>Profit (₹)</Label>
+                <div className={`${inputCls} flex items-center justify-between bg-slate-100 ${profit === null ? 'text-slate-400' : profit < 0 ? 'text-red-500' : 'text-green-600'}`}>
+                  <span>{profit === null ? 'Enter Cost Price' : `₹${profit.toLocaleString('en-IN')}`}</span>
+                  {profitMargin !== null && (
+                    <span className="text-xs font-semibold">{profitMargin}% margin</span>
+                  )}
+                </div>
               </div>
             </div>
 
