@@ -426,21 +426,34 @@ const AddProduct = () => {
   };
 
   const handleAddVariantImageFile = (index, e) => {
-    const file = e.target.files[0];
-    if (file) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const updated = [...variations];
+    if (!updated[index].images) updated[index].images = [];
+    if (!updated[index].newImageFiles) updated[index].newImageFiles = [];
+
+    const remainingSlots = 3 - updated[index].images.length;
+    let skippedForSize = 0;
+    let skippedForLimit = 0;
+
+    files.forEach((file, idx) => {
+      if (idx >= remainingSlots) {
+        skippedForLimit++;
+        return;
+      }
       if (file.size > 10 * 1024 * 1024) {
-        toast.info('Image size cannot exceed 10MB!');
+        skippedForSize++;
         return;
       }
       const previewUrl = URL.createObjectURL(file);
-      const updated = [...variations];
-      if (!updated[index].images) updated[index].images = [];
-      if (!updated[index].newImageFiles) updated[index].newImageFiles = [];
-      
       updated[index].images.push(previewUrl);
       updated[index].newImageFiles.push({ previewUrl, file });
-      setVariations(updated);
-    }
+    });
+
+    setVariations(updated);
+    if (skippedForSize > 0) toast.info(`${skippedForSize} image(s) skipped: size cannot exceed 10MB!`);
+    if (skippedForLimit > 0) toast.info(`${skippedForLimit} image(s) skipped: limit is 3 images per variant!`);
   };
 
   const handleRemoveVariantImage = (varIndex, imgIndex) => {
@@ -480,20 +493,40 @@ const AddProduct = () => {
   };
 
   const handleAddDescriptionImageFile = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 10 * 1024 * 1024) {
-        toast.info('Image size cannot exceed 10MB!');
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const remainingSlots = 5 - descriptionImages.length;
+    if (remainingSlots <= 0) {
+      toast.info('You can only upload up to 5 description images!');
+      return;
+    }
+
+    const newImages = [];
+    const newFiles = [];
+    let skippedForSize = 0;
+    let skippedForLimit = 0;
+
+    files.forEach((file, idx) => {
+      if (idx >= remainingSlots) {
+        skippedForLimit++;
         return;
       }
-      if (descriptionImages.length >= 5) {
-        toast.info('You can only upload up to 5 description images!');
+      if (file.size > 10 * 1024 * 1024) {
+        skippedForSize++;
         return;
       }
       const previewUrl = URL.createObjectURL(file);
-      setDescriptionImages([...descriptionImages, previewUrl]);
-      setDescriptionImageFiles([...descriptionImageFiles, { previewUrl, file }]);
+      newImages.push(previewUrl);
+      newFiles.push({ previewUrl, file });
+    });
+
+    if (newImages.length > 0) {
+      setDescriptionImages([...descriptionImages, ...newImages]);
+      setDescriptionImageFiles([...descriptionImageFiles, ...newFiles]);
     }
+    if (skippedForSize > 0) toast.info(`${skippedForSize} image(s) skipped: size cannot exceed 10MB!`);
+    if (skippedForLimit > 0) toast.info(`${skippedForLimit} image(s) skipped: limit is 5 description images!`);
   };
 
   const handleRemoveDescriptionImage = (index) => {
@@ -1093,7 +1126,7 @@ const AddProduct = () => {
                     <Plus size={20} className="text-fuchsia-500" />
                   </div>
                   <span className="text-xs font-semibold text-slate-500">Add Image</span>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleAddDescriptionImageFile} />
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleAddDescriptionImageFile} />
                 </label>
               )}
             </div>
@@ -1171,23 +1204,43 @@ const AddProduct = () => {
                             {uploadedFiles.length < 3 && (
                               <label className="w-10 h-10 rounded border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:bg-slate-50 bg-white">
                                 <Plus size={14} className="text-slate-400" />
-                                <input 
-                                  type="file" 
-                                  accept="image/*" 
-                                  className="hidden" 
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  multiple
+                                  className="hidden"
                                   onChange={(e) => {
-                                    const file = e.target.files[0];
-                                    if (!file) return;
-                                    if (file.size > 10 * 1024 * 1024) {
-                                      toast.info('Image size cannot exceed 10MB!');
-                                      return;
+                                    const files = Array.from(e.target.files || []);
+                                    if (files.length === 0) return;
+
+                                    const existing = generatorColorImages[colorKey] || [];
+                                    const remainingSlots = 3 - existing.length;
+                                    let skippedForSize = 0;
+                                    let skippedForLimit = 0;
+                                    const newEntries = [];
+
+                                    files.forEach((file, idx) => {
+                                      if (idx >= remainingSlots) {
+                                        skippedForLimit++;
+                                        return;
+                                      }
+                                      if (file.size > 10 * 1024 * 1024) {
+                                        skippedForSize++;
+                                        return;
+                                      }
+                                      const previewUrl = URL.createObjectURL(file);
+                                      newEntries.push({ previewUrl, file });
+                                    });
+
+                                    if (newEntries.length > 0) {
+                                      setGeneratorColorImages(prev => ({
+                                        ...prev,
+                                        [colorKey]: [...(prev[colorKey] || []), ...newEntries]
+                                      }));
                                     }
-                                    const previewUrl = URL.createObjectURL(file);
-                                    setGeneratorColorImages(prev => ({
-                                      ...prev,
-                                      [colorKey]: [...(prev[colorKey] || []), { previewUrl, file }]
-                                    }));
-                                  }} 
+                                    if (skippedForSize > 0) toast.info(`${skippedForSize} image(s) skipped: size cannot exceed 10MB!`);
+                                    if (skippedForLimit > 0) toast.info(`${skippedForLimit} image(s) skipped: limit is 3 images per color!`);
+                                  }}
                                 />
                               </label>
                             )}
@@ -1294,7 +1347,7 @@ const AddProduct = () => {
                                   {(!v.images || v.images.length < 3) && (
                                     <label className="w-10 h-10 rounded border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:bg-slate-100 bg-white group">
                                       <Plus size={12} className="text-slate-400 group-hover:text-slate-600" />
-                                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleAddVariantImageFile(i, e)} />
+                                      <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleAddVariantImageFile(i, e)} />
                                     </label>
                                   )}
                                 </div>

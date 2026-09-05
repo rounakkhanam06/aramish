@@ -99,7 +99,8 @@ export default function InventoryList() {
           status: p.status,
           discount: p.discountLabel,
           image: p.images && p.images[0] ? p.images[0] : '',
-          flags: p.flags || { topSection: false, crazyDeals: false, flashSale: false }
+          flags: p.flags || { topSection: false, crazyDeals: false, flashSale: false },
+          variations: p.variations || []
         })));
       }
     } catch (err) {
@@ -306,7 +307,15 @@ export default function InventoryList() {
   // Filter
   const filtered = allProductsCombined
     .filter(p => {
-      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.sku?.toLowerCase().includes(search.toLowerCase());
+      const searchLower = search.toLowerCase();
+      const matchSearch = !searchLower ||
+        p.name.toLowerCase().includes(searchLower) ||
+        p.sku?.toLowerCase().includes(searchLower) ||
+        (p.variations || []).some(v =>
+          v.sku?.toLowerCase().includes(searchLower) ||
+          v.color?.toLowerCase().includes(searchLower) ||
+          v.size?.toLowerCase().includes(searchLower)
+        );
       const matchCat = categoryFilter === 'All' || 
                        p.category === categoryFilter ||
                        (p.category && p.category.toLowerCase() === categoryFilter.toLowerCase());
@@ -651,7 +660,7 @@ export default function InventoryList() {
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search by product name or SKU..."
+              placeholder="Search by product name, SKU or variant (color/size)..."
               className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 pl-11 pr-5 text-sm font-bold focus:ring-4 focus:ring-orange-50 outline-none transition-all text-slate-900 placeholder:text-slate-300"
             />
           </div>
