@@ -148,7 +148,7 @@ export default function ProfilePage() {
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [infoModalType, setInfoModalType] = useState(null); // 'terms', 'faq', or null
+  const [infoModalType, setInfoModalType] = useState(null); // 'faq', 'editProfile', or null
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteSuccess, setDeleteSuccess] = useState(false);
   const [showWalletBalance, setShowWalletBalance] = useState(false);
@@ -405,12 +405,14 @@ export default function ProfilePage() {
             <h3 className="text-xs font-black text-[#02006c] uppercase tracking-wider px-5 pt-4 pb-2 border-b border-white/10">Feedback & Information</h3>
             <div className="flex flex-col">
               {[
-                { icon: FileText, label: 'Terms, Policies and Licenses', id: 'terms' },
+                { icon: FileText, label: 'Terms & Conditions', path: '/terms' },
+                { icon: ShieldCheck, label: 'Privacy Policy', path: '/privacy' },
+                { icon: RotateCcw, label: 'Return & Exchange Policy', path: '/return-exchange-policy' },
                 { icon: HelpCircle, label: 'Browse FAQs', id: 'faq' },
                 { icon: Phone, label: 'Help & Support', path: '/help' }
               ].map((item, idx) => (
-                <div 
-                  key={idx} 
+                <div
+                  key={idx}
                   onClick={() => {
                     if (item.path) {
                       navigate(item.path);
@@ -431,43 +433,6 @@ export default function ProfilePage() {
 
         {/* Info Modals */}
         <AnimatePresence>
-          {infoModalType === 'terms' && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-[#0a0927]/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
-            >
-              <motion.div 
-                initial={{ y: "100%" }}
-                animate={{ y: 0 }}
-                exit={{ y: "100%" }}
-                transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                className="bg-surface rounded-t-[32px] sm:rounded-[32px] w-full max-w-md overflow-hidden flex flex-col h-[85vh] shadow-2xl border-t border-white/10"
-              >
-                <div className="w-full flex justify-center pt-4 pb-2 bg-surface relative z-20">
-                  <div className="w-12 h-1.5 bg-surface rounded-full"></div>
-                </div>
-                <div className="px-6 pb-4 pt-1 flex items-center justify-between border-b border-white/10">
-                  <h3 className="text-lg font-black text-[#02006c]">Terms & Policies</h3>
-                  <button onClick={() => setInfoModalType(null)} className="p-2 bg-surface rounded-full hover:bg-surface transition-colors cursor-pointer"><X className="w-4.5 h-4.5 text-slate-500" /></button>
-                </div>
-                <div className="p-6 overflow-y-auto space-y-4 text-sm text-slate-600">
-                  <h4 className="font-bold text-slate-800">1. Acceptance of Terms</h4>
-                  <p>By using Aramish, you agree to these conditions. Please read them carefully.</p>
-                  <h4 className="font-bold text-slate-800">2. Privacy Policy</h4>
-                  <p>Your privacy is important to us. We only collect information necessary to provide you with our services.</p>
-                  <h4 className="font-bold text-slate-800">3. Return & Refund</h4>
-                  <p>Items can be returned within 14 days of delivery. Custom avatars and digital goods are non-refundable.</p>
-                  <h4 className="font-bold text-slate-800">4. Intellectual Property</h4>
-                  <p>All content included in or made available through Aramish, such as text, graphics, logos, and avatars is the property of Aramish.</p>
-                  <h4 className="font-bold text-slate-800">5. User Conduct</h4>
-                  <p>Users must not engage in any activity that disrupts or interferes with Aramish services.</p>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-
           {infoModalType === 'faq' && (
             <motion.div 
               initial={{ opacity: 0 }}
@@ -791,12 +756,14 @@ export default function ProfilePage() {
               </h3>
               <div className="flex flex-col">
                 {[
-                  { icon: FileText, label: 'Terms, Policies and Licenses', id: 'terms' },
+                  { icon: FileText, label: 'Terms & Conditions', path: '/terms' },
+                  { icon: ShieldCheck, label: 'Privacy Policy', path: '/privacy' },
+                  { icon: RotateCcw, label: 'Return & Exchange Policy', path: '/return-exchange-policy' },
                   { icon: HelpCircle, label: 'Browse FAQs', id: 'faq' },
                   { icon: Phone, label: 'Help & Support', path: '/help' }
                 ].map((item, idx) => (
-                  <div 
-                    key={idx} 
+                  <div
+                    key={idx}
                     onClick={() => {
                       if (item.path) navigate(item.path);
                       else setInfoModalType(item.id);
@@ -855,43 +822,6 @@ export default function ProfilePage() {
 
       {/* Info Modals */}
       <AnimatePresence>
-        {infoModalType === 'terms' && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-[#0a0927]/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
-          >
-            <motion.div 
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="bg-surface rounded-t-[32px] sm:rounded-[32px] w-full max-w-md overflow-hidden flex flex-col h-[85vh] shadow-2xl border-t border-white/10"
-            >
-              <div className="w-full flex justify-center pt-4 pb-2 bg-surface relative z-20">
-                <div className="w-12 h-1.5 bg-surface rounded-full"></div>
-              </div>
-              <div className="px-6 pb-4 pt-1 flex items-center justify-between border-b border-white/10">
-                <h3 className="text-lg font-black text-[#02006c]">Terms & Policies</h3>
-                <button onClick={() => setInfoModalType(null)} className="p-2 bg-surface rounded-full hover:bg-surface transition-colors cursor-pointer"><X className="w-4.5 h-4.5 text-slate-500" /></button>
-              </div>
-              <div className="p-6 overflow-y-auto space-y-4 text-sm text-slate-600 text-left">
-                <h4 className="font-bold text-slate-800">1. Acceptance of Terms</h4>
-                <p>By using Aramish, you agree to these conditions. Please read them carefully.</p>
-                <h4 className="font-bold text-slate-800">2. Privacy Policy</h4>
-                <p>Your privacy is important to us. We only collect information necessary to provide you with our services.</p>
-                <h4 className="font-bold text-slate-800">3. Return & Refund</h4>
-                <p>Items can be returned within 14 days of delivery. Custom avatars and digital goods are non-refundable.</p>
-                <h4 className="font-bold text-slate-800">4. Intellectual Property</h4>
-                <p>All content included in or made available through Aramish, such as text, graphics, logos, and avatars is the property of Aramish.</p>
-                <h4 className="font-bold text-slate-800">5. User Conduct</h4>
-                <p>Users must not engage in any activity that disrupts or interferes with Aramish services.</p>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-
         {infoModalType === 'faq' && (
           <motion.div 
             initial={{ opacity: 0 }}
