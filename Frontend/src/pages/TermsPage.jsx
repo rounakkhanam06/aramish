@@ -1,73 +1,64 @@
-import React, { useState } from 'react';
-import { ChevronLeft, ChevronDown, Scale, BookOpen, ShieldCheck, ShoppingBag, AlertTriangle, FileText, Truck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, Scale } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const sections = [
-  {
-    icon: BookOpen,
-    iconBg: 'bg-sky-50',
-    iconColor: 'text-sky-500',
-    title: '1. Agreement to Terms',
-    content:
-      'By accessing or using Aramish, you agree to be bound by these Terms & Conditions and all applicable laws and regulations. If you do not agree with any of these terms, you are prohibited from using or accessing this site.',
-  },
-  {
-    icon: ShieldCheck,
-    iconBg: 'bg-violet-50',
-    iconColor: 'text-violet-500',
-    title: '2. User Accounts',
-    content:
-      'When you create an account with us, you must provide information that is accurate, complete, and current at all times. Failure to do so constitutes a breach of the Terms, which may result in immediate termination of your account on our Service.',
-  },
-  {
-    icon: ShoppingBag,
-    iconBg: 'bg-amber-50',
-    iconColor: 'text-amber-500',
-    title: '3. Purchases & Payments',
-    content:
-      'If you wish to purchase any product made available through aramishshoes.com, you may be asked to supply information relevant to your purchase, including your billing address, shipping information, and payment details, processed through our secure payment gateway. Prices are listed in INR and are inclusive of applicable taxes unless stated otherwise.',
-  },
-  {
-    icon: Truck,
-    iconBg: 'bg-teal-50',
-    iconColor: 'text-teal-500',
-    title: '4. Shipping',
-    content:
-      'Orders are shipped through our logistics partners and the delivery timeline shown at checkout is an estimate. You can track your shipment from the Orders section once it is dispatched.',
-  },
-  {
-    icon: Scale,
-    iconBg: 'bg-emerald-50',
-    iconColor: 'text-emerald-500',
-    title: '5. Intellectual Property',
-    content:
-      'The Service and its original content, features, and functionality are and will remain the exclusive property of Aramish and its licensors. Our trademarks and trade dress may not be used in connection with any product or service without prior written consent.',
-  },
-  {
-    icon: AlertTriangle,
-    iconBg: 'bg-rose-50',
-    iconColor: 'text-rose-500',
-    title: '6. Limitation of Liability',
-    content:
-      'In no event shall Aramish, nor its directors, employees, partners, agents, suppliers, or affiliates, be liable for any indirect, incidental, special, consequential, or punitive damages, including without limitation, loss of profits, data, use, goodwill, or other intangible losses.',
-  },
-  {
-    icon: FileText,
-    iconBg: 'bg-gold/10',
-    iconColor: 'text-[#0B132B]',
-    title: '7. Changes to Terms',
-    content:
-      'We reserve the right, at our sole discretion, to modify or replace these Terms at any time. If a revision is material, we will try to provide at least 30 days notice prior to any new terms taking effect. What constitutes a material change will be determined at our sole discretion.',
-  },
-];
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+// Splits the admin-authored plain-text policy into blocks — a line like "1. USER ACCOUNTS"
+// becomes a heading, everything else is rendered as a paragraph.
+const parseContent = (raw) => {
+  if (!raw) return [];
+  const lines = raw.split('\n');
+  const blocks = [];
+  let currentParagraph = [];
+
+  const flushParagraph = () => {
+    const text = currentParagraph.join(' ').trim();
+    if (text) blocks.push({ type: 'paragraph', text });
+    currentParagraph = [];
+  };
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      return;
+    }
+    if (/^\d+\.\s+\S+/.test(trimmed) && trimmed === trimmed.toUpperCase()) {
+      flushParagraph();
+      blocks.push({ type: 'heading', text: trimmed });
+    } else {
+      currentParagraph.push(trimmed);
+    }
+  });
+  flushParagraph();
+
+  return blocks;
+};
 
 export default function TermsPage() {
   const navigate = useNavigate();
-  const [openIndex, setOpenIndex] = useState(null);
+  const [content, setContent] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  const toggle = (index) => {
-    setOpenIndex(openIndex === index ? null : index);
-  };
+  useEffect(() => {
+    const fetchPolicy = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/admin/content/legal`);
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setContent(data.terms || '');
+        }
+      } catch (err) {
+        console.error('Failed to load terms & conditions:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchPolicy();
+  }, []);
+
+  const blocks = parseContent(content);
 
   return (
     <div className="bg-surface min-h-[100dvh] font-sans animate-fade-in flex flex-col">
@@ -96,63 +87,25 @@ export default function TermsPage() {
           <Scale className="absolute -bottom-4 -right-4 w-24 h-24 text-indigo-200/50 rotate-12" />
         </div>
 
-        {/* Last Updated Badge */}
-        <div className="flex items-center gap-2">
-          <span className="px-3 py-1 bg-surface rounded-full text-[11px] font-bold text-slate-500 tracking-wide">
-            Last updated: June 2025
-          </span>
-        </div>
-
-        {/* Accordion Sections */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">Terms Details</h3>
-
-          <div className="bg-surface rounded-2xl shadow-sm border border-white/10 overflow-hidden">
-            {sections.map((section, index) => {
-              const Icon = section.icon;
-              const isOpen = openIndex === index;
-              return (
-                <div
-                  key={index}
-                  className={`border-b border-white/10 last:border-0 ${
-                    isOpen ? 'bg-indigo-50/30' : 'hover:bg-surface'
-                  } transition-colors`}
-                >
-                  <button
-                    onClick={() => toggle(index)}
-                    className="w-full text-left px-4 py-4 flex items-center gap-3 cursor-pointer"
-                  >
-                    {/* Icon */}
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${section.iconBg} ${section.iconColor} transition-transform duration-300 ${isOpen ? 'scale-110' : ''}`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-
-                    {/* Title */}
-                    <span className={`flex-1 text-[13px] font-bold ${isOpen ? 'text-[#0B132B]' : 'text-[#02006c]'}`}>
-                      {section.title}
-                    </span>
-
-                    <ChevronDown
-                      className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform duration-300 ${
-                        isOpen ? 'rotate-180 text-[#0B132B]' : ''
-                      }`}
-                    />
-                  </button>
-
-                  {/* Expandable Content */}
-                  <div
-                    className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                      isOpen ? 'max-h-60 opacity-100' : 'max-h-0 opacity-0'
-                    }`}
-                  >
-                    <p className="px-5 pb-4 text-[13px] text-slate-600 font-medium leading-relaxed">
-                      {section.content}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        {/* Content */}
+        <div className="bg-surface rounded-2xl shadow-sm border border-white/10 p-5 space-y-4">
+          {loading ? (
+            <p className="text-[13px] text-slate-400 font-medium">Loading terms...</p>
+          ) : blocks.length === 0 ? (
+            <p className="text-[13px] text-slate-400 font-medium">Terms content is not available right now.</p>
+          ) : (
+            blocks.map((block, index) =>
+              block.type === 'heading' ? (
+                <h3 key={index} className="text-[13px] font-black text-[#02006c] pt-2">
+                  {block.text}
+                </h3>
+              ) : (
+                <p key={index} className="text-[13px] text-slate-600 font-medium leading-relaxed">
+                  {block.text}
+                </p>
+              )
+            )
+          )}
         </div>
 
         {/* Contact Note */}

@@ -1,65 +1,64 @@
-import React, { useState } from 'react';
-import { ChevronLeft, ChevronDown, ShieldCheck, Eye, Lock, Database, Share2, UserX } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const sections = [
-  {
-    icon: Eye,
-    iconBg: 'bg-sky-50',
-    iconColor: 'text-sky-500',
-    title: 'Information We Collect',
-    content:
-      'We collect information you provide directly to us on aramishshoes.com — such as your name, email address, phone number, delivery address, shoe size/fit preferences, and payment details when you register, place an order, or contact us. We also automatically collect usage data like device type, browser, IP address, and pages visited to improve your shopping experience.',
-  },
-  {
-    icon: Database,
-    iconBg: 'bg-violet-50',
-    iconColor: 'text-violet-500',
-    title: 'How We Use Your Data',
-    content:
-      'Your data is used to process and fulfil your footwear orders, personalise product and size recommendations, send order confirmations and delivery/tracking updates, improve our catalogue and platform, and provide customer support. We may also use anonymised data for analytics and to develop new features.',
-  },
-  {
-    icon: Share2,
-    iconBg: 'bg-amber-50',
-    iconColor: 'text-amber-500',
-    title: 'Sharing of Information',
-    content:
-      'We do not sell or rent your personal information to third parties. We share your data only with trusted service providers — such as payment gateways, and shipping/courier partners (e.g. Shiprocket) — who need it to process payments and deliver your orders, and only under strict confidentiality agreements.',
-  },
-  {
-    icon: Lock,
-    iconBg: 'bg-emerald-50',
-    iconColor: 'text-emerald-500',
-    title: 'Data Security',
-    content:
-      'We implement industry-standard security measures including SSL encryption, secure servers, and regular audits to protect your personal information from unauthorised access, disclosure, alteration, or destruction. However, no method of transmission over the internet is 100% secure.',
-  },
-  {
-    icon: ShieldCheck,
-    iconBg: 'bg-gold/10',
-    iconColor: 'text-[#0B132B]',
-    title: 'Cookies & Tracking',
-    content:
-      'We use cookies and similar technologies to remember your cart, size preferences, keep you logged in, and analyse how our platform is used. You can control cookies through your browser settings, though disabling them may affect some features of aramishshoes.com.',
-  },
-  {
-    icon: UserX,
-    iconBg: 'bg-rose-50',
-    iconColor: 'text-rose-500',
-    title: 'Your Rights',
-    content:
-      'You have the right to access, correct, or delete the personal data we hold about you. You may also opt out of marketing communications at any time. To exercise any of these rights, please contact us at privacy@aramish.com and we will respond within 30 days.',
-  },
-];
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+// Splits the admin-authored plain-text policy into blocks — a line like "1. DATA COLLECTION"
+// becomes a heading, everything else is rendered as a paragraph.
+const parseContent = (raw) => {
+  if (!raw) return [];
+  const lines = raw.split('\n');
+  const blocks = [];
+  let currentParagraph = [];
+
+  const flushParagraph = () => {
+    const text = currentParagraph.join(' ').trim();
+    if (text) blocks.push({ type: 'paragraph', text });
+    currentParagraph = [];
+  };
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      return;
+    }
+    if (/^\d+\.\s+\S+/.test(trimmed) && trimmed === trimmed.toUpperCase()) {
+      flushParagraph();
+      blocks.push({ type: 'heading', text: trimmed });
+    } else {
+      currentParagraph.push(trimmed);
+    }
+  });
+  flushParagraph();
+
+  return blocks;
+};
 
 export default function PrivacyPage() {
   const navigate = useNavigate();
-  const [openIndex, setOpenIndex] = useState(null);
+  const [content, setContent] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  const toggle = (index) => {
-    setOpenIndex(openIndex === index ? null : index);
-  };
+  useEffect(() => {
+    const fetchPolicy = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/admin/content/legal`);
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setContent(data.privacy || '');
+        }
+      } catch (err) {
+        console.error('Failed to load privacy policy:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchPolicy();
+  }, []);
+
+  const blocks = parseContent(content);
 
   return (
     <div className="bg-surface min-h-[100dvh] font-sans animate-fade-in flex flex-col">
@@ -88,63 +87,25 @@ export default function PrivacyPage() {
           <ShieldCheck className="absolute -bottom-4 -right-4 w-24 h-24 text-indigo-200/50 rotate-12" />
         </div>
 
-        {/* Last Updated Badge */}
-        <div className="flex items-center gap-2">
-          <span className="px-3 py-1 bg-surface rounded-full text-[11px] font-bold text-slate-500 tracking-wide">
-            Last updated: June 2025
-          </span>
-        </div>
-
-        {/* Accordion Sections */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">Policy Details</h3>
-
-          <div className="bg-surface rounded-2xl shadow-sm border border-white/10 overflow-hidden">
-            {sections.map((section, index) => {
-              const Icon = section.icon;
-              const isOpen = openIndex === index;
-              return (
-                <div
-                  key={index}
-                  className={`border-b border-white/10 last:border-0 ${
-                    isOpen ? 'bg-indigo-50/30' : 'hover:bg-surface'
-                  } transition-colors`}
-                >
-                  <button
-                    onClick={() => toggle(index)}
-                    className="w-full text-left px-4 py-4 flex items-center gap-3 cursor-pointer"
-                  >
-                    {/* Icon */}
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${section.iconBg} ${section.iconColor} transition-transform duration-300 ${isOpen ? 'scale-110' : ''}`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-
-                    {/* Title */}
-                    <span className={`flex-1 text-[13px] font-bold ${isOpen ? 'text-[#0B132B]' : 'text-[#02006c]'}`}>
-                      {section.title}
-                    </span>
-
-                    <ChevronDown
-                      className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform duration-300 ${
-                        isOpen ? 'rotate-180 text-[#0B132B]' : ''
-                      }`}
-                    />
-                  </button>
-
-                  {/* Expandable Content */}
-                  <div
-                    className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                      isOpen ? 'max-h-60 opacity-100' : 'max-h-0 opacity-0'
-                    }`}
-                  >
-                    <p className="px-5 pb-4 text-[13px] text-slate-600 font-medium leading-relaxed">
-                      {section.content}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        {/* Content */}
+        <div className="bg-surface rounded-2xl shadow-sm border border-white/10 p-5 space-y-4">
+          {loading ? (
+            <p className="text-[13px] text-slate-400 font-medium">Loading policy...</p>
+          ) : blocks.length === 0 ? (
+            <p className="text-[13px] text-slate-400 font-medium">Policy content is not available right now.</p>
+          ) : (
+            blocks.map((block, index) =>
+              block.type === 'heading' ? (
+                <h3 key={index} className="text-[13px] font-black text-[#02006c] pt-2">
+                  {block.text}
+                </h3>
+              ) : (
+                <p key={index} className="text-[13px] text-slate-600 font-medium leading-relaxed">
+                  {block.text}
+                </p>
+              )
+            )
+          )}
         </div>
 
         {/* Contact Note */}
