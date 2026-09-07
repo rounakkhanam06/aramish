@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Filter, Search, ChevronLeft, LayoutGrid } from 'lucide-react';
-import { CATEGORIES, CRAZY_DEALS } from '../data/mockData';
+import { CATEGORIES } from '../data/mockData';
 import { useApp } from '../context/AppContext';
 import ProductCard from '../components/ui/ProductCard';
 import OptimizedImage from '../components/ui/OptimizedImage';

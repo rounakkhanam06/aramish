@@ -20,17 +20,6 @@ const statusConfig = {
   'Out of Stock': { label: 'Out of Stock', color: 'bg-red-50 text-red-500 border-red-100' },
 };
 
-// Rich mock product data based on Frontend's CRAZY_DEALS data structure
-const MOCK_PRODUCTS = [
-  { id: 'P001', name: 'Oversized Tee', category: 'Fashion', price: 599, originalPrice: 999, stock: 120, sales: 245, status: 'Approved', discount: '-40%', sku: 'FSH-001' },
-  { id: 'P002', name: 'Layered Necklace', category: 'Jewellery', price: 699, originalPrice: 999, stock: 85, sales: 130, status: 'Approved', discount: '-30%', sku: 'JWL-001' },
-  { id: 'P003', name: 'Vintage Watch', category: 'Jewellery', price: 1499, originalPrice: 2999, stock: 40, sales: 97, status: 'Approved', discount: '-50%', sku: 'JWL-002' },
-  { id: 'P004', name: 'Benetint Lip Tint', category: 'Beauty', price: 1299, originalPrice: 1999, stock: 200, sales: 312, status: 'Approved', discount: '-35%', sku: 'BTY-001' },
-  { id: 'P005', name: 'Pink Lip Gloss', category: 'Beauty', price: 899, originalPrice: 1199, stock: 180, sales: 210, status: 'Approved', discount: '-20%', sku: 'BTY-002' },
-  { id: 'P006', name: 'Peptide Serum', category: 'Beauty', price: 2499, originalPrice: 2999, stock: 60, sales: 88, status: 'Approved', discount: '-15%', sku: 'BTY-003' },
-  { id: 'P007', name: 'Sunscreen SPF 50', category: 'Beauty', price: 599, originalPrice: 799, stock: 150, sales: 175, status: 'Approved', discount: '-25%', sku: 'BTY-004' }
-];
-
 const StatCard = ({ label, value, sub, icon: Icon, color }) => (
   <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center gap-4">
     <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${color}`}>

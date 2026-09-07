@@ -10,7 +10,6 @@ import {
   Heart, Package, Edit2, MapPin, Truck, RotateCcw, ShieldCheck, Tag, Trash2, Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CRAZY_DEALS, VALUE_PROPS } from '../data/mockData';
 import OptimizedImage from '../components/ui/OptimizedImage';
 import sneakerHero from '../assets/new_sneaker.png';
 

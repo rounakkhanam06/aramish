@@ -986,6 +986,17 @@ export default function Home() {
               </div>
             </LazySection>
 
+            {/* 7. Explore All Products — no category/section filter, just everything */}
+            <button
+              onClick={() => navigate('/all-products')}
+              className="w-full flex items-center justify-between gap-3 bg-[#0B132B] hover:bg-[#1a2542] text-white rounded-2xl py-4 px-6 shadow-md transition-all cursor-pointer group"
+            >
+              <div className="flex items-center gap-3">
+                <LayoutGrid className="w-5 h-5 text-amber-300" />
+                <span className="text-sm md:text-base font-black tracking-wide">Explore All Products</span>
+              </div>
+              <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </button>
 
           </>
         ) : (

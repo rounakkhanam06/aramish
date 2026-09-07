@@ -108,23 +108,6 @@ export default function TermsPage() {
           )}
         </div>
 
-        {/* Contact Note */}
-        <div className="bg-surface rounded-2xl p-4 border border-white/10 shadow-sm flex items-start gap-3">
-          <div className="w-9 h-9 bg-indigo-50 text-[#02006c] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-            <Scale className="w-4 h-4" />
-          </div>
-          <div>
-            <h4 className="text-[13px] font-bold text-[#02006c] mb-0.5">Questions about our Terms?</h4>
-            <p className="text-[12px] text-slate-500 font-medium leading-snug">
-              Reach out to us at{' '}
-              <a href="mailto:support@aramish.com" className="text-[#0B132B] font-bold hover:underline">
-                support@aramish.com
-              </a>{' '}
-              if you have any queries.
-            </p>
-          </div>
-        </div>
-
       </div>
     </div>
   );

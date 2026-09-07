@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, ShoppingCart, Heart, Send, Star, ChevronRight, Home, Truck, Store, RotateCcw, Banknote, ShieldCheck, ArrowRight, ChevronDown, ChevronUp, CheckCircle2, CheckCircle, X, Play, MapPin, Coins } from 'lucide-react';
+import { ArrowLeft, Search, ShoppingCart, Heart, Send, Star, ChevronRight, Home, Truck, Store, RotateCcw, Banknote, ShieldCheck, ArrowRight, ChevronDown, ChevronUp, CheckCircle2, CheckCircle, X, Play, MapPin, Coins, PackageX } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { useApp } from '../context/AppContext';
 import analytics from '../utils/analytics';
-import { CRAZY_DEALS } from '../data/mockData';
 import OptimizedImage from '../components/ui/OptimizedImage';
 import { getImageUrl } from '../utils/imageHelper';
 import { formatDiscount } from '../utils/discountHelper';
@@ -25,6 +24,7 @@ export default function ProductDetailsPage() {
   const [localSearchQuery, setLocalSearchQuery] = useState('');
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [similarProducts, setSimilarProducts] = useState([]);
+  const [notFound, setNotFound] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [showHeader, setShowHeader] = useState(true);
   const lastScrollY = useRef(0);
@@ -376,43 +376,17 @@ export default function ProductDetailsPage() {
              const simRes = await fetch(`${apiBase}/admin/catalog/products`);
              const simData = await simRes.json();
              if (simRes.ok && simData.success) {
-                const similar = simData.products.filter(p => p._id !== p.id && p._id !== id).slice(0, 10);
+                const similar = simData.products.filter(p => p._id !== id).slice(0, 10);
                 setSimilarProducts(similar);
              }
           } catch(e) { console.error(e); }
 
         } else {
-          const foundProduct = CRAZY_DEALS.find(item => item.id === id);
-          if (foundProduct) {
-            setProduct({
-              ...foundProduct,
-              images: [foundProduct.image]
-            });
-          } else {
-            setProduct({
-              id: 'fallback',
-              name: 'Product Details',
-              desc: 'Product description goes here',
-              price: 999,
-              originalPrice: 1999,
-              discount: '50% OFF',
-              image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&q=80&w=800',
-              images: ['https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&q=80&w=800'],
-              brandName: 'Aramish',
-              highlights: {},
-              technicalSpecs: {}
-            });
-          }
+          setNotFound(true);
         }
       } catch (err) {
         console.error('Error fetching product details:', err);
-        const foundProduct = CRAZY_DEALS.find(item => item.id === id);
-        if (foundProduct) {
-          setProduct({
-            ...foundProduct,
-            images: [foundProduct.image]
-          });
-        }
+        setNotFound(true);
       } finally {
         setIsLoading(false);
         setActiveImageIndex(0);
@@ -424,10 +398,26 @@ export default function ProductDetailsPage() {
   }, [id]);
 
   useEffect(() => {
-    if (product && product.id !== 'fallback') {
+    if (product) {
       analytics.trackProductView(product.id, product.name, product.type);
     }
   }, [product]);
+
+  if (notFound) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-surface p-6 text-center">
+        <PackageX className="w-12 h-12 text-slate-300" />
+        <h2 className="text-lg font-bold text-slate-800">Product Not Found</h2>
+        <p className="text-sm text-slate-400 max-w-xs">This product may have been removed or is no longer available.</p>
+        <button
+          onClick={() => navigate('/')}
+          className="mt-2 px-5 py-2.5 bg-[#0B132B] text-white rounded-xl text-sm font-bold cursor-pointer hover:scale-105 active:scale-95 transition-all"
+        >
+          Back to Home
+        </button>
+      </div>
+    );
+  }
 
   if (isLoading || !product) {
     return (
@@ -1305,49 +1295,35 @@ export default function ProductDetailsPage() {
           </div>
           
           {/* Horizontal Scroll on Mobile, responsive grid layout on Desktop */}
-          <div className="flex overflow-x-auto gap-4 pb-2 snap-x scrollbar-none md:grid md:grid-cols-4 lg:grid-cols-6 md:gap-4 md:overflow-visible">
-            {similarProducts.length > 0 ? similarProducts.map((deal) => (
-              <div 
-                key={deal._id} 
-                className="w-32 md:w-auto flex-shrink-0 snap-start flex flex-col cursor-pointer group" 
-                onClick={() => { navigate(`/product/${deal._id}`); window.scrollTo(0,0); }}
-              >
-                <div className="aspect-square bg-surface rounded-xl overflow-hidden relative mb-2.5 flex items-center justify-center border border-white/10">
-                  <OptimizedImage src={getImageUrl(deal.images && deal.images[0])} alt={deal.name} type="product" objectFit="contain" className="absolute inset-0 group-hover:scale-105 transition-transform duration-500" />
-                  <div className="absolute bottom-2 left-2 bg-surface/90 px-1.5 py-0.5 rounded flex items-center gap-0.5 shadow-sm">
-                    <span className="text-[9.5px] font-bold text-slate-800">{deal.rating || '4.2'}</span>
-                    <Star className="w-2.5 h-2.5 fill-emerald-600 text-emerald-600" />
+          {similarProducts.length > 0 ? (
+            <div className="flex overflow-x-auto gap-4 pb-2 snap-x scrollbar-none md:grid md:grid-cols-4 lg:grid-cols-6 md:gap-4 md:overflow-visible">
+              {similarProducts.map((deal) => (
+                <div
+                  key={deal._id}
+                  className="w-32 md:w-auto flex-shrink-0 snap-start flex flex-col cursor-pointer group"
+                  onClick={() => { navigate(`/product/${deal._id}`); window.scrollTo(0,0); }}
+                >
+                  <div className="aspect-square bg-surface rounded-xl overflow-hidden relative mb-2.5 flex items-center justify-center border border-white/10">
+                    <OptimizedImage src={getImageUrl(deal.images && deal.images[0])} alt={deal.name} type="product" objectFit="contain" className="absolute inset-0 group-hover:scale-105 transition-transform duration-500" />
+                    <div className="absolute bottom-2 left-2 bg-surface/90 px-1.5 py-0.5 rounded flex items-center gap-0.5 shadow-sm">
+                      <span className="text-[9.5px] font-bold text-slate-800">{deal.rating || '4.2'}</span>
+                      <Star className="w-2.5 h-2.5 fill-emerald-600 text-emerald-600" />
+                    </div>
+                  </div>
+                  <h4 className="text-xs font-bold text-[#02006c] truncate group-hover:text-[#0B132B]">{deal.name}</h4>
+                  <p className="text-[10px] text-slate-400 truncate mt-0.5">{deal.description || 'Premium Product'}</p>
+                  <div className="flex items-center gap-1.5 mt-1 leading-none">
+                    <span className="text-xs md:text-sm font-extrabold text-[#0B132B]">₹{deal.sellingPrice}</span>
+                    <span className="text-[9.5px] md:text-xs text-slate-400 line-through">₹{deal.mrp || deal.sellingPrice + 500}</span>
                   </div>
                 </div>
-                <h4 className="text-xs font-bold text-[#02006c] truncate group-hover:text-[#0B132B]">{deal.name}</h4>
-                <p className="text-[10px] text-slate-400 truncate mt-0.5">{deal.description || 'Premium Product'}</p>
-                <div className="flex items-center gap-1.5 mt-1 leading-none">
-                  <span className="text-xs md:text-sm font-extrabold text-[#0B132B]">₹{deal.sellingPrice}</span>
-                  <span className="text-[9.5px] md:text-xs text-slate-400 line-through">₹{deal.mrp || deal.sellingPrice + 500}</span>
-                </div>
-              </div>
-            )) : CRAZY_DEALS.map((deal) => (
-              <div 
-                key={deal.id} 
-                className="w-32 md:w-auto flex-shrink-0 snap-start flex flex-col cursor-pointer group" 
-                onClick={() => { navigate(`/product/${deal.id}`); window.scrollTo(0,0); }}
-              >
-                <div className="aspect-square bg-surface rounded-xl overflow-hidden relative mb-2.5 flex items-center justify-center border border-white/10">
-                  <OptimizedImage src={deal.image} alt={deal.name} type="product" objectFit="contain" className="absolute inset-0 group-hover:scale-105 transition-transform duration-500" />
-                  <div className="absolute bottom-2 left-2 bg-surface/90 px-1.5 py-0.5 rounded flex items-center gap-0.5 shadow-sm">
-                    <span className="text-[9.5px] font-bold text-slate-800">4.2</span>
-                    <Star className="w-2.5 h-2.5 fill-emerald-600 text-emerald-600" />
-                  </div>
-                </div>
-                <h4 className="text-xs font-bold text-[#02006c] truncate group-hover:text-[#0B132B]">{deal.name}</h4>
-                <p className="text-[10px] text-slate-400 truncate mt-0.5">{deal.desc}</p>
-                <div className="flex items-center gap-1.5 mt-1 leading-none">
-                  <span className="text-xs md:text-sm font-extrabold text-[#0B132B]">₹{deal.price}</span>
-                  <span className="text-[9.5px] md:text-xs text-slate-400 line-through">₹{deal.originalPrice}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-8 text-center text-slate-400 text-xs font-medium border border-dashed border-white/10 rounded-xl">
+              No similar products available right now.
+            </div>
+          )}
         </div>
       </div>
 

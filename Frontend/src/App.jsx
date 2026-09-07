@@ -19,6 +19,7 @@ const CrazyDealsPage     = lazy(() => import('./pages/CrazyDealsPage'));
 const ReviewOrderPage    = lazy(() => import('./pages/ReviewOrderPage'));
 const ProductDetailsPage = lazy(() => import('./pages/ProductDetailsPage'));
 const TopSelectionPage   = lazy(() => import('./pages/TopSelectionPage'));
+const AllProductsPage    = lazy(() => import('./pages/AllProductsPage'));
 const SimilarProductsPage= lazy(() => import('./pages/SimilarProductsPage'));
 const HelpSupportPage    = lazy(() => import('./pages/HelpSupportPage'));
 const PrivacyPage        = lazy(() => import('./pages/PrivacyPage'));
@@ -109,6 +110,7 @@ function AppContent() {
         <Route path="/product/:id" element={<ProductDetailsPage />} />
         <Route path="/similar-products" element={<SimilarProductsPage />} />
         <Route path="/top-selection" element={<TopSelectionPage />} />
+        <Route path="/all-products" element={<AllProductsPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/help" element={<HelpSupportPage />} />

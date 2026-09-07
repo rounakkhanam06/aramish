@@ -1,6 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
-import { CRAZY_DEALS } from '../data/mockData';
 import toast from 'react-hot-toast';
 import { requestFcmToken, messaging } from '../firebase';
 import { onMessage } from 'firebase/messaging';
