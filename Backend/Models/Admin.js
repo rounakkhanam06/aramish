@@ -38,7 +38,13 @@ const adminSchema = new mongoose.Schema({
   lastLogin: {
     type: Date,
     default: null
-  }
+  },
+  fcmWebTokens: [{
+    type: String
+  }],
+  fcmMobileTokens: [{
+    type: String
+  }]
 }, { timestamps: true });
 
 // Hash password before save

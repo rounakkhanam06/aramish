@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { adminLogin, getMe, adminLogout, getUsers, createUser, updateUser, updateAdminProfile, changeAdminPassword, forceLogoutUser, forceLogoutAllUsers, getUserDetails } = require('../Controllers/adminAuthController');
+const { adminLogin, getMe, adminLogout, getUsers, createUser, updateUser, updateAdminProfile, changeAdminPassword, forceLogoutUser, forceLogoutAllUsers, getUserDetails, updateAdminFcmToken, removeAdminFcmToken } = require('../Controllers/adminAuthController');
 const { protectAdmin } = require('../Middlewares/authMiddleware');
 const { uploadImage, processImage, handleUploadError } = require('../Middlewares/uploadMiddleware');
 
@@ -10,6 +10,8 @@ router.post('/login', adminLogin);
 // Protected routes
 router.get('/me', protectAdmin, getMe);
 router.post('/logout', protectAdmin, adminLogout);
+router.post('/fcm-token', protectAdmin, updateAdminFcmToken);
+router.delete('/fcm-token', protectAdmin, removeAdminFcmToken);
 router.get('/users', protectAdmin, getUsers);
 router.get('/users/:id', protectAdmin, getUserDetails);
 router.post('/users', protectAdmin, createUser);

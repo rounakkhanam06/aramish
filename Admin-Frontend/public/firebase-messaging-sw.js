@@ -2,7 +2,7 @@
 importScripts("https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js");
 
-// Initialize Firebase App in the service worker
+// Initialize Firebase App in the Admin service worker
 firebase.initializeApp({
   apiKey: "AIzaSyCUOAGEtCCTGrpj7OIvcJKD_5tvA4qXyK8",
   authDomain: "aramish-17001.firebaseapp.com",
@@ -16,34 +16,27 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message ', payload);
+  console.log('[Admin firebase-messaging-sw.js] Received background message ', payload);
   
-  const notificationTitle = payload.notification?.title || payload.data?.title || "Aramish Shoes";
+  const notificationTitle = payload.notification?.title || payload.data?.title || "Aramish Admin";
   const notificationOptions = {
-    body: payload.notification?.body || payload.data?.body || "You have a new update from Aramish!",
-    icon: payload.notification?.icon || payload.data?.image || "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
-    vibrate: [200, 100, 200],
+    body: payload.notification?.body || payload.data?.body || "New update in Admin Panel",
+    icon: payload.notification?.icon || payload.data?.image || "/aramish-logo.png",
+    badge: "/favicon.svg",
+    vibrate: [300, 100, 300, 100, 300],
+    requireInteraction: true,
     data: {
-      url: payload.data?.url || payload.fcmOptions?.link || "/"
+      url: payload.data?.url || payload.fcmOptions?.link || "/orders"
     }
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);
-
-  if (payload.data?.type === 'FORCE_LOGOUT') {
-    self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then(clients => {
-      clients.forEach(client => {
-        client.postMessage({ type: 'FORCE_LOGOUT' });
-      });
-    });
-  }
 });
 
 // Handle clicking on notification banner in phone tray or desktop
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || '/';
+  const targetUrl = event.notification.data?.url || '/orders';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
