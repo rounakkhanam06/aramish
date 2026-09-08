@@ -476,12 +476,27 @@ exports.createOrder = async (req, res) => {
     }
 
     // Clear user cart
-
-    // Clear user cart
     const cart = await Cart.findOne({ userId: req.user._id });
     if (cart) {
       cart.items = [];
       await cart.save();
+    }
+
+    // Send push notification to Admins outside app
+    try {
+      const { sendNotificationToAdmins } = require('../Router/firebaseAdmin');
+      const orderShortId = order._id.toString().slice(-6).toUpperCase();
+      sendNotificationToAdmins({
+        title: '🛍️ New Order Received!',
+        body: `Order #${orderShortId} placed by ${deliveryAddress.name || 'Customer'} for ₹${finalPayableTotal}.`,
+        data: {
+          url: '/orders',
+          orderId: order._id.toString(),
+          type: 'NEW_ORDER'
+        }
+      });
+    } catch (notifErr) {
+      console.error('Failed to notify admins of new order:', notifErr.message);
     }
 
     res.status(201).json({ success: true, message: 'Order placed successfully', order });

@@ -11,6 +11,9 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import OptimizedImage from '../components/common/OptimizedImage';
 
+import toast from 'react-hot-toast';
+import { requestAdminFcmToken, onAdminMessageListener } from '../firebase';
+
 const AdminLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [openMenus, setOpenMenus] = useState({});
@@ -29,6 +32,51 @@ const AdminLayout = () => {
     }
   }, [navigate]);
 
+  // FCM Push Notifications Registration for Admin
+  useEffect(() => {
+    const registerAdminNotifications = async () => {
+      const adminToken = localStorage.getItem('adminToken');
+      if (!adminToken) return;
+
+      try {
+        const token = await requestAdminFcmToken();
+        if (token) {
+          const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+          await fetch(`${apiBase}/admin/auth/fcm-token`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${adminToken}`
+            },
+            body: JSON.stringify({ token, platform: 'web' })
+          });
+          localStorage.setItem('adminFcmToken', token);
+        }
+      } catch (fcmErr) {
+        console.error('Error registering Admin FCM token:', fcmErr);
+      }
+    };
+
+    registerAdminNotifications();
+
+    // Foreground notification listener
+    onAdminMessageListener().then((payload) => {
+      if (payload) {
+        const title = payload.notification?.title || payload.data?.title || 'New Admin Notification';
+        const body = payload.notification?.body || payload.data?.body || '';
+        toast((t) => (
+          <div className="flex flex-col gap-1 cursor-pointer" onClick={() => {
+            toast.dismiss(t.id);
+            navigate(payload.data?.url || '/admin/orders');
+          }}>
+            <span className="font-bold text-slate-900">{title}</span>
+            <span className="text-xs text-slate-600">{body}</span>
+          </div>
+        ), { duration: 6000, icon: '🔔' });
+      }
+    }).catch(() => {});
+  }, []);
+
   // Get logged in admin info as reactive state
   const [adminInfo, setAdminInfo] = useState(() => {
     return JSON.parse(localStorage.getItem('adminInfo') || '{"name":"Admin","email":"admin@gmail.com"}');
@@ -43,9 +91,25 @@ const AdminLayout = () => {
   }, []);
 
   // Proper logout function
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const adminToken = localStorage.getItem('adminToken');
+    const fcmToken = localStorage.getItem('adminFcmToken');
+    if (adminToken && fcmToken) {
+      try {
+        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        await fetch(`${apiBase}/admin/auth/fcm-token`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${adminToken}`
+          },
+          body: JSON.stringify({ token: fcmToken, platform: 'web' })
+        });
+      } catch (err) {}
+    }
     localStorage.removeItem('adminToken');
     localStorage.removeItem('adminInfo');
+    localStorage.removeItem('adminFcmToken');
     navigate('/admin/auth', { replace: true });
   };
 

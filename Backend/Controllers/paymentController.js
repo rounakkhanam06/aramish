@@ -357,6 +357,23 @@ exports.webhookReceiver = async (req, res) => {
         cart.items = [];
         await cart.save();
       }
+
+      // Notify Admins
+      try {
+        const { sendNotificationToAdmins } = require('../Router/firebaseAdmin');
+        const orderShortId = newOrder._id.toString().slice(-6).toUpperCase();
+        sendNotificationToAdmins({
+          title: '💳 New Paid Order (Razorpay)!',
+          body: `Order #${orderShortId} paid online for ₹${finalCalculatedTotal}.`,
+          data: {
+            url: '/orders',
+            orderId: newOrder._id.toString(),
+            type: 'NEW_ORDER'
+          }
+        });
+      } catch (adminNotifErr) {
+        console.error('Failed to notify admins of webhook order:', adminNotifErr.message);
+      }
     }
 
     res.status(200).json({ success: true });

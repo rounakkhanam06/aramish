@@ -720,4 +720,68 @@ const getUserDetails = async (req, res) => {
   }
 };
 
-module.exports = { adminLogin, getMe, adminLogout, getUsers, createUser, updateUser, updateAdminProfile, changeAdminPassword, forceLogoutUser, forceLogoutAllUsers, getUserDetails };
+// @desc    Update Admin FCM Token for Push Notifications
+// @route   POST /api/admin/auth/fcm-token
+// @access  Private/Admin
+const updateAdminFcmToken = async (req, res) => {
+  try {
+    const { token, platform = 'web' } = req.body;
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Token is required' });
+    }
+
+    const admin = await Admin.findById(req.admin._id);
+    if (!admin) {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+
+    const field = platform === 'mobile' ? 'fcmMobileTokens' : 'fcmWebTokens';
+    if (!admin[field]) {
+      admin[field] = [];
+    }
+
+    if (!admin[field].includes(token)) {
+      admin[field].push(token);
+      // Keep up to 5 recent tokens
+      if (admin[field].length > 5) {
+        admin[field] = admin[field].slice(-5);
+      }
+      await admin.save({ validateBeforeSave: false });
+    }
+
+    res.status(200).json({ success: true, message: 'Admin FCM token updated successfully' });
+  } catch (error) {
+    console.error('Update Admin FCM Token Error:', error);
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+};
+
+// @desc    Remove Admin FCM Token on Logout
+// @route   DELETE /api/admin/auth/fcm-token
+// @access  Private/Admin
+const removeAdminFcmToken = async (req, res) => {
+  try {
+    const { token, platform = 'web' } = req.body;
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Token is required' });
+    }
+
+    const admin = await Admin.findById(req.admin._id);
+    if (!admin) {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+
+    const field = platform === 'mobile' ? 'fcmMobileTokens' : 'fcmWebTokens';
+    if (admin[field]) {
+      admin[field] = admin[field].filter(t => t !== token);
+      await admin.save({ validateBeforeSave: false });
+    }
+
+    res.status(200).json({ success: true, message: 'Admin FCM token removed successfully' });
+  } catch (error) {
+    console.error('Remove Admin FCM Token Error:', error);
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+};
+
+module.exports = { adminLogin, getMe, adminLogout, getUsers, createUser, updateUser, updateAdminProfile, changeAdminPassword, forceLogoutUser, forceLogoutAllUsers, getUserDetails, updateAdminFcmToken, removeAdminFcmToken };

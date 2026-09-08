@@ -12,6 +12,7 @@
   "dependencies": {
     "@reduxjs/toolkit": "^2.11.2",
     "@tailwindcss/vite": "^4.2.4",
+    "firebase": "^12.18.0",
     "framer-motion": "^12.38.0",
     "lottie-react": "^2.4.1",
     "lucide-react": "^1.8.0",
