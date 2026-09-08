@@ -520,17 +520,19 @@ exports.webhookReceiver = async (req, res) => {
             // Send SMS via SMS India Hub
             if (order.userId && order.userId.phone) {
                 try {
-                    const smsApiKey = process.env.SMS_API_KEY;
+                    const smsApiKey = process.env.SMS_INDIA_HUB_API_KEY || process.env.SMS_API_KEY;
                     if (!smsApiKey) {
-                        console.warn('⚠️ SMS_API_KEY is not configured in environment. Skipping status update SMS.');
+                        console.warn('⚠️ SMS API key is not configured in environment. Skipping status update SMS.');
                     } else {
                         const axios = require('axios');
                         let phone = order.userId.phone.toString().replace(/\D/g, '');
                         if (phone.length === 10) phone = '91' + phone;
 
                         const msg = `Dear Customer, your Aramish order tracking update: Status is now ${currentStatus || mappedStatus}.`;
-                        const smsSenderId = process.env.SMS_SENDER_ID || 'IIDMTB';
-                        let smsUrl = `https://cloud.smsindiahub.in/vendorsms/pushsms.aspx?APIKey=${smsApiKey}&msisdn=${phone}&sid=${smsSenderId}&msg=${encodeURIComponent(msg)}&fl=0&gwid=2`;
+                        const smsSenderId = process.env.SMS_INDIA_HUB_SENDER_ID || process.env.SMS_SENDER_ID || 'BGADEC';
+                        const rawUrl = process.env.SMS_INDIA_HUB_URL || 'https://cloud.smsindiahub.in/vendorsms/pushsms.aspx';
+                        const gwid = process.env.SMS_INDIA_HUB_GWID || '2';
+                        let smsUrl = `${rawUrl}?APIKey=${smsApiKey}&msisdn=${phone}&sid=${smsSenderId}&msg=${encodeURIComponent(msg)}&fl=0&gwid=${gwid}`;
                         const smsPeId = process.env.SMS_PE_ID;
                         if (smsPeId) {
                             smsUrl += `&EntityId=${smsPeId}`;

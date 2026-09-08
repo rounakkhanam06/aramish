@@ -73,15 +73,23 @@ const sendOtp = async (req, res) => {
       if (isTestPhone) {
         console.log(`📱 Bypassing SMS sending for test phone ${phone} in production. OTP: ${otp}`);
       } else {
-        const apiKey = process.env.SMS_API_KEY;
-        const senderId = process.env.SMS_SENDER_ID;
-        const peId = process.env.SMS_PE_ID;
-        const templateId = process.env.SMS_TEMPLATE_ID;
-        const message = `Welcome to the Aramish powered by Appzeto.Your OTP for registration is ${otp}.BGADEC`;
+        const apiKey = process.env.SMS_INDIA_HUB_API_KEY || process.env.SMS_API_KEY;
+        const senderId = process.env.SMS_INDIA_HUB_SENDER_ID || process.env.SMS_SENDER_ID || 'BGADEC';
+        const peId = process.env.SMS_INDIA_HUB_PE_ID || process.env.SMS_PE_ID;
+        const templateId = process.env.SMS_INDIA_HUB_DLT_TEMPLATE_ID || process.env.SMS_TEMPLATE_ID;
+        const appName = process.env.SMS_INDIA_HUB_APP_NAME || 'aramish shoes';
+        const rawUrl = process.env.SMS_INDIA_HUB_URL || 'http://cloud.smsindiahub.in/vendorsms/pushsms.aspx';
+        const gwid = process.env.SMS_INDIA_HUB_GWID || '2';
+        const timeoutMs = parseInt(process.env.SMS_INDIA_HUB_TIMEOUT_MS, 10) || 10000;
+
+        const templatePattern = process.env.SMS_INDIA_HUB_TEMPLATE_TEXT || 'Welcome to the ${appName} powered by Appzeto.Your OTP for registration is ${otp}.BGADEC';
+        const message = templatePattern
+          .replace(/\$\{appName\}|\{appName\}/g, appName)
+          .replace(/\$\{otp\}|\{otp\}/g, otp);
         const encodedMsg = encodeURIComponent(message);
 
-        let smsUrl = `https://cloud.smsindiahub.in/vendorsms/pushsms.aspx?APIKey=${apiKey}&msisdn=91${phone}&sid=${senderId}&msg=${encodedMsg}&fl=0&gwid=2`;
-        let maskedUrl = `https://cloud.smsindiahub.in/vendorsms/pushsms.aspx?APIKey=******&msisdn=91${phone}&sid=${senderId}&msg=${encodedMsg}&fl=0&gwid=2`;
+        let smsUrl = `${rawUrl}?APIKey=${apiKey}&msisdn=91${phone}&sid=${senderId}&msg=${encodedMsg}&fl=0&gwid=${gwid}`;
+        let maskedUrl = `${rawUrl}?APIKey=******&msisdn=91${phone}&sid=${senderId}&msg=${encodedMsg}&fl=0&gwid=${gwid}`;
 
         if (peId) {
           smsUrl += `&EntityId=${peId}`;
@@ -95,11 +103,14 @@ const sendOtp = async (req, res) => {
         console.log(`📡 Sending SMS via SMS India Hub to 91${phone}...`);
         console.log(`📡 Request URL (Masked): ${maskedUrl}`);
         try {
-          const smsRes = await fetch(smsUrl);
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+          const smsRes = await fetch(smsUrl, { signal: controller.signal });
+          clearTimeout(timeoutId);
           const smsText = await smsRes.text();
           console.log(`📡 SMS India Hub Response:`, smsText);
         } catch (smsErr) {
-          console.error('📡 SMS India Hub Error:', smsErr);
+          console.error('📡 SMS India Hub Error:', smsErr.name === 'AbortError' ? 'Request timed out' : smsErr.message);
         }
       }
     }
