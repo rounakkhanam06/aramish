@@ -916,12 +916,12 @@ export default function ProductDetailsPage() {
               {deliveryCharge !== null && (
                 <div className="pt-2 border-t border-white/10 flex flex-col gap-1.5">
                   <div className="flex items-center justify-between text-xs text-slate-700">
-                    <span className="flex items-center gap-1 font-semibold"><Truck className="w-3.5 h-3.5 text-slate-400"/> Prepaid Delivery</span>
+                    <span className="flex items-center gap-1 font-semibold"><Truck className="w-3.5 h-3.5 text-slate-400"/> Prepaid Delivery Charge</span>
                     <span className="font-extrabold text-slate-900">{deliveryCharge > 0 ? `₹${deliveryCharge}` : 'FREE'}</span>
                   </div>
                   {deliveryChargeCOD !== null && (
                     <div className="flex items-center justify-between text-xs text-slate-700">
-                      <span className="flex items-center gap-1 font-semibold"><Truck className="w-3.5 h-3.5 text-slate-400"/> COD Delivery</span>
+                      <span className="flex items-center gap-1 font-semibold"><Truck className="w-3.5 h-3.5 text-slate-400"/> COD Delivery Charge</span>
                       <span className="font-extrabold text-slate-900">{deliveryChargeCOD > 0 ? `₹${deliveryChargeCOD}` : 'FREE'}</span>
                     </div>
                   )}
