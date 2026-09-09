@@ -103,6 +103,24 @@ const resolveCategoryAndSubcategory = async (categoryInput, subCategoryInput) =>
   return { categoryId, subCategoryId };
 };
 
+const formatProductImageUrls = (product) => {
+  if (!product) return product;
+  if (Array.isArray(product.images)) {
+    product.images = product.images.map(img => getImageUrl(img)).filter(Boolean);
+  }
+  if (Array.isArray(product.descriptionImages)) {
+    product.descriptionImages = product.descriptionImages.map(img => getImageUrl(img)).filter(Boolean);
+  }
+  if (Array.isArray(product.variations)) {
+    product.variations.forEach(v => {
+      if (Array.isArray(v.images)) {
+        v.images = v.images.map(img => getImageUrl(img)).filter(Boolean);
+      }
+    });
+  }
+  return product;
+};
+
 // @desc    Get all Products
 // @route   GET /api/admin/catalog/products
 // @access  Public
@@ -128,7 +146,7 @@ const getProducts = async (req, res) => {
 
     let query = Product.find(filter);
     query = query.select(full !== 'true' ? '-highlights -technicalSpecs -description -shippingSpecs -costPrice' : '-costPrice');
-    const products = await query.sort({ createdAt: -1 }).lean();
+    const products = (await query.sort({ createdAt: -1 }).lean()).map(formatProductImageUrls);
     res.status(200).json({ success: true, products });
   } catch (error) {
     console.error('Get Products Error:', error);
@@ -565,13 +583,13 @@ const getProductById = async (req, res) => {
       }
     }
 
-    const enrichedProduct = {
+    const enrichedProduct = formatProductImageUrls({
       ...product,
       categoryName: categoryLabel,
       subCategoryName: subCategoryLabel,
       brandName: product.brandId ? product.brandId.name : (product.brandName || 'Generic'),
       sizeChart: cat ? cat.sizeChart : null
-    };
+    });
 
     if (!req.admin) {
       delete enrichedProduct.costPrice;
@@ -643,7 +661,7 @@ const fetchDynamicTopBuys = async () => {
     products = [...products, ...fallbackProducts];
   }
 
-  return products.map(ensureProductFallbackImage);
+  return products.map(ensureProductFallbackImage).map(formatProductImageUrls);
 };
 
 const getTopBuys = async (req, res) => {
@@ -907,7 +925,7 @@ const getCombinedCatalog = async (req, res) => {
       countPromise
     ]);
 
-    const processedProducts = products.map(ensureProductFallbackImage);
+    const processedProducts = products.map(ensureProductFallbackImage).map(formatProductImageUrls);
 
     res.status(200).json({
       success: true,
@@ -960,10 +978,10 @@ const processImageUrl = async (imageUrl) => {
         background: { r: 255, g: 255, b: 255, alpha: 1 }
       })
       .sharpen({ sigma: 0.5 })
-      .webp({ quality: 85, effort: 4 })
+      .webp({ quality: 80, effort: 2 })
       .toFile(outputPath);
 
-    return `/uploads/${filename}`;
+    return getImageUrl(`/uploads/${filename}`);
   } catch (err) {
     console.error(`Failed to process remote image URL (${url}):`, err.message);
     return url;
@@ -990,7 +1008,7 @@ const processImageBuffer = async (buffer) => {
       .webp({ quality: 80, effort: 2 })
       .toFile(outputPath);
 
-    return `/uploads/${filename}`;
+    return getImageUrl(`/uploads/${filename}`);
   } catch (err) {
     console.error('Failed to process image extracted from ZIP:', err.message);
     return null;

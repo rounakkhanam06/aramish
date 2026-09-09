@@ -17,7 +17,11 @@ const getImageUrl = (imagePath) => {
     return `https://${path}`;
   }
 
-  const baseUrl = process.env.IMAGE_BASE_URL || process.env.BACKEND_URL || 'http://localhost:5000';
+  const defaultBase = (process.env.ENV === 'production' || process.env.NODE_ENV === 'production')
+    ? 'https://aramishshoes.com'
+    : 'http://localhost:5000';
+
+  const baseUrl = process.env.IMAGE_BASE_URL || process.env.BACKEND_URL || defaultBase;
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
 
