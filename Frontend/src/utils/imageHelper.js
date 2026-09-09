@@ -14,9 +14,9 @@ export const getImageUrl = (imagePath) => {
 
     let baseUrl = '';
     if (isLocal) {
-      baseUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      baseUrl = import.meta.env.VITE_IMAGE_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000';
     } else {
-      baseUrl = import.meta.env.VITE_IMAGE_BASE_URL || import.meta.env.VITE_API_URL || 'https://aramishworld.com';
+      baseUrl = import.meta.env.VITE_IMAGE_BASE_URL || import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://aramishshoes.com');
     }
 
     // Extract the relative uploads path from any absolute URL
