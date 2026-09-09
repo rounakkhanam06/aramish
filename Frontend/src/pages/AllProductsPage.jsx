@@ -48,13 +48,13 @@ export default function AllProductsPage() {
   return (
     <div className="min-h-screen bg-surface flex flex-col pb-20 animate-fade-in">
       {/* Header */}
-      <div className="bg-surface px-4 py-4 flex items-center justify-between shadow-sm z-50 sticky top-0">
+      <div className="bg-surface px-4 py-4 flex items-center gap-3 shadow-sm z-50 sticky top-0 border-b border-white/10">
+        <button onClick={() => navigate(-1)} className="p-1 hover:bg-slate-100 rounded-full transition-colors active:scale-95">
+          <ArrowLeft className="w-5 h-5 text-[#02006c]" />
+        </button>
         <h1 className="text-[#02006c] text-[17px] font-bold tracking-wide uppercase font-sans">
           All Products
         </h1>
-        <button onClick={() => navigate(-1)} className="p-1 hover:bg-surface rounded-full transition-colors border border-white/10">
-          <ArrowLeft className="w-5 h-5 text-[#02006c]" />
-        </button>
       </div>
 
       {!loading && (

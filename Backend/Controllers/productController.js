@@ -987,7 +987,7 @@ const processImageBuffer = async (buffer) => {
         background: { r: 255, g: 255, b: 255, alpha: 1 }
       })
       .sharpen({ sigma: 0.5 })
-      .webp({ quality: 85, effort: 4 })
+      .webp({ quality: 80, effort: 2 })
       .toFile(outputPath);
 
     return `/uploads/${filename}`;
@@ -1016,27 +1016,39 @@ const buildZipImageMap = async (zipFile) => {
   return map;
 };
 
-// Resolves one entry from an "Image URLs" style column: an http(s) URL is downloaded as before,
-// anything else is looked up by filename inside the uploaded images ZIP.
-const resolveImageEntry = async (rawValue, zipImageMap, warningsList, rowLabel) => {
+// Resolves one entry from an "Image URLs" style column with in-memory caching to avoid reprocessing duplicates
+const resolveImageEntry = async (rawValue, zipImageMap, warningsList, rowLabel, imageCache = null) => {
   const value = (rawValue || '').toString().trim();
   if (!value) return null;
 
-  if (value.startsWith('http://') || value.startsWith('https://')) {
-    return await processImageUrl(value);
+  const cacheKey = value.toLowerCase();
+  if (imageCache && imageCache.has(cacheKey)) {
+    return await imageCache.get(cacheKey);
   }
 
-  const key = value.split('/').pop().toLowerCase();
-  const buffer = zipImageMap[key];
-  if (!buffer) {
-    warningsList.push({ row: rowLabel, message: `Image "${value}" was not found in the uploaded ZIP.` });
-    return null;
+  const task = (async () => {
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return await processImageUrl(value);
+    }
+
+    const key = value.split('/').pop().toLowerCase();
+    const buffer = zipImageMap[key];
+    if (!buffer) {
+      warningsList.push({ row: rowLabel, message: `Image "${value}" was not found in the uploaded ZIP.` });
+      return null;
+    }
+    const processed = await processImageBuffer(buffer);
+    if (!processed) {
+      warningsList.push({ row: rowLabel, message: `Image "${value}" could not be processed (invalid or corrupt image file).` });
+    }
+    return processed;
+  })();
+
+  if (imageCache) {
+    imageCache.set(cacheKey, task);
   }
-  const processed = await processImageBuffer(buffer);
-  if (!processed) {
-    warningsList.push({ row: rowLabel, message: `Image "${value}" could not be processed (invalid or corrupt image file).` });
-  }
-  return processed;
+
+  return await task;
 };
 
 const GST_PERCENTAGE_OPTIONS = [0, 5, 12, 18, 28];
@@ -1222,6 +1234,8 @@ const bulkUploadProducts = async (req, res) => {
     let failedCount = 0;
     const errorsList = [];
 
+    const imageCache = new Map();
+
     // ---- Parse the optional 'Variations' sheet, grouped by Article Number ----
     const variationsByArticle = {};
     const variationArticleDisplay = {}; // key (lowercase) -> Article Number as typed, for readable error messages
@@ -1265,10 +1279,10 @@ const bulkUploadProducts = async (req, res) => {
           const varImageUrls = getVarValue(rowData, 'Image URLs');
           if (varImageUrls) {
             const entries = varImageUrls.toString().split(',').map(u => u.trim()).filter(Boolean);
-            for (const entry of entries) {
-              const resolved = await resolveImageEntry(entry, zipImageMap, errorsList, `Variations!${i + 1}`);
-              if (resolved) variant.images.push(resolved);
-            }
+            const resolvedList = await Promise.all(
+              entries.map(entry => resolveImageEntry(entry, zipImageMap, errorsList, `Variations!${i + 1}`, imageCache))
+            );
+            variant.images = resolvedList.filter(Boolean);
           }
 
           const key = articleKey.toLowerCase();
@@ -1451,23 +1465,19 @@ const bulkUploadProducts = async (req, res) => {
       const imageURLsStr = getValue('Image URLs');
       if (imageURLsStr) {
         const entries = imageURLsStr.toString().split(',').map(url => url.trim()).filter(Boolean);
-        const processedUrls = [];
-        for (const entry of entries) {
-          const resolved = await resolveImageEntry(entry, zipImageMap, errorsList, i + 1);
-          if (resolved) processedUrls.push(resolved);
-        }
-        productData.images = processedUrls;
+        const resolvedUrls = await Promise.all(
+          entries.map(entry => resolveImageEntry(entry, zipImageMap, errorsList, i + 1, imageCache))
+        );
+        productData.images = resolvedUrls.filter(Boolean);
       }
 
       const descImageURLsStr = getValue('Description Image URLs');
       if (descImageURLsStr) {
         const entries = descImageURLsStr.toString().split(',').map(url => url.trim()).filter(Boolean).slice(0, 5);
-        const processedUrls = [];
-        for (const entry of entries) {
-          const resolved = await resolveImageEntry(entry, zipImageMap, errorsList, i + 1);
-          if (resolved) processedUrls.push(resolved);
-        }
-        productData.descriptionImages = processedUrls;
+        const resolvedUrls = await Promise.all(
+          entries.map(entry => resolveImageEntry(entry, zipImageMap, errorsList, i + 1, imageCache))
+        );
+        productData.descriptionImages = resolvedUrls.filter(Boolean);
       }
 
       const variants = variationsByArticle[articleLower];

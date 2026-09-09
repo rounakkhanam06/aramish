@@ -4,39 +4,67 @@ import { Toaster } from 'react-hot-toast';
 import { AppProvider, useApp } from './context/AppContext';
 import Layout from './components/layout/Layout';
 import MaintenanceGate from './components/MaintenanceGate';
+import ErrorBoundary from './components/ErrorBoundary';
 
-// Lazy-loaded pages — each becomes its own JS chunk (code splitting)
-const Home               = lazy(() => import('./pages/Home'));
-const CategoriesPage     = lazy(() => import('./pages/CategoriesPage'));
-const StudioPage         = lazy(() => import('./pages/StudioPage'));
-const GamesPage          = lazy(() => import('./pages/GamesPage'));
-const CartPage           = lazy(() => import('./pages/CartPage'));
-const ProfilePage        = lazy(() => import('./pages/ProfilePage'));
-const LoginPage          = lazy(() => import('./pages/LoginPage'));
-const WishlistPage       = lazy(() => import('./pages/WishlistPage'));
-const OrdersPage         = lazy(() => import('./pages/OrdersPage'));
-const CrazyDealsPage     = lazy(() => import('./pages/CrazyDealsPage'));
-const ReviewOrderPage    = lazy(() => import('./pages/ReviewOrderPage'));
-const ProductDetailsPage = lazy(() => import('./pages/ProductDetailsPage'));
-const TopSelectionPage   = lazy(() => import('./pages/TopSelectionPage'));
-const AllProductsPage    = lazy(() => import('./pages/AllProductsPage'));
-const SimilarProductsPage= lazy(() => import('./pages/SimilarProductsPage'));
-const HelpSupportPage    = lazy(() => import('./pages/HelpSupportPage'));
-const PrivacyPage        = lazy(() => import('./pages/PrivacyPage'));
-const TermsPage          = lazy(() => import('./pages/TermsPage'));
-const ReturnExchangePage = lazy(() => import('./pages/ReturnExchangePage'));
-const AccountInfoPage    = lazy(() => import('./pages/AccountInfoPage'));
-const SecurityPage       = lazy(() => import('./pages/SecurityPage'));
-const SettingsPage       = lazy(() => import('./pages/SettingsPage'));
-const WalletPage         = lazy(() => import('./pages/WalletPage'));
-const CouponsPage        = lazy(() => import('./pages/CouponsPage'));
-const ReferEarnPage      = lazy(() => import('./pages/ReferEarnPage'));
-const SavedAddressesPage = lazy(() => import('./pages/SavedAddressesPage'));
-const TrackOrderPage     = lazy(() => import('./pages/TrackOrderPage'));
-const OrderDetailsPage   = lazy(() => import('./pages/OrderDetailsPage'));
-const BrandPage          = lazy(() => import('./pages/BrandPage'));
-const SearchPage         = lazy(() => import('./pages/SearchPage'));
-const NotFoundPage       = lazy(() => import('./pages/NotFoundPage'));
+// Global Vite Dynamic Import Error Listener (Auto-reloads on deployment/cache mismatch)
+window.addEventListener('vite:preloadError', (event) => {
+  console.warn('Vite preload error detected. Auto-reloading page...');
+  window.location.reload();
+});
+
+// Self-healing lazy loader with retry & auto-refresh fallback on stale chunks
+const lazyRetry = (componentImport) =>
+  lazy(async () => {
+    const pageHasBeenRefreshed = JSON.parse(
+      window.sessionStorage.getItem('chunk_refreshed') || 'false'
+    );
+    try {
+      const component = await componentImport();
+      window.sessionStorage.setItem('chunk_refreshed', 'false');
+      return component;
+    } catch (error) {
+      console.error('Dynamic chunk import error:', error);
+      if (!pageHasBeenRefreshed) {
+        window.sessionStorage.setItem('chunk_refreshed', 'true');
+        window.location.reload();
+        return { default: () => null };
+      }
+      throw error;
+    }
+  });
+
+// Lazy-loaded pages with auto-recovery wrapper
+const Home               = lazyRetry(() => import('./pages/Home'));
+const CategoriesPage     = lazyRetry(() => import('./pages/CategoriesPage'));
+const StudioPage         = lazyRetry(() => import('./pages/StudioPage'));
+const GamesPage          = lazyRetry(() => import('./pages/GamesPage'));
+const CartPage           = lazyRetry(() => import('./pages/CartPage'));
+const ProfilePage        = lazyRetry(() => import('./pages/ProfilePage'));
+const LoginPage          = lazyRetry(() => import('./pages/LoginPage'));
+const WishlistPage       = lazyRetry(() => import('./pages/WishlistPage'));
+const OrdersPage         = lazyRetry(() => import('./pages/OrdersPage'));
+const CrazyDealsPage     = lazyRetry(() => import('./pages/CrazyDealsPage'));
+const ReviewOrderPage    = lazyRetry(() => import('./pages/ReviewOrderPage'));
+const ProductDetailsPage = lazyRetry(() => import('./pages/ProductDetailsPage'));
+const TopSelectionPage   = lazyRetry(() => import('./pages/TopSelectionPage'));
+const AllProductsPage    = lazyRetry(() => import('./pages/AllProductsPage'));
+const SimilarProductsPage= lazyRetry(() => import('./pages/SimilarProductsPage'));
+const HelpSupportPage    = lazyRetry(() => import('./pages/HelpSupportPage'));
+const PrivacyPage        = lazyRetry(() => import('./pages/PrivacyPage'));
+const TermsPage          = lazyRetry(() => import('./pages/TermsPage'));
+const ReturnExchangePage = lazyRetry(() => import('./pages/ReturnExchangePage'));
+const AccountInfoPage    = lazyRetry(() => import('./pages/AccountInfoPage'));
+const SecurityPage       = lazyRetry(() => import('./pages/SecurityPage'));
+const SettingsPage       = lazyRetry(() => import('./pages/SettingsPage'));
+const WalletPage         = lazyRetry(() => import('./pages/WalletPage'));
+const CouponsPage        = lazyRetry(() => import('./pages/CouponsPage'));
+const ReferEarnPage      = lazyRetry(() => import('./pages/ReferEarnPage'));
+const SavedAddressesPage = lazyRetry(() => import('./pages/SavedAddressesPage'));
+const TrackOrderPage     = lazyRetry(() => import('./pages/TrackOrderPage'));
+const OrderDetailsPage   = lazyRetry(() => import('./pages/OrderDetailsPage'));
+const BrandPage          = lazyRetry(() => import('./pages/BrandPage'));
+const SearchPage         = lazyRetry(() => import('./pages/SearchPage'));
+const NotFoundPage       = lazyRetry(() => import('./pages/NotFoundPage'));
 
 // Premium fullscreen route-level loading spinner (shown while a page chunk loads)
 const PageSkeleton = () => (
@@ -95,43 +123,45 @@ function AppContent() {
       {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       <Toaster position="bottom-center" toastOptions={{ duration: 3000 }} />
       <Layout>
-      <Suspense fallback={<PageSkeleton />}>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/categories" element={<CategoriesPage />} />
-        <Route path="/brand/:brandId" element={<BrandPage />} />
-        <Route path="/studio" element={<StudioPage />} />
-        <Route path="/games" element={<GamesPage />} />
-        <Route path="/cart" element={<CartPage />} />
-        <Route path="/wishlist" element={<WishlistPage />} />
-        <Route path="/orders" element={<OrdersPage />} />
-        <Route path="/crazy-deals" element={<CrazyDealsPage />} />
-        <Route path="/review-order" element={<ReviewOrderPage />} />
-        <Route path="/product/:id" element={<ProductDetailsPage />} />
-        <Route path="/similar-products" element={<SimilarProductsPage />} />
-        <Route path="/top-selection" element={<TopSelectionPage />} />
-        <Route path="/all-products" element={<AllProductsPage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/help" element={<HelpSupportPage />} />
-        <Route path="/support" element={<HelpSupportPage />} />
-        <Route path="/privacy" element={<PrivacyPage />} />
-        <Route path="/terms" element={<TermsPage />} />
-        <Route path="/return-exchange-policy" element={<ReturnExchangePage />} />
-        <Route path="/account" element={<AccountInfoPage />} />
-        <Route path="/security" element={<SecurityPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/wallet" element={<WalletPage />} />
-        <Route path="/coupons" element={<CouponsPage />} />
-        <Route path="/refer" element={<ReferEarnPage />} />
-        <Route path="/saved-addresses" element={<SavedAddressesPage />} />
-        <Route path="/track-order/:orderId" element={<TrackOrderPage />} />
-        <Route path="/order-details/:orderId" element={<OrderDetailsPage />} />
-        <Route path="/brand/:brandId" element={<BrandPage />} />
-        <Route path="/search" element={<SearchPage />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={<PageSkeleton />}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/categories" element={<CategoriesPage />} />
+          <Route path="/brand/:brandId" element={<BrandPage />} />
+          <Route path="/studio" element={<StudioPage />} />
+          <Route path="/games" element={<GamesPage />} />
+          <Route path="/cart" element={<CartPage />} />
+          <Route path="/wishlist" element={<WishlistPage />} />
+          <Route path="/orders" element={<OrdersPage />} />
+          <Route path="/crazy-deals" element={<CrazyDealsPage />} />
+          <Route path="/review-order" element={<ReviewOrderPage />} />
+          <Route path="/product/:id" element={<ProductDetailsPage />} />
+          <Route path="/similar-products" element={<SimilarProductsPage />} />
+          <Route path="/top-selection" element={<TopSelectionPage />} />
+          <Route path="/all-products" element={<AllProductsPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/help" element={<HelpSupportPage />} />
+          <Route path="/support" element={<HelpSupportPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/return-exchange-policy" element={<ReturnExchangePage />} />
+          <Route path="/account" element={<AccountInfoPage />} />
+          <Route path="/security" element={<SecurityPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/wallet" element={<WalletPage />} />
+          <Route path="/coupons" element={<CouponsPage />} />
+          <Route path="/refer" element={<ReferEarnPage />} />
+          <Route path="/saved-addresses" element={<SavedAddressesPage />} />
+          <Route path="/track-order/:orderId" element={<TrackOrderPage />} />
+          <Route path="/order-details/:orderId" element={<OrderDetailsPage />} />
+          <Route path="/brand/:brandId" element={<BrandPage />} />
+          <Route path="/search" element={<SearchPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+        </Suspense>
+      </ErrorBoundary>
     </Layout>
     </>
   );
