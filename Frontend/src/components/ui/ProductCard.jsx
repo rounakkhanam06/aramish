@@ -152,10 +152,15 @@ function ProductCard({ product }) {
         </div>
         
         {/* Description / Product Name */}
-        <div className="h-4 overflow-hidden mt-0.5">
-          <p className="text-[14px] md:text-[15px] text-[#0B132B] truncate w-full font-logo">
-            Aramish
+        <div className="h-4 overflow-hidden mt-0.5 flex items-center justify-between">
+          <p className="text-[14px] md:text-[15px] text-[#0B132B] truncate font-logo">
+            {product.brandName || "Aramish"}
           </p>
+          {product.sku && (
+            <span className="text-[9px] font-mono font-semibold text-slate-400 truncate max-w-[50%]">
+              {product.sku}
+            </span>
+          )}
         </div>
 
         {/* Prices */}

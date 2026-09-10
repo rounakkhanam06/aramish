@@ -137,15 +137,46 @@ const getProducts = async (req, res) => {
       filter.status = status;
     }
 
-    if (search) {
-      filter.$or = [
-        { $text: { $search: search } },
-        { sku: { $regex: search, $options: 'i' } }
-      ];
+    if (search && search.trim() !== '') {
+      const cleanSearch = search.trim();
+      const escapedSearch = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escapedSearch, 'i');
+
+      const terms = cleanSearch.split(/\s+/).filter(Boolean);
+      if (terms.length > 1) {
+        const termRegexes = terms.map(t => new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
+        filter.$or = [
+          { name: searchRegex },
+          { brandName: searchRegex },
+          { tags: searchRegex },
+          { sku: searchRegex },
+          { 'variations.sku': searchRegex },
+          {
+            $and: termRegexes.map(r => ({
+              $or: [
+                { name: r },
+                { brandName: r },
+                { tags: r },
+                { sku: r },
+                { 'variations.sku': r }
+              ]
+            }))
+          }
+        ];
+      } else {
+        filter.$or = [
+          { name: searchRegex },
+          { brandName: searchRegex },
+          { tags: searchRegex },
+          { sku: searchRegex },
+          { 'variations.sku': searchRegex }
+        ];
+      }
     }
 
     let query = Product.find(filter);
-    query = query.select(full !== 'true' ? '-highlights -technicalSpecs -description -shippingSpecs -costPrice' : '-costPrice');
+    const hideAdminFields = !req.admin ? ' -costPrice -article' : ' -costPrice';
+    query = query.select(full !== 'true' ? `-highlights -technicalSpecs -description -shippingSpecs${hideAdminFields}` : hideAdminFields);
     const products = (await query.sort({ createdAt: -1 }).lean()).map(formatProductImageUrls);
     res.status(200).json({ success: true, products });
   } catch (error) {
@@ -593,6 +624,7 @@ const getProductById = async (req, res) => {
 
     if (!req.admin) {
       delete enrichedProduct.costPrice;
+      delete enrichedProduct.article;
     }
 
     res.status(200).json({ success: true, product: enrichedProduct });
@@ -872,26 +904,52 @@ const getCombinedCatalog = async (req, res) => {
     }
 
     // 3. Search query
-    let isTextSearch = false;
     if (search && search.trim() !== '') {
-      andConditions.push({
-        $text: { $search: search.trim() }
-      });
-      isTextSearch = true;
+      const cleanSearch = search.trim();
+      const escapedSearch = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escapedSearch, 'i');
+
+      const terms = cleanSearch.split(/\s+/).filter(Boolean);
+      if (terms.length > 1) {
+        const termRegexes = terms.map(t => new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
+        andConditions.push({
+          $or: [
+            { name: searchRegex },
+            { brandName: searchRegex },
+            { tags: searchRegex },
+            { sku: searchRegex },
+            { 'variations.sku': searchRegex },
+            {
+              $and: termRegexes.map(r => ({
+                $or: [
+                  { name: r },
+                  { brandName: r },
+                  { tags: r },
+                  { sku: r },
+                  { 'variations.sku': r }
+                ]
+              }))
+            }
+          ]
+        });
+      } else {
+        andConditions.push({
+          $or: [
+            { name: searchRegex },
+            { brandName: searchRegex },
+            { tags: searchRegex },
+            { sku: searchRegex },
+            { 'variations.sku': searchRegex }
+          ]
+        });
+      }
     }
 
     const finalQuery = { $and: andConditions };
 
     // 4. Sorting option & Projection
     let sortOption = { createdAt: -1 };
-    let projection = { highlights: 0, technicalSpecs: 0, description: 0, variations: 0, shippingSpecs: 0, costPrice: 0 };
-    
-    if (isTextSearch) {
-      projection.score = { $meta: 'textScore' };
-      if (sortBy === 'none') {
-        sortOption = { score: { $meta: 'textScore' } };
-      }
-    }
+    let projection = { highlights: 0, technicalSpecs: 0, description: 0, variations: 0, shippingSpecs: 0, costPrice: 0, article: 0 };
 
     if (sortBy === 'price-low') {
       sortOption = { sellingPrice: 1 };

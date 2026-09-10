@@ -683,6 +683,9 @@ export default function OrderDetailsPage() {
           )}
           <div>
             <p className="text-xs font-black text-slate-800">{product.name !== globalOrder?.items?.[0]?.name ? `${product.name} — ` : ''}{variant.size} / {variant.color}</p>
+            {variant.sku && (
+              <p className="text-[10px] font-mono text-slate-400">SKU: {variant.sku}</p>
+            )}
             <p className={`text-[10px] font-bold ${isLowerValue ? 'text-red-500' : 'text-slate-500'}`}>₹{price?.toLocaleString()}</p>
           </div>
         </div>
@@ -902,7 +905,10 @@ export default function OrderDetailsPage() {
     
     const itemsRowsHtml = orderItems.map(item => `
       <tr>
-        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; text-align: left; font-size: 13px;">${item.name}</td>
+        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; text-align: left; font-size: 13px;">
+          <div style="font-weight: 600; color: #1e293b;">${item.name}</div>
+          ${(item.variationSku || item.sku) ? `<div style="font-size: 11px; color: #64748b; font-family: monospace; margin-top: 2px;">SKU: ${item.variationSku || item.sku}</div>` : ''}
+        </td>
         <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; text-align: center; font-size: 13px;">${item.quantity}</td>
         <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; text-align: right; font-size: 13px;">₹${item.price}</td>
         <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; text-align: right; font-size: 13px;">₹${item.price * item.quantity}</td>
@@ -1143,6 +1149,11 @@ export default function OrderDetailsPage() {
                       <p className="text-xs md:text-sm text-slate-800 line-clamp-1 font-bold group-hover:text-amber-600 transition-colors">
                         {item.name}
                       </p>
+                      {(item.variationSku || item.sku) && (
+                        <p className="text-[10.5px] font-mono text-slate-500 mt-0.5">
+                          SKU: <span className="font-semibold text-slate-700">{item.variationSku || item.sku}</span>
+                        </p>
+                      )}
                       <p className="text-[11px] text-slate-500 mt-1 font-semibold">
                         Quantity: {item.quantity} • Price: ₹{item.price}
                       </p>

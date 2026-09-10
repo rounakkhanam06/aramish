@@ -19,7 +19,7 @@ const { protectAdmin, attachAdminIfPresent } = require('../Middlewares/authMiddl
 const { uploadImagesAny, processImages, handleUploadError } = require('../Middlewares/uploadMiddleware');
 
 // Public routes to list products/brands
-router.get('/', getProducts);
+router.get('/', attachAdminIfPresent, getProducts);
 router.get('/combined', getCombinedCatalog);
 router.get('/top-buys', getTopBuys);
 router.get('/trending-brands', getTrendingBrands);

@@ -608,6 +608,11 @@ export default function ReviewOrderPage() {
                     </div>
                     <div className="flex-1 flex flex-col justify-center min-w-0">
                       <h3 className="text-xs md:text-sm font-bold text-slate-800 leading-snug truncate">{item.name}</h3>
+                      {item.variationSku && (
+                        <p className="text-[10px] font-mono text-slate-500 mt-0.5 font-medium">
+                          SKU: <span className="font-semibold text-slate-700">{item.variationSku}</span>
+                        </p>
+                      )}
                       {item.attributes && Object.keys(item.attributes).length > 0 && (
                         <div className="flex flex-wrap gap-1.5 mt-1">
                           {Object.entries(item.attributes).map(([key, val], idx) => (

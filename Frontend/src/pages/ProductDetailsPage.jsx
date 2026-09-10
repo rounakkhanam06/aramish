@@ -723,9 +723,16 @@ export default function ProductDetailsPage() {
         <div className="md:col-span-5 bg-surface p-4 md:p-6 md:rounded-2xl md:border md:border-white/10 md:shadow-xs space-y-3 md:sticky md:top-28">
           {/* Brand & Name */}
           <div className="pb-1">
-            <span className="text-xs uppercase tracking-widest text-slate-400 font-extrabold block mb-0.5">
-              {product.brandName}
-            </span>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs uppercase tracking-widest text-slate-400 font-extrabold block mb-0.5">
+                {product.brandName}
+              </span>
+              {(activeVariant?.sku || product.sku) && (
+                <span className="text-[11px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200/60">
+                  SKU: {activeVariant?.sku || product.sku}
+                </span>
+              )}
+            </div>
             <h1 className="text-base md:text-xl font-extrabold text-[#02006c] leading-tight">
               {product.name}
             </h1>
@@ -982,7 +989,7 @@ export default function ProductDetailsPage() {
                 <div className="mt-3 grid grid-cols-2 gap-y-2 gap-x-6 animate-fade-in border-t border-white/10 pt-3">
                   {(() => {
                     const validHighlights = product.highlights 
-                      ? Object.entries(product.highlights).filter(([key, val]) => val !== undefined && val !== null && val !== '' && val !== '-' && val !== '0' && val !== 0)
+                      ? Object.entries(product.highlights).filter(([key, val]) => val !== undefined && val !== null && val !== '' && val !== '-' && val !== '0' && val !== 0 && !key.toLowerCase().includes('article'))
                       : [];
                     if (validHighlights.length > 0) {
                       return validHighlights.map(([key, val], idx) => (
@@ -1047,7 +1054,7 @@ export default function ProductDetailsPage() {
                             <div key={sIdx} className="w-full">
                               <h4 className="font-bold text-[15px] text-black pb-2 border-b border-slate-200">{spec.section}</h4>
                               <div className="divide-y divide-slate-200">
-                                {spec.fields.map((field, fIdx) => (
+                                {spec.fields.filter(field => !field.name.toLowerCase().includes('article')).map((field, fIdx) => (
                                   <div key={fIdx} className="flex items-start py-2.5">
                                     <span className="text-[13px] text-slate-600 font-bold w-1/2 md:w-[35%] shrink-0 pr-4 break-words">{field.name}</span>
                                     <span className="text-[13px] text-slate-800 w-1/2 md:w-[65%] break-words">{field.value}</span>
@@ -1061,8 +1068,13 @@ export default function ProductDetailsPage() {
                         <div className="grid grid-cols-2 gap-y-2 gap-x-6">
                           {(() => {
                             const validSpecs = product.technicalSpecs 
-                              ? Object.entries(product.technicalSpecs).filter(([key, val]) => val !== undefined && val !== null && val !== '' && val !== '-' && val !== '0' && val !== 0)
+                              ? Object.entries(product.technicalSpecs).filter(([key, val]) => val !== undefined && val !== null && val !== '' && val !== '-' && val !== '0' && val !== 0 && !key.toLowerCase().includes('article'))
                               : [];
+
+                            const currentSku = activeVariant?.sku || product.sku;
+                            if (currentSku) {
+                              validSpecs.unshift(['SKU', currentSku]);
+                            }
 
                             if (product.shippingSpecs) {
                               const weightVal = product.shippingSpecs.weight;

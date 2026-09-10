@@ -352,7 +352,7 @@ export default function CartPage() {
                           <h3 className="text-xs md:text-sm font-bold text-slate-800 leading-snug pr-2">{item.name}</h3>
                           
                           {/* Variant Attributes */}
-                          {((item.selectedColor && item.selectedColor !== 'N/A') || item.selectedSize) && (
+                          {((item.selectedColor && item.selectedColor !== 'N/A') || item.selectedSize || item.variationSku) && (
                             <div className="flex flex-wrap gap-1.5 mt-1.5 mb-1">
                               {item.selectedColor && item.selectedColor !== 'N/A' && (
                                 <span className="text-[9px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-extrabold uppercase border border-slate-200/50">
@@ -362,6 +362,11 @@ export default function CartPage() {
                               {item.selectedSize && (
                                 <span className="text-[9px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-extrabold uppercase border border-slate-200/50">
                                   Size: {item.selectedSize}
+                                </span>
+                              )}
+                              {item.variationSku && (
+                                <span className="text-[9px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-mono font-bold border border-slate-200/50">
+                                  SKU: {item.variationSku}
                                 </span>
                               )}
                             </div>

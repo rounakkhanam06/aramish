@@ -231,7 +231,7 @@ export default function SearchPage() {
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search products, brands..."
+            placeholder="Search products, brands, SKU..."
             className="w-full bg-transparent text-sm text-[#02006c] outline-none placeholder-slate-400 font-semibold pr-16"
             value={localQuery}
             onChange={(e) => setLocalQuery(e.target.value)}

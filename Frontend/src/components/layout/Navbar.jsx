@@ -380,7 +380,7 @@ export default function Navbar() {
               <Search className="w-4.5 h-4.5 text-slate-500 mr-2.5" />
               <input
                 type="text"
-                placeholder="Search products..."
+                placeholder="Search products, brands, SKU..."
                 className="w-full bg-transparent text-sm text-[#02006c] outline-none placeholder-slate-400 font-semibold cursor-pointer"
                 value={searchQuery}
                 readOnly
@@ -436,7 +436,7 @@ export default function Navbar() {
             <Search className="w-4.5 h-4.5 text-slate-500 mr-2.5 flex-shrink-0" />
             <input
               type="text"
-              placeholder="Search for sneakers, boots, formal shoes..."
+              placeholder="Search products, brands, SKU..."
               className="w-full bg-transparent text-sm text-[#02006c] outline-none placeholder-slate-400 font-semibold cursor-pointer"
               value={searchQuery}
               readOnly

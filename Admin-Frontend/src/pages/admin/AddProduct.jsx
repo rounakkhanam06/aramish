@@ -433,7 +433,7 @@ const AddProduct = () => {
     if (!updated[index].images) updated[index].images = [];
     if (!updated[index].newImageFiles) updated[index].newImageFiles = [];
 
-    const remainingSlots = 3 - updated[index].images.length;
+    const remainingSlots = 4 - updated[index].images.length;
     let skippedForSize = 0;
     let skippedForLimit = 0;
 
@@ -453,7 +453,7 @@ const AddProduct = () => {
 
     setVariations(updated);
     if (skippedForSize > 0) toast.info(`${skippedForSize} image(s) skipped: size cannot exceed 10MB!`);
-    if (skippedForLimit > 0) toast.info(`${skippedForLimit} image(s) skipped: limit is 3 images per variant!`);
+    if (skippedForLimit > 0) toast.info(`${skippedForLimit} image(s) skipped: limit is 4 images per variant!`);
   };
 
   const handleRemoveVariantImage = (varIndex, imgIndex) => {
@@ -1175,7 +1175,7 @@ const AddProduct = () => {
 
               {generatorColors.split(',').map(c => c.trim()).filter(Boolean).length > 0 && (
                 <div className="mb-4 space-y-3">
-                  <Label>Color Images (Up to 3 per color)</Label>
+                  <Label>Color Images (Up to 4 per color)</Label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {generatorColors.split(',').map(c => c.trim()).filter(Boolean).map((color, idx) => {
                       const colorKey = color.toLowerCase();
@@ -1201,7 +1201,7 @@ const AddProduct = () => {
                                 </button>
                               </div>
                             ))}
-                            {uploadedFiles.length < 3 && (
+                            {uploadedFiles.length < 4 && (
                               <label className="w-10 h-10 rounded border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:bg-slate-50 bg-white">
                                 <Plus size={14} className="text-slate-400" />
                                 <input
@@ -1214,7 +1214,7 @@ const AddProduct = () => {
                                     if (files.length === 0) return;
 
                                     const existing = generatorColorImages[colorKey] || [];
-                                    const remainingSlots = 3 - existing.length;
+                                    const remainingSlots = 4 - existing.length;
                                     let skippedForSize = 0;
                                     let skippedForLimit = 0;
                                     const newEntries = [];
@@ -1239,7 +1239,7 @@ const AddProduct = () => {
                                       }));
                                     }
                                     if (skippedForSize > 0) toast.info(`${skippedForSize} image(s) skipped: size cannot exceed 10MB!`);
-                                    if (skippedForLimit > 0) toast.info(`${skippedForLimit} image(s) skipped: limit is 3 images per color!`);
+                                    if (skippedForLimit > 0) toast.info(`${skippedForLimit} image(s) skipped: limit is 4 images per color!`);
                                   }}
                                 />
                               </label>
@@ -1271,7 +1271,7 @@ const AddProduct = () => {
                       <th className="px-4 py-3 min-w-[120px]">Selling (₹)</th>
                       <th className="px-4 py-3 min-w-[100px]">Stock</th>
                       <th className="px-4 py-3 min-w-[180px]">SKU</th>
-                      <th className="px-4 py-3 min-w-[150px]">Images</th>
+                      <th className="px-4 py-3 min-w-[190px]">Images</th>
                       <th className="px-4 py-3 text-center">Action</th>
                     </tr>
                   </thead>
@@ -1344,7 +1344,7 @@ const AddProduct = () => {
                                       </button>
                                     </div>
                                   ))}
-                                  {(!v.images || v.images.length < 3) && (
+                                  {(!v.images || v.images.length < 4) && (
                                     <label className="w-10 h-10 rounded border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:bg-slate-100 bg-white group">
                                       <Plus size={12} className="text-slate-400 group-hover:text-slate-600" />
                                       <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleAddVariantImageFile(i, e)} />
