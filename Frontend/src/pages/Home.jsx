@@ -434,21 +434,22 @@ export default function Home() {
 
   const flashDeals = useMemo(() => {
     const items = normalisedFlashSale;
-    switch (activeFlashTab) {
-      case 'All':
-        return items;
-      case 'Newest':
-        return [...items].reverse();
-      case 'Popular':
-        return items.filter(d => d.rating >= 4.8);
-      default:
-        const tab = activeFlashTab.toLowerCase();
-        return items.filter(d =>
-          (d.type || '').toLowerCase().includes(tab) ||
-          (d.name || '').toLowerCase().includes(tab)
-        );
+    if (activeFlashTab === 'All') return items;
+    
+    // Dynamic Category Match
+    const cat = categories.find(c => c.name === activeFlashTab);
+    if (cat) {
+       const catId = (cat._id || cat.id || '').toLowerCase();
+       return items.filter(d => d.type === catId || (d.name || '').toLowerCase().includes(activeFlashTab.toLowerCase()));
     }
-  }, [normalisedFlashSale, activeFlashTab]);
+
+    // Fallback logic
+    const tab = activeFlashTab.toLowerCase();
+    return items.filter(d =>
+      (d.type || '').toLowerCase().includes(tab) ||
+      (d.name || '').toLowerCase().includes(tab)
+    );
+  }, [normalisedFlashSale, activeFlashTab, categories]);
 
   const topSelectionNormalised = useMemo(() => {
     return topSelectionProducts.map(normaliseProduct);
@@ -838,7 +839,7 @@ export default function Home() {
 
                 {/* Tabs */}
                 <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 md:overflow-visible">
-                  {['All', 'Newest', 'Popular', "Men's", 'Women', 'Kids', 'Brands', 'Trendy'].map((tab) => (
+                  {['All', ...categories.filter(c => c.id !== 'for-you').map(c => c.name)].map((tab) => (
                     <button 
                       key={tab}
                       onClick={() => setActiveFlashTab(tab)}

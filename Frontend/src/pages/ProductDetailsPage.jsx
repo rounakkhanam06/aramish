@@ -336,7 +336,7 @@ export default function ProductDetailsPage() {
           
           let productImages = p.images || [];
           if (productImages.length === 0) {
-            productImages = ['https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&q=80&w=800'];
+            productImages = ['/no-image-available.svg'];
           }
           
           const normalised = {

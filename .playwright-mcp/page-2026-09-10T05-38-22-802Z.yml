@@ -1,0 +1,32 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]:
+          - img "SevaFast logo" [ref=e7]
+          - generic [ref=e8]: SevaFast
+        - heading "Seller Expansion." [level=2] [ref=e74]
+        - generic [ref=e75]:
+          - generic [ref=e76]: Growth First
+          - generic [ref=e83]: Pan India
+      - generic [ref=e88]:
+        - img "SevaFast logo" [ref=e91]
+        - generic [ref=e92]:
+          - generic [ref=e93]:
+            - generic [ref=e94]: Welcome Back
+            - heading "Seller Login" [level=1] [ref=e95]
+            - paragraph [ref=e96]: Access your unified seller dashboard and manage orders.
+          - generic [ref=e97]:
+            - textbox "Email or Phone" [ref=e103]
+            - generic [ref=e104]:
+              - textbox "Enter your password" [ref=e109]
+              - button [ref=e110]
+            - button "Forgot password?" [ref=e115]
+            - button "ENTER DASHBOARD" [ref=e117]
+          - paragraph [ref=e121]:
+            - text: New to the platform?
+            - button "Register Store" [ref=e122]
+    - generic [ref=e123]:
+      - generic [ref=e124]: Empowering Business Digitalization
+      - generic [ref=e125]: Made with Sevafast
+  - region "Notifications alt+T"
