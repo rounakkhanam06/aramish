@@ -890,6 +890,7 @@ export default function OrderDetailsPage() {
 
   const handleDownload = () => {
     setIsDownloading(true);
+    const invoiceSupportEmail = systemSettings?.supportEmail || 'Info@aramishshoes.com';
     
     // Create a temporary container
     const container = document.createElement('div');
@@ -1011,7 +1012,7 @@ export default function OrderDetailsPage() {
         
         <div style="text-align: center; margin-top: 60px; font-size: 11px; color: #94a3b8; font-weight: 600; border-top: 1px solid #e2e8f0; padding-top: 24px;">
           Thank you for shopping with Aramish!<br/>
-          For support or other queries, write to support@aramish.com
+          For support or other queries, write to ${invoiceSupportEmail}
         </div>
       </div>
     `;

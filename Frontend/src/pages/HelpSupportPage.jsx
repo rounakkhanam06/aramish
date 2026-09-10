@@ -7,8 +7,8 @@ export default function HelpSupportPage() {
   const navigate = useNavigate();
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
   const [faqs, setFaqs] = useState([]);
-  const [supportEmail, setSupportEmail] = useState('support@aramish.com');
-  const [supportPhone, setSupportPhone] = useState('+1 (800) 123-4567');
+  const [supportEmail, setSupportEmail] = useState('Info@aramishshoes.com');
+  const [supportPhone, setSupportPhone] = useState('+91 1800 123 4567');
 
   // Ticket Form state
   const [subject, setSubject] = useState('');
@@ -75,7 +75,7 @@ export default function HelpSupportPage() {
         const dataSettings = await resSettings.json();
         if (dataSettings.success && dataSettings.settings) {
           if (dataSettings.settings.supportEmail) {
-            setSupportEmail(dataSettings.settings.supportEmail.replace(/mynzo\.com/gi, 'aramish.com'));
+            setSupportEmail(dataSettings.settings.supportEmail);
           }
           if (dataSettings.settings.helpline) {
             setSupportPhone(dataSettings.settings.helpline);

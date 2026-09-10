@@ -21,6 +21,7 @@ const Settings = () => {
 
   // System Config States (from Settings DB)
   const [helpline, setHelpline] = useState('');
+  const [supportEmail, setSupportEmail] = useState('');
   const [gstNo, setGstNo] = useState('');
   const [commission, setCommission] = useState(10);
   const [gstPercentage, setGstPercentage] = useState(18);
@@ -104,6 +105,7 @@ const Settings = () => {
       if (settingsRes.ok && settingsData.success && settingsData.settings) {
         const s = settingsData.settings;
         setHelpline(s.helpline || '');
+        setSupportEmail(s.supportEmail || '');
         setGstNo(s.gstNo || '');
         setCommission(s.commission ?? 10);
         setGstPercentage(s.gstPercentage ?? 18);
@@ -202,6 +204,7 @@ const Settings = () => {
           },
           body: JSON.stringify({
             helpline,
+            supportEmail,
             gstNo,
             commission,
             gstPercentage
@@ -490,6 +493,15 @@ const Settings = () => {
                           type="text" 
                           value={helpline} 
                           onChange={e => setHelpline(e.target.value)} 
+                          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Support Email</label>
+                        <input 
+                          type="email" 
+                          value={supportEmail} 
+                          onChange={e => setSupportEmail(e.target.value)} 
                           className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
                         />
                       </div>

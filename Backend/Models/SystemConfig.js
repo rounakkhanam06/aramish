@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const systemConfigSchema = new mongoose.Schema({
   platformName: { type: String, default: 'Aramish' },
-  supportEmail: { type: String, default: 'support@aramish.com' },
+  supportEmail: { type: String, default: 'Info@aramishshoes.com' },
   helpline: { type: String, default: '+91 1800 123 4567' },
   currency: { type: String, default: 'INR (₹)' },
   commission: { type: Number, default: 10 },

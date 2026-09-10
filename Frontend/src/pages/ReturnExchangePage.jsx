@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useApp } from '../context/AppContext';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -38,6 +39,8 @@ const parseContent = (raw) => {
 
 export default function ReturnExchangePage() {
   const navigate = useNavigate();
+  const { systemSettings } = useApp();
+  const supportEmail = systemSettings?.supportEmail || 'Info@aramishshoes.com';
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -117,8 +120,8 @@ export default function ReturnExchangePage() {
             <h4 className="text-[13px] font-bold text-[#02006c] mb-0.5">Need help with a return or exchange?</h4>
             <p className="text-[12px] text-slate-500 font-medium leading-snug">
               Raise a request from your Orders page, or reach out to us at{' '}
-              <a href="mailto:support@aramish.com" className="text-[#0B132B] font-bold hover:underline">
-                support@aramish.com
+              <a href={`mailto:${supportEmail}`} className="text-[#0B132B] font-bold hover:underline">
+                {supportEmail}
               </a>.
             </p>
           </div>
