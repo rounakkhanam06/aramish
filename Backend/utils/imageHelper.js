@@ -1,9 +1,29 @@
-const getImageUrl = (imagePath) => {
+const getImagePath = (imagePath) => {
   if (!imagePath) return '';
 
   const path = String(imagePath).trim();
 
-  // If it's already a complete URL, return as is
+  // If the path contains 'uploads', extract the clean relative path starting from /uploads/
+  const uploadsIdx = path.indexOf('/uploads/');
+  if (uploadsIdx !== -1) {
+    return path.substring(uploadsIdx);
+  }
+  const altUploadsIdx = path.indexOf('uploads/');
+  if (altUploadsIdx !== -1) {
+    return '/' + path.substring(altUploadsIdx);
+  }
+
+  // If it's an onrender URL (even without /uploads/), strip render domain
+  if (path.includes('onrender.com') || path.includes('render.com')) {
+    try {
+      const urlObj = new URL(path);
+      return urlObj.pathname + urlObj.search;
+    } catch {
+      return path.replace(/^https?:\/\/[^/]+/, '');
+    }
+  }
+
+  // External complete URLs (Cloudinary, Unsplash, external CDNs, data URIs, blob URIs)
   if (
     path.startsWith('http://') ||
     path.startsWith('https://') ||
@@ -17,15 +37,13 @@ const getImageUrl = (imagePath) => {
     return `https://${path}`;
   }
 
-  const defaultBase = (process.env.ENV === 'production' || process.env.NODE_ENV === 'production')
-    ? 'https://aramishshoes.com'
-    : 'http://localhost:5000';
-
-  const baseUrl = process.env.IMAGE_BASE_URL || process.env.BACKEND_URL || defaultBase;
-  const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-
-  return `${cleanBaseUrl}${cleanPath}`;
+  return path.startsWith('/') ? path : `/${path}`;
 };
 
-module.exports = { getImageUrl };
+// getImageUrl returns clean relative path (or external CDN URL)
+const getImageUrl = (imagePath) => {
+  return getImagePath(imagePath);
+};
+
+module.exports = { getImagePath, getImageUrl };
+

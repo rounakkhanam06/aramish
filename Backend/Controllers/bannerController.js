@@ -1,5 +1,5 @@
 const Banner = require('../Models/Banner');
-const { getImageUrl } = require('../utils/imageHelper');
+const { getImagePath } = require('../utils/imageHelper');
 
 // @desc    Get all Banners
 // @route   GET /api/admin/catalog/banners
@@ -7,7 +7,12 @@ const { getImageUrl } = require('../utils/imageHelper');
 const getBanners = async (req, res) => {
   try {
     const banners = await Banner.find({}).sort({ createdAt: -1 });
-    res.status(200).json({ success: true, banners });
+    const formattedBanners = banners.map(b => {
+      const doc = b.toObject ? b.toObject() : { ...b };
+      doc.image = getImagePath(doc.image);
+      return doc;
+    });
+    res.status(200).json({ success: true, banners: formattedBanners });
   } catch (error) {
     console.error('Get Banners Error:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
@@ -26,9 +31,9 @@ const createBanner = async (req, res) => {
 
     let image = null;
     if (req.file) {
-      image = getImageUrl(req.file.url);
+      image = getImagePath(req.file.url);
     } else if (req.body.image) {
-      image = req.body.image;
+      image = getImagePath(req.body.image);
     }
 
     if (!image) {
@@ -67,9 +72,9 @@ const updateBanner = async (req, res) => {
     if (active !== undefined) banner.active = (active === false || active === 'false') ? false : true;
 
     if (req.file) {
-      banner.image = getImageUrl(req.file.url);
+      banner.image = getImagePath(req.file.url);
     } else if (req.body.image !== undefined) {
-      banner.image = req.body.image;
+      banner.image = getImagePath(req.body.image);
     }
 
     await banner.save();
@@ -106,7 +111,7 @@ const publishBanners = async (req, res) => {
     const validated = banners.map(b => ({
       title: b.title,
       subtitle: b.subtitle || '',
-      image: b.image,
+      image: getImagePath(b.image),
       active: b.active !== false
     }));
 

@@ -9,7 +9,13 @@ const require = createRequire(import.meta.url);
 export default defineConfig({
   server: {
     port: 5175,
-    strictPort: true
+    strictPort: true,
+    proxy: {
+      '/uploads': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      }
+    }
   },
   plugins: [
     react(),

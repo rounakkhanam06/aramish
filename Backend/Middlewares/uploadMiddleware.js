@@ -213,8 +213,9 @@ const processBrandFiles = async (req, res, next) => {
         .webp({ quality: 85 })
         .toBuffer();
 
+      const { getImagePath } = require('../utils/imageHelper');
       const saved = await saveImageBuffer(processedBuffer, filename, 'aramish/brands');
-      req.logoUrl = getImageUrl(saved.url);
+      req.logoUrl = getImagePath(saved.url);
     }
 
     next();

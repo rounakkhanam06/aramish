@@ -18,7 +18,7 @@ router.get('/', getBanners);
 // Admin protected routes
 router.post('/upload', protectAdmin, uploadImage, processImage, handleUploadError, (req, res) => {
   if (req.file) {
-    return res.status(200).json({ success: true, url: getImageUrl(req.file.url) });
+    return res.status(200).json({ success: true, url: req.file.url || getImageUrl(req.file.filename) });
   }
   res.status(400).json({ success: false, message: 'File upload failed' });
 });

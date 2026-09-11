@@ -1,5 +1,5 @@
 const CategoryChip = require('../Models/CategoryChip');
-const { getImageUrl } = require('../utils/imageHelper');
+const { getImagePath } = require('../utils/imageHelper');
 
 // @desc    Get all Category Chips
 // @route   GET /api/admin/catalog/chips
@@ -7,7 +7,12 @@ const { getImageUrl } = require('../utils/imageHelper');
 const getCategoryChips = async (req, res) => {
   try {
     const chips = await CategoryChip.find({}).sort({ order: 1 });
-    res.status(200).json({ success: true, chips });
+    const formattedChips = chips.map(c => {
+      const doc = c.toObject ? c.toObject() : { ...c };
+      doc.image = getImagePath(doc.image);
+      return doc;
+    });
+    res.status(200).json({ success: true, chips: formattedChips });
   } catch (error) {
     console.error('Get Category Chips Error:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
@@ -32,7 +37,9 @@ const createCategoryChip = async (req, res) => {
 
     let image = null;
     if (req.file) {
-      image = getImageUrl(req.file.url);
+      image = getImagePath(req.file.url);
+    } else if (req.body.image) {
+      image = getImagePath(req.body.image);
     }
 
     let parsedSizeChart = null;
@@ -86,7 +93,9 @@ const updateCategoryChip = async (req, res) => {
     }
 
     if (req.file) {
-      chip.image = getImageUrl(req.file.url);
+      chip.image = getImagePath(req.file.url);
+    } else if (req.body.image !== undefined) {
+      chip.image = getImagePath(req.body.image);
     }
 
     await chip.save();

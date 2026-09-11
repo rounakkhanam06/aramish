@@ -1,5 +1,5 @@
 const SubCategoryChip = require('../Models/SubCategoryChip');
-const { getImageUrl } = require('../utils/imageHelper');
+const { getImagePath } = require('../utils/imageHelper');
 
 // @desc    Get all Sub Category Chips
 // @route   GET /api/admin/catalog/subchips
@@ -7,7 +7,12 @@ const { getImageUrl } = require('../utils/imageHelper');
 const getSubCategoryChips = async (req, res) => {
   try {
     const subchips = await SubCategoryChip.find({}).sort({ order: 1 });
-    res.status(200).json({ success: true, subchips });
+    const formattedSubchips = subchips.map(c => {
+      const doc = c.toObject ? c.toObject() : { ...c };
+      doc.image = getImagePath(doc.image);
+      return doc;
+    });
+    res.status(200).json({ success: true, subchips: formattedSubchips });
   } catch (error) {
     console.error('Get Sub Category Chips Error:', error);
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
@@ -32,7 +37,9 @@ const createSubCategoryChip = async (req, res) => {
 
     let image = null;
     if (req.file) {
-      image = getImageUrl(req.file.url);
+      image = getImagePath(req.file.url);
+    } else if (req.body.image) {
+      image = getImagePath(req.body.image);
     }
 
     const newSubChip = new SubCategoryChip({
@@ -91,7 +98,9 @@ const updateSubCategoryChip = async (req, res) => {
     if (order !== undefined) chip.order = Number(order);
 
     if (req.file) {
-      chip.image = getImageUrl(req.file.url);
+      chip.image = getImagePath(req.file.url);
+    } else if (req.body.image !== undefined) {
+      chip.image = getImagePath(req.body.image);
     }
 
     await chip.save();

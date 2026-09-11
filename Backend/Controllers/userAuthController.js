@@ -349,7 +349,7 @@ const updateProfile = async (req, res) => {
         phone: user.phone,
         name: user.name,
         email: user.email,
-        avatar: user.avatar,
+        avatar: getImageUrl(user.avatar),
         gender: user.gender,
         dob: user.dob,
         joinedAt: user.createdAt

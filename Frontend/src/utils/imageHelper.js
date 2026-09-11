@@ -3,23 +3,8 @@ export const getImageUrl = (imagePath) => {
 
   let path = String(imagePath).trim();
 
-  // If the path contains 'uploads', normalize it to the current environment's API base URL
+  // If the path contains 'uploads', extract and normalize the relative uploads path
   if (path.includes('uploads')) {
-    const isLocal = typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' ||
-        window.location.hostname === '127.0.0.1' ||
-        window.location.hostname.includes('gitpod') ||
-        window.location.hostname.includes('devtunnels.ms') ||
-        /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname));
-
-    let baseUrl = '';
-    if (isLocal) {
-      baseUrl = import.meta.env.VITE_IMAGE_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000';
-    } else {
-      baseUrl = import.meta.env.VITE_IMAGE_BASE_URL || import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://aramishshoes.com');
-    }
-
-    // Extract the relative uploads path from any absolute URL
     let relativePath = path;
     const uploadsIdx = path.indexOf('/uploads/');
     if (uploadsIdx !== -1) {
@@ -32,11 +17,29 @@ export const getImageUrl = (imagePath) => {
     }
 
     const cleanPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
-    const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-    return `${cleanBaseUrl}${cleanPath}`;
+
+    // Optional custom image base URL (NEVER use Render URL or VITE_API_URL fallback)
+    const customBase = import.meta.env.VITE_IMAGE_BASE_URL;
+    if (customBase && typeof customBase === 'string' && !customBase.includes('onrender.com') && !customBase.includes('render.com')) {
+      const cleanBase = customBase.endsWith('/') ? customBase.slice(0, -1) : customBase;
+      return `${cleanBase}${cleanPath}`;
+    }
+
+    // In production or local (with dev proxy), use clean relative image path directly
+    return cleanPath;
   }
 
-  // If it is already a complete URL, return as is
+  // Strip any Render domain URL if present
+  if (path.includes('onrender.com') || path.includes('render.com')) {
+    try {
+      const parsed = new URL(path);
+      return parsed.pathname + parsed.search;
+    } catch {
+      return path.replace(/^https?:\/\/[^/]+/, '');
+    }
+  }
+
+  // External complete URLs (Cloudinary, Unsplash, external CDNs, data URIs, blob URIs)
   if (
     path.startsWith('http://') ||
     path.startsWith('https://') ||
@@ -51,7 +54,7 @@ export const getImageUrl = (imagePath) => {
     return `https://${path}`;
   }
 
-  // Local frontend assets should not be prepended with base URL
+  // Local frontend assets
   if (
     path.startsWith('/src/') ||
     path.startsWith('/assets/') ||
@@ -64,6 +67,7 @@ export const getImageUrl = (imagePath) => {
     return path;
   }
 
-  return path;
+  return path.startsWith('/') ? path : `/${path}`;
 };
+
 

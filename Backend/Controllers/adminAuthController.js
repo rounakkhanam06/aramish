@@ -433,7 +433,7 @@ const updateAdminProfile = async (req, res) => {
     if (req.file) {
       admin.avatar = getImageUrl(req.file.url);
     } else if (avatar !== undefined) {
-      admin.avatar = avatar;
+      admin.avatar = getImageUrl(avatar);
     }
 
     await admin.save();
@@ -446,7 +446,7 @@ const updateAdminProfile = async (req, res) => {
         name: admin.name,
         email: admin.email,
         phone: admin.phone,
-        avatar: admin.avatar,
+        avatar: getImageUrl(admin.avatar),
         role: admin.role
       }
     });

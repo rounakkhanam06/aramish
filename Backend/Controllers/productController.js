@@ -263,22 +263,22 @@ const createProduct = async (req, res) => {
     // Process variant images
     for (let i = 0; i < variations.length; i++) {
       const v = variations[i];
-        let newVImages = [];
-        if (req.processedFiles) {
-          const vFiles = req.processedFiles.filter(f => f.fieldname === `variantImages_${i}`);
-          if (vFiles.length > 0) {
-             newVImages = vFiles.map(f => getImageUrl(f.url));
-          }
+      let newVImages = [];
+      if (req.processedFiles) {
+        const vFiles = req.processedFiles.filter(f => f.fieldname === `variantImages_${i}`);
+        if (vFiles.length > 0) {
+           newVImages = vFiles.map(f => getImageUrl(f.url));
         }
-        const existingVariantImages = req.body[`variantImagesExisting_${i}`];
-        const existingVImages = existingVariantImages ? parseJsonField(existingVariantImages, []) : [];
-        v.images = [...existingVImages, ...newVImages];
       }
+      const existingVariantImages = req.body[`variantImagesExisting_${i}`];
+      const existingVImages = existingVariantImages ? parseJsonField(existingVariantImages, []) : [];
+      v.images = [...existingVImages.map(img => getImageUrl(img)), ...newVImages].filter(Boolean);
+    }
 
     // Check if additional image URLs were sent in body
     const bodyImages = parseJsonField(req.body.imageUrls, []);
     if (Array.isArray(bodyImages)) {
-      imageUrls = [...imageUrls, ...bodyImages];
+      imageUrls = [...imageUrls, ...bodyImages.map(img => getImageUrl(img))].filter(Boolean);
     }
 
     // Fallback: If global product has no images, but a variation does, use it
@@ -468,7 +468,7 @@ const updateProduct = async (req, res) => {
         }
         const existingVariantImages = req.body[`variantImagesExisting_${i}`];
         const existingVImages = existingVariantImages ? parseJsonField(existingVariantImages, []) : [];
-        v.images = [...existingVImages, ...newVImages];
+        v.images = [...existingVImages.map(img => getImageUrl(img)), ...newVImages].filter(Boolean);
       }
 
       product.variations = variations;
@@ -478,7 +478,7 @@ const updateProduct = async (req, res) => {
     // Process Images
     let updatedImages = product.images || [];
     if (req.body.imageUrls !== undefined) {
-      updatedImages = parseJsonField(req.body.imageUrls);
+      updatedImages = parseJsonField(req.body.imageUrls).map(img => getImageUrl(img)).filter(Boolean);
     }
 
     if (req.processedFiles && req.processedFiles.length > 0) {
@@ -488,12 +488,12 @@ const updateProduct = async (req, res) => {
       updatedImages = [...updatedImages, ...newUrls];
     }
 
-    product.images = updatedImages;
+    product.images = updatedImages.map(img => getImageUrl(img)).filter(Boolean);
 
     // Process Description Images
     let updatedDescImages = product.descriptionImages || [];
     if (req.body.descriptionImagesExisting !== undefined) {
-      updatedDescImages = parseJsonField(req.body.descriptionImagesExisting);
+      updatedDescImages = parseJsonField(req.body.descriptionImagesExisting).map(img => getImageUrl(img)).filter(Boolean);
     }
     if (req.processedFiles && req.processedFiles.length > 0) {
       const newDescUrls = req.processedFiles
@@ -503,7 +503,7 @@ const updateProduct = async (req, res) => {
       updatedDescImages = [...updatedDescImages, ...newDescUrls];
     }
     console.log('[updateProduct] Final descriptionImages:', updatedDescImages);
-    product.descriptionImages = updatedDescImages;
+    product.descriptionImages = updatedDescImages.map(img => getImageUrl(img)).filter(Boolean);
 
     // Fallback: If global product has no images, but a variation does, use it
     const hasValidImages = product.images && product.images.filter(img => img && img.trim() !== '' && img !== 'undefined').length > 0;
@@ -1039,7 +1039,7 @@ const processImageUrl = async (imageUrl) => {
       .webp({ quality: 80, effort: 2 })
       .toFile(outputPath);
 
-    return getImageUrl(`/uploads/${filename}`);
+    return `/uploads/${filename}`;
   } catch (err) {
     console.error(`Failed to process remote image URL (${url}):`, err.message);
     return url;
@@ -1066,7 +1066,7 @@ const processImageBuffer = async (buffer) => {
       .webp({ quality: 80, effort: 2 })
       .toFile(outputPath);
 
-    return getImageUrl(`/uploads/${filename}`);
+    return `/uploads/${filename}`;
   } catch (err) {
     console.error('Failed to process image extracted from ZIP:', err.message);
     return null;
