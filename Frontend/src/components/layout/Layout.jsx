@@ -68,7 +68,6 @@ export default function Layout({ children }) {
                            location.pathname.toLowerCase().startsWith('/product') ||
                            location.pathname.toLowerCase().startsWith('/similar-products') ||
                            location.pathname.toLowerCase().startsWith('/top-selection') ||
-                           location.pathname.toLowerCase().startsWith('/help') ||
                            location.pathname.toLowerCase().startsWith('/support') ||
                            location.pathname.toLowerCase().startsWith('/privacy') ||
                            location.pathname.toLowerCase().startsWith('/terms') ||

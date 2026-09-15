@@ -408,7 +408,7 @@ export default function ProfilePage() {
                 { icon: ShieldCheck, label: 'Privacy Policy', path: '/privacy' },
                 { icon: RotateCcw, label: 'Return & Exchange Policy', path: '/return-exchange-policy' },
                 { icon: HelpCircle, label: 'Browse FAQs', id: 'faq' },
-                { icon: Phone, label: 'Help & Support', path: '/help' }
+                { icon: Phone, label: 'Help & Support', path: '/support' }
               ].map((item, idx) => (
                 <div
                   key={idx}
@@ -759,7 +759,7 @@ export default function ProfilePage() {
                   { icon: ShieldCheck, label: 'Privacy Policy', path: '/privacy' },
                   { icon: RotateCcw, label: 'Return & Exchange Policy', path: '/return-exchange-policy' },
                   { icon: HelpCircle, label: 'Browse FAQs', id: 'faq' },
-                  { icon: Phone, label: 'Help & Support', path: '/help' }
+                  { icon: Phone, label: 'Help & Support', path: '/support' }
                 ].map((item, idx) => (
                   <div
                     key={idx}

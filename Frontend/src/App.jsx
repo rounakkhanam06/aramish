@@ -142,7 +142,6 @@ function AppContent() {
           <Route path="/all-products" element={<AllProductsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/help" element={<HelpSupportPage />} />
           <Route path="/support" element={<HelpSupportPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
