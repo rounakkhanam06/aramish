@@ -2,7 +2,6 @@ const multer = require('multer');
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
-const cloudinary = require('cloudinary').v2;
 const { getImageUrl } = require('../utils/imageHelper');
 
 // Ensure upload directory exists
@@ -11,63 +10,14 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// Helper to check Cloudinary Credentials
-const isCloudinaryConfigured = () => {
-  return (
-    Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_CLOUD_NAME.trim()) &&
-    Boolean(process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_KEY.trim()) &&
-    Boolean(process.env.CLOUDINARY_API_SECRET && process.env.CLOUDINARY_API_SECRET.trim())
-  );
-};
-
-// Initialize Cloudinary if configured
-const initCloudinary = () => {
-  if (isCloudinaryConfigured()) {
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME.trim(),
-      api_key: process.env.CLOUDINARY_API_KEY.trim(),
-      api_secret: process.env.CLOUDINARY_API_SECRET.trim()
-    });
-  }
-};
-initCloudinary();
-
-// Save image buffer either to Cloudinary or to Local Uploads Folder
-const saveImageBuffer = async (buffer, filename, folderName = 'aramish') => {
-  if (isCloudinaryConfigured()) {
-    try {
-      const uploadResult = await new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          {
-            folder: folderName,
-            public_id: filename.replace(/\.[^/.]+$/, ''),
-            resource_type: 'image'
-          },
-          (error, result) => {
-            if (error) return reject(error);
-            resolve(result);
-          }
-        );
-        uploadStream.end(buffer);
-      });
-      return {
-        url: uploadResult.secure_url,
-        filename,
-        isCloudinary: true
-      };
-    } catch (err) {
-      console.error('Cloudinary upload failed, falling back to local disk:', err.message);
-    }
-  }
-
-  // Fallback to local storage
+// Save image buffer to local uploads folder
+const saveImageBuffer = async (buffer, filename) => {
   const outputPath = path.join(uploadDir, filename);
   await fs.promises.writeFile(outputPath, buffer);
   return {
     url: `/uploads/${filename}`,
     filename,
-    path: outputPath,
-    isCloudinary: false
+    path: outputPath
   };
 };
 
@@ -91,7 +41,7 @@ const upload = multer({
   fileFilter: fileFilter
 });
 
-// Middleware to process image: convert to webp and save to Cloudinary or uploads/
+// Middleware to process image: convert to webp and save to uploads/
 const processImage = async (req, res, next) => {
   if (!req.file) {
     return next();
@@ -123,7 +73,7 @@ const processImage = async (req, res, next) => {
       .webp({ quality: 85, effort: 4 })
       .toBuffer();
 
-    const saved = await saveImageBuffer(processedBuffer, filename, isBanner ? 'aramish/banners' : 'aramish/products');
+    const saved = await saveImageBuffer(processedBuffer, filename);
 
     req.file.filename = saved.filename;
     if (saved.path) req.file.path = saved.path;
@@ -177,7 +127,7 @@ const processImages = async (req, res, next) => {
         .webp({ quality: 85, effort: 4 })
         .toBuffer();
 
-      const saved = await saveImageBuffer(processedBuffer, filename, 'aramish/products');
+      const saved = await saveImageBuffer(processedBuffer, filename);
 
       req.processedFiles.push({
         fieldname: file.fieldname,
@@ -214,7 +164,7 @@ const processBrandFiles = async (req, res, next) => {
         .toBuffer();
 
       const { getImagePath } = require('../utils/imageHelper');
-      const saved = await saveImageBuffer(processedBuffer, filename, 'aramish/brands');
+      const saved = await saveImageBuffer(processedBuffer, filename);
       req.logoUrl = getImagePath(saved.url);
     }
 
