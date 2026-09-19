@@ -118,6 +118,9 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
   }
 }));
 
+// Server-rendered Open Graph meta tags for social-media crawlers (WhatsApp, Facebook, etc.)
+app.use('/meta', require('./Router/shareMetaRoutes'));
+
 // Routes
 app.use('/admin/auth', require('./Router/adminAuthRoutes'));
 app.use('/auth', require('./Router/userAuthRoutes'));
