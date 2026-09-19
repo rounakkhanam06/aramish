@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Gift, ShieldCheck, Heart } from 'lucide-react';
 
 export default function Footer() {
@@ -24,21 +25,21 @@ export default function Footer() {
             <div className="space-y-3">
               <h4 className="text-white font-bold uppercase tracking-wider text-[10px]">Categories</h4>
               <ul className="space-y-2 text-slate-400 font-medium">
-                <li><a href="#/categories?cat=formal-shoes" className="hover:text-[#0B132B] transition-colors">Formal Shoes</a></li>
-                <li><a href="#/categories?cat=casual-shoes" className="hover:text-[#0B132B] transition-colors">Casual Shoes</a></li>
-                <li><a href="#/categories?cat=boots" className="hover:text-[#0B132B] transition-colors">Boots</a></li>
-                <li><a href="#/categories?cat=sandals" className="hover:text-[#0B132B] transition-colors">Sandals</a></li>
-                <li><a href="#/categories?cat=ethnic-footwear" className="hover:text-[#0B132B] transition-colors">Ethnic Footwear</a></li>
+                <li><Link to="/categories?cat=formal-shoes" className="hover:text-[#0B132B] transition-colors">Formal Shoes</Link></li>
+                <li><Link to="/categories?cat=casual-shoes" className="hover:text-[#0B132B] transition-colors">Casual Shoes</Link></li>
+                <li><Link to="/categories?cat=boots" className="hover:text-[#0B132B] transition-colors">Boots</Link></li>
+                <li><Link to="/categories?cat=sandals" className="hover:text-[#0B132B] transition-colors">Sandals</Link></li>
+                <li><Link to="/categories?cat=ethnic-footwear" className="hover:text-[#0B132B] transition-colors">Ethnic Footwear</Link></li>
               </ul>
             </div>
             <div className="space-y-3">
               <h4 className="text-white font-bold uppercase tracking-wider text-[10px]">Company</h4>
               <ul className="space-y-2 text-slate-400 font-medium">
-                <li><a href="#" className="hover:text-[#0B132B] transition-colors">About Aramish</a></li>
-                <li><a href="#/privacy" className="hover:text-[#0B132B] transition-colors">Privacy Policy</a></li>
-                <li><a href="#/terms" className="hover:text-[#0B132B] transition-colors">Terms of Service</a></li>
-                <li><a href="#/return-exchange-policy" className="hover:text-[#0B132B] transition-colors">Return & Exchange Policy</a></li>
-                <li><a href="#/support" className="hover:text-[#0B132B] transition-colors">Support Center</a></li>
+                <li><a href="/" className="hover:text-[#0B132B] transition-colors">About Aramish</a></li>
+                <li><Link to="/privacy" className="hover:text-[#0B132B] transition-colors">Privacy Policy</Link></li>
+                <li><Link to="/terms" className="hover:text-[#0B132B] transition-colors">Terms of Service</Link></li>
+                <li><Link to="/return-exchange-policy" className="hover:text-[#0B132B] transition-colors">Return & Exchange Policy</Link></li>
+                <li><Link to="/support" className="hover:text-[#0B132B] transition-colors">Support Center</Link></li>
               </ul>
             </div>
           </div>
