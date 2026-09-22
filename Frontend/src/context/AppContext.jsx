@@ -37,7 +37,7 @@ export const AppProvider = ({ children }) => {
         const info = JSON.parse(userInfo);
         return {
           id: info._id || info.id || null,
-          name: info.name || 'User',
+          name: info.name || null,
           phone: info.phone || '',
           email: info.email || null,
           gender: info.gender || null,

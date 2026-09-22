@@ -39,6 +39,7 @@ export default function LoginPage() {
   const [phoneNumber, setPhoneNumber] = useState(() => {
     return sessionStorage.getItem('tempLoginPhone') || '';
   });
+  const [fullName, setFullName] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
@@ -179,6 +180,12 @@ export default function LoginPage() {
       return;
     }
 
+    if (isNewUser && !fullName.trim()) {
+      setSignInError('Please enter your full name');
+      toast.info('Please enter your full name');
+      return;
+    }
+
     setLoading(true);
     setSignInError('');
 
@@ -186,7 +193,12 @@ export default function LoginPage() {
       const res = await fetch(`${API_URL}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phoneNumber, otp: fullOtp, referralCode: referralCode?.trim() || undefined })
+        body: JSON.stringify({ 
+          phone: phoneNumber, 
+          otp: fullOtp, 
+          referralCode: referralCode?.trim() || undefined,
+          name: fullName?.trim() || undefined
+        })
       });
 
       const data = await res.json();
@@ -216,12 +228,12 @@ export default function LoginPage() {
       if (setUser) {
         setUser({
           id: data.user._id || data.user.id || null,
-          name: data.user.name || null,
+          name: data.user.name || fullName.trim() || null,
           phone: `+91 ${phoneNumber}`,
           email: data.user.email || null,
           gender: data.user.gender || null,
           dob: data.user.dob || null,
-          joined: `Member since ${new Date(data.user.joinedAt).toLocaleString('default', { month: 'long', year: 'numeric' })}`
+          joined: `Member since ${new Date(data.user.joinedAt || Date.now()).toLocaleString('default', { month: 'long', year: 'numeric' })}`
         });
       }
 
@@ -420,6 +432,26 @@ export default function LoginPage() {
                   ))}
                 </div>
               </div>
+
+              {isNewUser && (
+                <div className="space-y-1 text-left pt-2">
+                  <label className="text-[10px] font-syne font-black text-slate-700 uppercase tracking-widest">
+                    Your Full Name <span className="text-rose-500 font-bold">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Enter your full name"
+                    value={fullName}
+                    onChange={(e) => {
+                      setFullName(e.target.value);
+                      setSignInError('');
+                    }}
+                    required
+                    maxLength={50}
+                    className="w-full px-3 py-2 border-b-2 border-white/10 focus:border-[#0B132B] outline-none bg-transparent text-[14px] font-bold text-[#02006c] transition-colors placeholder:font-normal placeholder:text-slate-400"
+                  />
+                </div>
+              )}
 
               {(isNewUser || !!referralCode) && (
                 <div className="space-y-1 text-left pt-2">

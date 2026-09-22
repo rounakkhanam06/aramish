@@ -27,6 +27,17 @@ const createTicket = async (req, res) => {
 
     await ticket.save();
 
+    try {
+      const { sendNotificationToAdmins } = require('../Router/firebaseAdmin');
+      sendNotificationToAdmins({
+        title: '🎫 New Support Ticket',
+        body: `${ticket.userName} raised: ${ticket.subject}`,
+        data: { url: '/admin/support', ticketId: ticket._id.toString(), type: 'NEW_TICKET' }
+      }).catch(e => console.error('Failed to notify admins of new ticket:', e.message));
+    } catch (notifErr) {
+      console.error('Failed to notify admins of new ticket:', notifErr.message);
+    }
+
     res.status(201).json({ success: true, message: 'Support ticket raised successfully', ticket });
   } catch (error) {
     console.error('Create Ticket Error:', error);
@@ -63,6 +74,8 @@ const getAllTickets = async (req, res) => {
 // @desc    Update ticket status/priority (Admin)
 // @route   PUT /admin/support-tickets/:id
 // @access  Private (Admin)
+const STATUS_RANK = { 'Open': 0, 'In-Progress': 1, 'Closed': 2 };
+
 const updateTicket = async (req, res) => {
   try {
     const { status, priority } = req.body;
@@ -72,7 +85,26 @@ const updateTicket = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Ticket not found' });
     }
 
-    if (status) ticket.status = status;
+    if (status && status !== ticket.status) {
+      if (!(status in STATUS_RANK)) {
+        return res.status(400).json({ success: false, message: `Invalid status '${status}'.` });
+      }
+      if (STATUS_RANK[status] < STATUS_RANK[ticket.status]) {
+        return res.status(400).json({ success: false, message: `Cannot move ticket status backward from '${ticket.status}' to '${status}'.` });
+      }
+      ticket.status = status;
+
+      try {
+        const { sendNotificationToUser } = require('../Router/firebaseAdmin');
+        sendNotificationToUser(ticket.userId, {
+          title: `Support Ticket ${status}`,
+          body: `Your ticket "${ticket.subject}" is now ${status}.`,
+          data: { url: '/help-support', ticketId: ticket._id.toString(), type: 'TICKET_STATUS' }
+        }).catch(e => console.error('Failed to notify user of ticket status change:', e.message));
+      } catch (notifErr) {
+        console.error('Failed to notify user of ticket status change:', notifErr.message);
+      }
+    }
     if (priority) ticket.priority = priority;
 
     await ticket.save();
@@ -84,9 +116,46 @@ const updateTicket = async (req, res) => {
   }
 };
 
+// @desc    Admin replies to a ticket
+// @route   POST /support-tickets/admin/:id/reply
+// @access  Private (Admin)
+const replyToTicket = async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ success: false, message: 'Reply message is required' });
+    }
+
+    const ticket = await SupportTicket.findById(req.params.id);
+    if (!ticket) {
+      return res.status(404).json({ success: false, message: 'Ticket not found' });
+    }
+
+    ticket.replies.push({ message: message.trim(), repliedBy: req.admin?.name || 'Admin' });
+    await ticket.save();
+
+    try {
+      const { sendNotificationToUser } = require('../Router/firebaseAdmin');
+      sendNotificationToUser(ticket.userId, {
+        title: `New reply on your ticket`,
+        body: message.trim().slice(0, 100),
+        data: { url: '/help-support', ticketId: ticket._id.toString(), type: 'TICKET_REPLY' }
+      }).catch(e => console.error('Failed to notify user of ticket reply:', e.message));
+    } catch (notifErr) {
+      console.error('Failed to notify user of ticket reply:', notifErr.message);
+    }
+
+    res.status(200).json({ success: true, message: 'Reply sent successfully', ticket });
+  } catch (error) {
+    console.error('Reply Ticket Error:', error);
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+};
+
 module.exports = {
   createTicket,
   getUserTickets,
   getAllTickets,
-  updateTicket
+  updateTicket,
+  replyToTicket
 };

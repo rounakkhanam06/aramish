@@ -174,6 +174,7 @@ export default function OrderDetailsPage() {
       productId: item.productId || item.id || null,
       name: item.name,
       price: item.price,
+      mrp: item.mrp,
       quantity: item.quantity,
       image: item.image,
       variationSku: item.variationSku || null,
@@ -194,7 +195,12 @@ export default function OrderDetailsPage() {
     couponCode: orderData.couponCode,
     createdAt: orderData.createdAt,
     codCharge: orderData.codCharge || 0,
-    prepaidDiscount: orderData.prepaidDiscount || 0
+    prepaidDiscount: orderData.prepaidDiscount || 0,
+    subtotal: orderData.subtotal,
+    gstAmount: orderData.gstAmount,
+    platformCommission: orderData.platformCommission,
+    discountAmount: orderData.discountAmount,
+    referralCoinsUsed: orderData.referralCoinsUsed
   } : null;
 
   const isDelivered = globalOrder ? ['Delivered', 'Return Requested', 'Refunded', 'Partially Refunded'].includes(globalOrder.status) : id !== 'ORD-8X92-K1';

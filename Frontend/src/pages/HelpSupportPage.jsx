@@ -418,6 +418,23 @@ export default function HelpSupportPage() {
                   <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Description</span>
                   <p className="text-slate-600 font-medium leading-relaxed bg-surface p-4 rounded-xl border border-white/10 whitespace-pre-line text-[11px]">{selectedTicket.description}</p>
                 </div>
+
+                {selectedTicket.replies && selectedTicket.replies.length > 0 && (
+                  <div className="space-y-1.5 pt-2 border-t border-white/10">
+                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Replies</span>
+                    <div className="space-y-2">
+                      {selectedTicket.replies.map((reply, i) => (
+                        <div key={i} className="bg-blue-50/50 p-4 rounded-xl border border-blue-100/50 whitespace-pre-line text-[11px]">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[8px] font-black text-blue-600 uppercase tracking-widest">{reply.repliedBy}</span>
+                            <span className="text-[8px] text-slate-400 font-bold uppercase">{new Date(reply.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                          </div>
+                          <p className="text-slate-600 font-medium leading-relaxed">{reply.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <button 

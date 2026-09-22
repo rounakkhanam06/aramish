@@ -13,9 +13,12 @@ const Tickets = () => {
   const [activeTab, setActiveTab] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
-  
+  const [replyText, setReplyText] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
+
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
   const token = localStorage.getItem('adminToken');
+  const STATUS_RANK = { 'Open': 0, 'In-Progress': 1, 'Closed': 2 };
 
   const fetchTickets = async () => {
     if (!token) return;
@@ -109,6 +112,36 @@ const Tickets = () => {
   };
 
 
+
+  const handleSendReply = async () => {
+    if (!token || !selectedTicket || !replyText.trim()) return;
+    setSendingReply(true);
+    try {
+      const res = await fetch(`${API_BASE}/support-tickets/admin/${selectedTicket._id}/reply`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ message: replyText.trim() })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success('Reply sent');
+        setReplyText('');
+        const updatedTickets = tickets.map(t => t._id === selectedTicket._id ? data.ticket : t);
+        setTickets(updatedTickets);
+        setSelectedTicket(data.ticket);
+      } else {
+        toast.error(data.message || 'Failed to send reply');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Network error sending reply');
+    } finally {
+      setSendingReply(false);
+    }
+  };
 
   const filteredTickets = tickets.filter(ticket => {
     const matchesTab = activeTab === 'All' || ticket.status === activeTab;
@@ -210,7 +243,7 @@ const Tickets = () => {
               filteredTickets.map((ticket) => (
                 <div 
                   key={ticket._id} 
-                  onClick={() => setSelectedTicket(ticket)}
+                  onClick={() => { setSelectedTicket(ticket); setReplyText(''); }}
                   className={`p-5 cursor-pointer transition-all border-l-4 ${
                     selectedTicket && selectedTicket._id === ticket._id 
                       ? 'bg-blue-50/40 border-blue-600' 
@@ -279,9 +312,9 @@ const Tickets = () => {
                       onChange={(e) => handleStatusChange(selectedTicket._id, e.target.value)}
                       className="bg-slate-900 text-white rounded-xl py-2 px-3 text-[10px] font-black uppercase tracking-widest outline-none focus:ring-2 focus:ring-slate-100 transition-all cursor-pointer"
                     >
-                      <option value="Open">Open</option>
-                      <option value="In-Progress">In-Progress</option>
-                      <option value="Closed">Closed / Resolved</option>
+                      <option value="Open" disabled={STATUS_RANK['Open'] < STATUS_RANK[selectedTicket.status]}>Open</option>
+                      <option value="In-Progress" disabled={STATUS_RANK['In-Progress'] < STATUS_RANK[selectedTicket.status]}>In-Progress</option>
+                      <option value="Closed" disabled={STATUS_RANK['Closed'] < STATUS_RANK[selectedTicket.status]}>Closed / Resolved</option>
                     </select>
                   </div>
                 </div>
@@ -327,6 +360,45 @@ const Tickets = () => {
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Detailed Description</span>
                     <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100/50 text-slate-700 font-medium text-xs leading-relaxed whitespace-pre-line">
                       {selectedTicket.description}
+                    </div>
+                  </div>
+
+                  {/* Replies */}
+                  {selectedTicket.replies && selectedTicket.replies.length > 0 && (
+                    <div className="space-y-2 pt-4 border-t border-slate-50">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Replies</span>
+                      <div className="space-y-3">
+                        {selectedTicket.replies.map((reply, i) => (
+                          <div key={i} className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100/50 text-slate-700 font-medium text-xs leading-relaxed whitespace-pre-line">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">{reply.repliedBy}</span>
+                              <span className="text-[8px] text-slate-400 font-bold uppercase">{new Date(reply.createdAt).toLocaleString()}</span>
+                            </div>
+                            {reply.message}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Reply Box */}
+                  <div className="space-y-2 pt-4 border-t border-slate-50">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Reply to Customer</span>
+                    <div className="flex gap-2">
+                      <textarea
+                        value={replyText}
+                        onChange={(e) => setReplyText(e.target.value)}
+                        placeholder="Type your reply..."
+                        rows={3}
+                        className="flex-1 bg-slate-50 border border-slate-100 rounded-xl p-3 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-100 transition-all resize-none"
+                      />
+                      <button
+                        onClick={handleSendReply}
+                        disabled={sendingReply || !replyText.trim()}
+                        className="self-end bg-slate-900 text-white rounded-xl px-4 py-2.5 text-[10px] font-black uppercase tracking-widest disabled:opacity-40 flex items-center gap-1.5"
+                      >
+                        <Send size={12} /> Send
+                      </button>
                     </div>
                   </div>
                 </div>

@@ -252,9 +252,29 @@ export default function ReferEarnPage() {
             </button>
             {referralData?.hasAppliedCode ? (
               <div className="px-5 pb-4 border-t border-white/10 pt-3">
-                <p className="text-[12px] text-slate-400 font-semibold flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> You've already applied a referral code.
-                </p>
+                <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-xl p-3.5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-800 font-black text-sm shadow-xs">
+                      {referralData.referredBy?.name?.charAt(0)?.toUpperCase() || '✓'}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest leading-none mb-1">
+                        Referred By
+                      </p>
+                      <p className="text-[13px] font-black text-[#02006c] leading-tight">
+                        {referralData.referredBy?.name || 'Aramish Friend'}
+                      </p>
+                      {referralData.referredBy?.code && (
+                        <p className="text-[10px] text-slate-500 font-mono font-bold mt-0.5">
+                          Code: {referralData.referredBy.code}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-black text-emerald-700 bg-emerald-100/90 px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Linked
+                  </span>
+                </div>
               </div>
             ) : showApply && (
               <div className="px-5 pb-4 flex gap-2 animate-fade-in border-t border-white/10 pt-3">

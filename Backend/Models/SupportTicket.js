@@ -37,7 +37,12 @@ const supportTicketSchema = new mongoose.Schema({
   description: {
     type: String,
     required: true
-  }
+  },
+  replies: [{
+    message: { type: String, required: true },
+    repliedBy: { type: String, default: 'Admin' },
+    createdAt: { type: Date, default: Date.now }
+  }]
 }, { timestamps: true });
 
 module.exports = mongoose.model('SupportTicket', supportTicketSchema);

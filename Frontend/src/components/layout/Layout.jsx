@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import MobileNav from './MobileNav';
+import NamePromptModal from './NamePromptModal';
 import { useApp } from '../../context/AppContext';
 import { useDeviceType } from '../../utils/useDeviceType';
 
@@ -73,7 +74,6 @@ export default function Layout({ children }) {
                            location.pathname.toLowerCase().startsWith('/terms') ||
                            location.pathname.toLowerCase().startsWith('/return-exchange-policy') ||
                            location.pathname.toLowerCase().startsWith('/account') ||
-                           location.pathname.toLowerCase().startsWith('/security') ||
                            location.pathname.toLowerCase().startsWith('/settings') ||
                            location.pathname.toLowerCase().startsWith('/wallet') ||
                            location.pathname.toLowerCase().startsWith('/coupons') ||
@@ -90,7 +90,6 @@ export default function Layout({ children }) {
                               location.pathname.toLowerCase().startsWith('/review-order') || 
                               location.pathname.toLowerCase().startsWith('/product') || 
                               location.pathname.toLowerCase().startsWith('/account') || 
-                              location.pathname.toLowerCase().startsWith('/security') || 
                               location.pathname.toLowerCase().startsWith('/settings') || 
                               location.pathname.toLowerCase().startsWith('/wallet') || 
                               location.pathname.toLowerCase().startsWith('/coupons') || 
@@ -210,7 +209,7 @@ export default function Layout({ children }) {
   };
 
   return (
-    <div className="min-h-screen md:h-auto bg-surface text-slate-800 antialiased font-sans overflow-x-hidden">
+    <div className="min-h-screen md:h-auto bg-surface text-slate-800 antialiased font-sans overflow-x-clip">
       <div className={`w-full ${isFixedLayoutPage ? 'h-[100dvh] md:h-[100dvh]' : 'h-[100dvh] md:h-auto md:min-h-screen'} bg-surface md:bg-transparent flex flex-col relative ${(hideMobileNav || isKeyboardOpen) ? 'pb-0' : 'pb-24 md:pb-0'}`}>
         <main 
           key={location.pathname}
@@ -218,7 +217,7 @@ export default function Layout({ children }) {
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-          className={`flex-grow flex flex-col bg-surface md:bg-transparent relative scrollbar-none ${isFixedLayoutPage ? 'overflow-hidden' : 'overflow-y-auto md:overflow-y-visible overflow-x-hidden'}`}
+          className={`flex-grow flex flex-col bg-surface md:bg-transparent relative scrollbar-none ${isFixedLayoutPage ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden md:overflow-visible'}`}
         >
           {pullDistance > 0 && (
             <div 
@@ -245,6 +244,9 @@ export default function Layout({ children }) {
             {globalToast}
           </div>
         )}
+
+        {/* Global Name Collection Modal for Users without Profile Name */}
+        <NamePromptModal />
       </div>
     </div>
   );

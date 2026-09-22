@@ -476,7 +476,6 @@ export default function ProfilePage() {
     { id: 'wallet', label: "My Wallet", desc: "View your current Aramish coin balance", icon: Coins, color: "bg-indigo-100/60 text-[#02006c]", path: "/wallet" },
     { label: "Account Information", desc: "Manage your email, phone, and profile settings", icon: User, color: "bg-gold/10 text-[#0B132B]", path: "/account" },
     { label: "Saved Addresses", desc: "Manage your delivery addresses", icon: MapPin, color: "bg-rose-100/60 text-rose-500", path: "/saved-addresses" },
-    { label: "Security & Password", desc: "Change password and secure credentials", icon: Lock, color: "bg-amber-100/60 text-amber-600", path: "/security" },
     { label: "Refer & Earn", desc: "Invite friends and earn Aramish Coins", icon: Gift, color: "bg-emerald-100/60 text-emerald-600", path: "/refer" }
   ];
 

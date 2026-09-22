@@ -80,7 +80,7 @@ export default function Navbar() {
   const [addressSearchQuery, setAddressSearchQuery] = useState('');
   const [isAddingNewAddress, setIsAddingNewAddress] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState(null);
-  const [newAddressForm, setNewAddressForm] = useState({ name: '', address: '', pincode: '' });
+  const [newAddressForm, setNewAddressForm] = useState({ name: '', phone: '', address: '', pincode: '' });
 
   const [categories, setCategories] = useState(() => 
     MOCK_CATEGORIES.filter(c => c.id !== 'for-you').slice(0, 5)
@@ -136,6 +136,7 @@ export default function Navbar() {
           const mapped = data.data.map(addr => ({
             id: addr._id,
             name: addr.name,
+            phone: addr.phone || '',
             type: addr.type,
             address: addr.address,
             pincode: addr.pincode
@@ -749,14 +750,16 @@ export default function Navbar() {
                 <h4 className="text-[13px] font-bold text-[#0F172A] nunito-heading">Saved addresses</h4>
                 <button 
                   onClick={() => {
+                    const defaultPhone = user?.phone ? user.phone.replace(/\D/g, '').slice(-10) : '';
+                    const defaultName = user?.name && user.name !== 'User' ? user.name : '';
                     if (isAddingNewAddress) {
                       setIsAddingNewAddress(false);
                       setEditingAddressId(null);
-                      setNewAddressForm({ name: '', address: '', pincode: '' });
+                      setNewAddressForm({ name: '', phone: '', address: '', pincode: '' });
                     } else {
                       setIsAddingNewAddress(true);
                       setEditingAddressId(null);
-                      setNewAddressForm({ name: '', address: '', pincode: '' });
+                      setNewAddressForm({ name: defaultName, phone: defaultPhone, address: '', pincode: '' });
                     }
                   }}
                   className="text-[#0B132B] text-xs font-bold flex items-center gap-1 hover:underline cursor-pointer"
@@ -770,7 +773,7 @@ export default function Navbar() {
                 {isAddingNewAddress ? (
                   <div className="bg-gold/10 p-4 rounded-xl border border-gold/20 space-y-3 animate-fade-in">
                     <div>
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Name</label>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">Name <span className="text-red-500">*</span></label>
                       <input 
                         type="text" 
                         value={newAddressForm.name}
@@ -778,6 +781,20 @@ export default function Navbar() {
                         className="w-full border border-[#0B132B]/20 rounded-lg px-3 py-2 text-sm focus:border-[#0B132B] focus:outline-none bg-surface font-medium" 
                         placeholder="e.g. John Doe"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">Phone Number <span className="text-red-500">*</span></label>
+                      <div className="flex items-center border border-[#0B132B]/20 rounded-lg px-3 py-2 bg-surface focus-within:border-[#0B132B]">
+                        <span className="text-sm font-bold text-slate-400 mr-2 select-none">+91</span>
+                        <input 
+                          type="tel" 
+                          value={newAddressForm.phone || ''}
+                          onChange={(e) => setNewAddressForm({...newAddressForm, phone: e.target.value.replace(/\D/g, '').slice(0, 10)})}
+                          className="w-full text-sm focus:outline-none bg-transparent font-medium text-slate-800" 
+                          placeholder="10-digit mobile number"
+                          maxLength={10}
+                        />
+                      </div>
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-600 mb-1">Pin Code <span className="text-red-500">*</span></label>
@@ -791,7 +808,7 @@ export default function Navbar() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Full Address</label>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">Full Address <span className="text-red-500">*</span></label>
                       <textarea 
                         value={newAddressForm.address}
                         onChange={(e) => setNewAddressForm({...newAddressForm, address: e.target.value})}
@@ -801,8 +818,13 @@ export default function Navbar() {
                     </div>
                     <button 
                       onClick={async () => {
-                        if (!newAddressForm.name || !newAddressForm.address || !newAddressForm.pincode) {
-                          toast.info("Please fill in all mandatory fields, including the Pin Code.");
+                        const cleanPhone = (newAddressForm.phone || user?.phone || '').replace(/\D/g, '').slice(-10);
+                        if (!newAddressForm.name?.trim() || !newAddressForm.address?.trim() || !newAddressForm.pincode?.trim()) {
+                          toast.info("Please fill in Name, Pin Code, and Address.");
+                          return;
+                        }
+                        if (!cleanPhone || cleanPhone.length !== 10) {
+                          toast.info("Please provide a valid 10-digit phone number.");
                           return;
                         }
                         if (!user) {
@@ -823,10 +845,11 @@ export default function Navbar() {
                               'Authorization': `Bearer ${token}`
                             },
                             body: JSON.stringify({
-                              name: newAddressForm.name,
+                              name: newAddressForm.name.trim(),
+                              phone: cleanPhone,
                               type: 'Home',
-                              address: newAddressForm.address,
-                              pincode: newAddressForm.pincode
+                              address: newAddressForm.address.trim(),
+                              pincode: newAddressForm.pincode.trim()
                             })
                           });
                           const data = await res.json();
@@ -841,6 +864,7 @@ export default function Navbar() {
                               setSavedAddresses(updatedData.data.map(addr => ({
                                 id: addr._id,
                                 name: addr.name,
+                                phone: addr.phone || '',
                                 type: addr.type,
                                 address: addr.address,
                                 pincode: addr.pincode
@@ -848,7 +872,7 @@ export default function Navbar() {
                             }
                             setIsAddingNewAddress(false);
                             setEditingAddressId(null);
-                            setNewAddressForm({ name: '', address: '', pincode: '' });
+                            setNewAddressForm({ name: '', phone: '', address: '', pincode: '' });
                           } else {
                             toast.error(data.message || "Failed to save address");
                           }
@@ -857,7 +881,7 @@ export default function Navbar() {
                           toast.error("Failed to save address.");
                         }
                       }}
-                      className="w-full bg-[#0B132B] text-[#0B132B] text-sm font-bold py-2.5 rounded-lg hover:bg-gold transition-colors cursor-pointer"
+                      className="w-full bg-[#0B132B] hover:bg-[#152248] text-white text-sm font-bold py-2.5 rounded-lg shadow-md transition-colors cursor-pointer text-center"
                     >
                       {editingAddressId ? "Update Address" : "Save Address"}
                     </button>
@@ -880,7 +904,7 @@ export default function Navbar() {
                               setSavedAddresses(prev => prev.filter(a => a.id !== editingAddressId));
                               setIsAddingNewAddress(false);
                               setEditingAddressId(null);
-                              setNewAddressForm({ name: '', address: '', pincode: '' });
+                              setNewAddressForm({ name: '', phone: '', address: '', pincode: '' });
                             } else {
                               toast.error(data.message || "Failed to delete address");
                             }
@@ -889,7 +913,7 @@ export default function Navbar() {
                             toast.error("Failed to delete address");
                           }
                         }}
-                        className="w-full bg-red-500 text-[#0B132B] text-sm font-bold py-2.5 rounded-lg hover:bg-red-600 transition-colors mt-2 cursor-pointer"
+                        className="w-full bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2.5 rounded-lg shadow-md transition-colors mt-2 cursor-pointer text-center"
                       >
                         Delete Address
                       </button>
@@ -914,6 +938,7 @@ export default function Navbar() {
                             )}
                           </div>
                           <p className="text-[11px] text-slate-500 leading-snug pr-4 font-medium">{addr.address}</p>
+                          {addr.phone && <p className="text-[10px] text-slate-400 font-medium mt-0.5">📞 +91 {addr.phone}</p>}
                         </div>
                         <button 
                           onClick={(e) => {
@@ -921,6 +946,7 @@ export default function Navbar() {
                             setEditingAddressId(addr.id);
                             setNewAddressForm({
                               name: addr.name,
+                              phone: addr.phone || (user?.phone ? user.phone.replace(/\D/g, '').slice(-10) : ''),
                               address: addr.address,
                               pincode: addr.pincode || ''
                             });

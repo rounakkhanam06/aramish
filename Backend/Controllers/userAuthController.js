@@ -135,7 +135,7 @@ const sendOtp = async (req, res) => {
 // @access  Public
 const verifyOtp = async (req, res) => {
   try {
-    const { phone, otp, referralCode } = req.body;
+    const { phone, otp, referralCode, name } = req.body;
 
     if (!phone || !otp) {
       return res.status(400).json({ success: false, message: 'Phone and OTP required' });
@@ -192,6 +192,9 @@ const verifyOtp = async (req, res) => {
     user.otp = null;
     user.otpExpiry = null;
     user.lastLogin = new Date();
+    if (name && typeof name === 'string' && name.trim()) {
+      user.name = name.trim();
+    }
 
     // Link the referral relationship (one-time, at signup/first-login).
     if (referrer) {

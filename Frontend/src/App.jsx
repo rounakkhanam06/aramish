@@ -54,7 +54,6 @@ const PrivacyPage        = lazyRetry(() => import('./pages/PrivacyPage'));
 const TermsPage          = lazyRetry(() => import('./pages/TermsPage'));
 const ReturnExchangePage = lazyRetry(() => import('./pages/ReturnExchangePage'));
 const AccountInfoPage    = lazyRetry(() => import('./pages/AccountInfoPage'));
-const SecurityPage       = lazyRetry(() => import('./pages/SecurityPage'));
 const SettingsPage       = lazyRetry(() => import('./pages/SettingsPage'));
 const WalletPage         = lazyRetry(() => import('./pages/WalletPage'));
 const CouponsPage        = lazyRetry(() => import('./pages/CouponsPage'));
@@ -147,7 +146,6 @@ function AppContent() {
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/return-exchange-policy" element={<ReturnExchangePage />} />
           <Route path="/account" element={<AccountInfoPage />} />
-          <Route path="/security" element={<SecurityPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/wallet" element={<WalletPage />} />
           <Route path="/coupons" element={<CouponsPage />} />

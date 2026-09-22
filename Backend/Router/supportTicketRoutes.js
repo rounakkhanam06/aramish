@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { createTicket, getUserTickets, getAllTickets, updateTicket } = require('../Controllers/supportTicketController');
+const { createTicket, getUserTickets, getAllTickets, updateTicket, replyToTicket } = require('../Controllers/supportTicketController');
 const { protectUser } = require('../Middlewares/userAuthMiddleware');
 const { protectAdmin } = require('../Middlewares/authMiddleware');
 
@@ -11,5 +11,6 @@ router.get('/my-tickets', protectUser, getUserTickets);
 // Admin Routes
 router.get('/admin', protectAdmin, getAllTickets);
 router.put('/admin/:id', protectAdmin, updateTicket);
+router.post('/admin/:id/reply', protectAdmin, replyToTicket);
 
 module.exports = router;

@@ -29,17 +29,26 @@ export default function SimilarProductsPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-surface flex flex-col pb-20 animate-fade-in">
-      {/* Header */}
-      <div className="bg-[#FFE4D6] px-4 py-4 flex items-center gap-3 shadow-sm z-50 sticky top-0">
-        <button onClick={() => navigate(-1)} className="p-1.5 -ml-1 hover:bg-gold/10 rounded-full transition-colors">
-          <ArrowLeft className="w-5 h-5 text-[#02006c]" />
-        </button>
-        <h1 className="text-[#02006c] text-[18px] font-black tracking-tight">Similar Products</h1>
-      </div>
+    <div className="min-h-screen bg-surface flex flex-col pb-20">
+      {/* Fixed Header */}
+      <header className="fixed top-0 md:top-[125px] left-0 right-0 z-50 bg-[#FFE4D6] shadow-sm border-b border-orange-200/60">
+        <div className="max-w-7xl mx-auto px-4 py-3.5 flex items-center gap-3">
+          <button 
+            onClick={() => navigate(-1)} 
+            className="p-1.5 -ml-1 hover:bg-black/5 rounded-full transition-colors cursor-pointer active:scale-95 text-[#02006c]"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="text-[#02006c] text-[18px] font-black tracking-tight">Similar Products</h1>
+        </div>
+      </header>
+
+      {/* Header Spacer */}
+      <div className="h-[53px] w-full flex-shrink-0" />
 
       {/* Grid */}
-      <div className="grid grid-cols-2 gap-3 p-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4 p-3 md:p-6 max-w-7xl mx-auto w-full animate-fade-in">
         {loading ? (
           Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="bg-surface flex flex-col items-center pb-3 animate-pulse shadow-sm rounded-lg overflow-hidden">

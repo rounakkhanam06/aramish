@@ -18,7 +18,16 @@ const getAddresses = async (req, res) => {
 // @access  Private
 const createAddress = async (req, res) => {
   try {
-    const { name, phone, type, address, pincode, isDefault } = req.body;
+    let { name, phone, type, address, pincode, isDefault } = req.body;
+
+    // Fallback to logged-in user phone if not explicitly provided
+    if (!phone && req.user && req.user.phone) {
+      phone = req.user.phone;
+    }
+    if (phone) {
+      phone = phone.toString().replace(/\D/g, '').slice(-10);
+    }
+
     if (!name || !phone || !address) {
       return res.status(400).json({ success: false, message: 'Please provide name, phone, and address' });
     }
@@ -67,9 +76,11 @@ const updateAddress = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Address not found or unauthorized' });
     }
 
-    if (phone) {
+    let cleanPhone = phone;
+    if (cleanPhone) {
+      cleanPhone = cleanPhone.toString().replace(/\D/g, '').slice(-10);
       const phoneRegex = /^[0-9]{10}$/;
-      if (!phoneRegex.test(phone)) {
+      if (!phoneRegex.test(cleanPhone)) {
         return res.status(400).json({ success: false, message: 'Phone number must be exactly 10 digits' });
       }
     }
@@ -79,7 +90,7 @@ const updateAddress = async (req, res) => {
     }
 
     existingAddress.name = name || existingAddress.name;
-    existingAddress.phone = phone || existingAddress.phone;
+    existingAddress.phone = cleanPhone || existingAddress.phone;
     existingAddress.type = type || existingAddress.type;
     existingAddress.address = address || existingAddress.address;
     if (pincode !== undefined) existingAddress.pincode = pincode;

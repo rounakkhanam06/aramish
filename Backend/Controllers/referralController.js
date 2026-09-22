@@ -82,11 +82,29 @@ const getMyReferral = async (req, res) => {
       maxUsagePercentage
     };
 
+    let referredByInfo = null;
+    if (user.referredBy) {
+      const referrerUser = await User.findById(user.referredBy, 'name phone referralCode');
+      const referralRecord = await Referral.findOne({ referee: user._id, referrer: user.referredBy });
+      if (referrerUser) {
+        referredByInfo = {
+          id: referrerUser._id,
+          name: referrerUser.name || 'Friend',
+          phone: referrerUser.phone ? `${referrerUser.phone.slice(0, 2)}******${referrerUser.phone.slice(-2)}` : '',
+          code: referralRecord?.referralCode || referrerUser.referralCode || '',
+          status: referralRecord?.status || 'rewarded',
+          coinsAwarded: referralRecord?.refereeCoinsAwarded || 0,
+          createdAt: referralRecord?.createdAt || null
+        };
+      }
+    }
+
     res.status(200).json({
       success: true,
       referralCode: user.referralCode,
       referralCoins: user.referralCoins || 0,
       hasAppliedCode: !!user.referredBy,
+      referredBy: referredByInfo,
       stats,
       referrals: referrals.map(r => ({
         id: r._id,
@@ -240,9 +258,11 @@ const applyReferralCode = async (req, res) => {
 
     res.status(200).json({
       success: true,
+      referrerName: referrer.name || 'Friend',
+      referrerCode: referrer.referralCode,
       message: rewardTiming === 'signup'
-        ? 'Referral code applied successfully! Coins have been credited.'
-        : 'Referral code applied successfully! Coins will be credited after your first order.'
+        ? `Referral code applied! You were referred by ${referrer.name || 'a friend'}. Coins credited!`
+        : `Referral code applied! You were referred by ${referrer.name || 'a friend'}. Coins will be credited after your first order.`
     });
   } catch (error) {
     console.error('Apply Referral Error:', error);
