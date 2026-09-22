@@ -45,7 +45,7 @@ const sendOtp = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Your account has been deactivated by admin. Please contact support.' });
     }
 
-    const isNewUser = !user;
+    const isNewUser = !user || !user.isVerified;
 
     if (!user) {
       user = new User({ phone });
@@ -174,16 +174,18 @@ const verifyOtp = async (req, res) => {
     const isNewUser = !user.isVerified;
 
     // Referral code is optional, but if provided it must pass validation (exists, active
-    // referrer, not self) before we create the account/session. Existing users (login,
-    // not registration) never apply a referral code, even if one is passed in.
+    // referrer, not self) before we link the referral.
     let referrer = null;
-    if (isNewUser && referralCode && referralCode.trim()) {
+    if ((isNewUser || !user.referredBy) && referralCode && referralCode.trim()) {
       const { validateReferralCode } = require('./referralController');
       const result = await validateReferralCode(referralCode, user._id);
       if (result.error) {
-        return res.status(400).json({ success: false, message: result.error });
+        if (isNewUser) {
+          return res.status(400).json({ success: false, message: result.error });
+        }
+      } else {
+        referrer = result.referrer;
       }
-      referrer = result.referrer;
     }
 
     user.isVerified = true;
@@ -191,17 +193,14 @@ const verifyOtp = async (req, res) => {
     user.otpExpiry = null;
     user.lastLogin = new Date();
 
-    // Link the referral relationship (one-time, at signup). Whether the reward is credited
-    // now or deferred to the referee's first delivered order is decided centrally by
-    // registerReferral() based on the admin's configured reward timing — the same helper
-    // the standalone "apply code" endpoint uses, so behavior and duplicate-reward
-    // prevention are identical regardless of how the code was submitted.
+    // Link the referral relationship (one-time, at signup/first-login).
     if (referrer) {
       try {
         const { registerReferral } = require('./referralController');
         const rewardTiming = await registerReferral(referrer, user);
         if (rewardTiming) {
           user.referredBy = referrer._id;
+          console.log(`🔗 Referral successfully linked: ${referrer.phone} (${referrer.referralCode}) -> ${user.phone}`);
         }
       } catch (refErr) {
         console.error('Auto referral link error during registration:', refErr.message);

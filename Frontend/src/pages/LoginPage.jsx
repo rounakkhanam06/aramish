@@ -12,7 +12,28 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { setUser } = useApp();
   const [searchParams] = useSearchParams();
-  const refCode = searchParams.get('ref');
+
+  // Robustly extract referral code from query param, hash param (legacy links), or storage
+  const getInitialRefCode = () => {
+    const fromQuery = searchParams.get('ref');
+    if (fromQuery) {
+      const clean = fromQuery.trim().toUpperCase();
+      sessionStorage.setItem('pendingReferralCode', clean);
+      return clean;
+    }
+    if (typeof window !== 'undefined' && window.location.hash && window.location.hash.includes('ref=')) {
+      const hashPart = window.location.hash.split('?')[1];
+      if (hashPart) {
+        const p = new URLSearchParams(hashPart).get('ref');
+        if (p) {
+          const clean = p.trim().toUpperCase();
+          sessionStorage.setItem('pendingReferralCode', clean);
+          return clean;
+        }
+      }
+    }
+    return sessionStorage.getItem('pendingReferralCode') || '';
+  };
 
   // Phone + OTP states
   const [phoneNumber, setPhoneNumber] = useState(() => {
@@ -21,7 +42,7 @@ export default function LoginPage() {
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
-  const [referralCode, setReferralCode] = useState(refCode || '');
+  const [referralCode, setReferralCode] = useState(getInitialRefCode);
 
   // 6-digit OTP state
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -87,24 +108,63 @@ export default function LoginPage() {
     }
   };
 
+  const handleOtpPaste = (e) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData ? e.clipboardData.getData('text') : '';
+    const digits = pastedData.replace(/\D/g, '').slice(0, 6);
+    if (!digits) return;
+
+    const newOtp = ['', '', '', '', '', ''];
+    for (let i = 0; i < digits.length; i++) {
+      newOtp[i] = digits[i];
+    }
+    setOtp(newOtp);
+    setSignInError('');
+
+    // Focus the box after the last pasted digit or the last box
+    const focusIndex = Math.min(digits.length - 1, 5);
+    if (otpRefs[focusIndex]?.current) {
+      otpRefs[focusIndex].current.focus();
+    }
+  };
+
   const handleOtpChange = (index, value) => {
-    if (isNaN(value)) return;
+    // If multiple digits were pasted/autofilled directly into onChange
+    const cleanDigits = value.replace(/\D/g, '');
+    if (cleanDigits.length > 1) {
+      const newOtp = [...otp];
+      const digits = cleanDigits.slice(0, 6);
+      for (let i = 0; i < digits.length; i++) {
+        if (index + i < 6) {
+          newOtp[index + i] = digits[i];
+        }
+      }
+      setOtp(newOtp);
+      setSignInError('');
+      const nextFocus = Math.min(index + digits.length - 1, 5);
+      if (otpRefs[nextFocus]?.current) {
+        otpRefs[nextFocus].current.focus();
+      }
+      return;
+    }
+
+    if (value && isNaN(value)) return;
 
     const newOtp = [...otp];
-    newOtp[index] = value;
+    newOtp[index] = cleanDigits;
     setOtp(newOtp);
     setSignInError('');
 
     // Move to next input if value is entered
-    if (value !== '' && index < 5) {
-      otpRefs[index + 1].current.focus();
+    if (cleanDigits !== '' && index < 5) {
+      otpRefs[index + 1]?.current?.focus();
     }
   };
 
   const handleOtpKeyDown = (index, e) => {
     // Move to previous input on backspace if current is empty
     if (e.key === 'Backspace' && otp[index] === '' && index > 0) {
-      otpRefs[index - 1].current.focus();
+      otpRefs[index - 1]?.current?.focus();
     }
   };
 
@@ -143,6 +203,7 @@ export default function LoginPage() {
       localStorage.setItem('userInfo', JSON.stringify(data.user));
       localStorage.setItem('isLoggedIn', 'true');
       sessionStorage.removeItem('tempLoginPhone');
+      sessionStorage.removeItem('pendingReferralCode');
 
       // Track analytics signup/login
       if (data.isNewUser) {
@@ -339,7 +400,7 @@ export default function LoginPage() {
                 </label>
 
                 {/* 6 Box OTP Input */}
-                <div className="flex justify-center gap-2">
+                <div className="flex justify-center gap-2" onPaste={handleOtpPaste}>
                   {otp.map((digit, index) => (
                     <input
                       key={index}
@@ -347,10 +408,12 @@ export default function LoginPage() {
                       type="text"
                       inputMode="numeric"
                       pattern="[0-9]*"
-                      maxLength={1}
+                      maxLength={6}
                       value={digit}
                       onChange={(e) => handleOtpChange(index, e.target.value)}
                       onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                      onPaste={handleOtpPaste}
+                      onFocus={(e) => e.target.select()}
                       className="w-10 h-13 rounded-xl border-2 border-white/10 bg-surface text-center text-xl font-black text-[#02006c] focus:border-[#0B132B] focus:ring-2 focus:ring-orange-100 outline-none transition-all shadow-sm"
                       style={{ height: '52px' }}
                     />
@@ -358,16 +421,28 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              {isNewUser && (
+              {(isNewUser || !!referralCode) && (
                 <div className="space-y-1 text-left pt-2">
-                  <label className="text-[10px] font-syne font-black text-slate-700 uppercase tracking-widest">
-                    Referral Code <span className="text-slate-400 normal-case font-bold">(optional)</span>
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-syne font-black text-slate-700 uppercase tracking-widest">
+                      Referral Code <span className="text-slate-400 normal-case font-bold">(optional)</span>
+                    </label>
+                    {referralCode && (
+                      <span className="text-[10px] font-bold text-emerald-600">
+                        Applied ✓
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
                     placeholder="Enter referral code"
                     value={referralCode}
-                    onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                    onChange={(e) => {
+                      const code = e.target.value.toUpperCase();
+                      setReferralCode(code);
+                      if (code) sessionStorage.setItem('pendingReferralCode', code);
+                      else sessionStorage.removeItem('pendingReferralCode');
+                    }}
                     maxLength={12}
                     className="w-full px-3 py-2.5 border-b-2 border-white/10 focus:border-[#0B132B] outline-none bg-transparent text-[13px] font-bold text-[#02006c] tracking-widest uppercase transition-colors"
                   />
@@ -401,13 +476,6 @@ export default function LoginPage() {
                 >
                   Resend Verification Code?
                 </button>
-              </div>
-
-              <div className="text-center pt-2 text-[10px] text-slate-400 font-bold leading-relaxed max-w-xs mx-auto">
-                By continuing, you agree to our{' '}
-                <Link to="/privacy" className="text-[#1A2542] hover:underline">Privacy Policy</Link>
-                {' '}and{' '}
-                <Link to="/terms" className="text-[#1A2542] hover:underline">Terms & Conditions</Link>.
               </div>
             </form>
           </div>

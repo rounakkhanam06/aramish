@@ -61,7 +61,7 @@ export default function ReferEarnPage() {
 
   const referralCode = referralData?.referralCode || '...';
   const shareText = `Hey! Join Aramish using my referral code ${referralCode}! 🎉`;
-  const shareUrl = `${window.location.origin}/#/login?ref=${referralCode}`;
+  const shareUrl = `${window.location.origin}/login?ref=${referralCode}`;
   const fullShareText = `${shareText}\n\n${shareUrl}`;
 
   const handleCopy = () => {

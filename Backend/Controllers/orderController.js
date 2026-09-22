@@ -776,7 +776,22 @@ exports.updateOrderStatus = async (req, res) => {
 // @desc    Get single order by ID
 exports.getUserOrderById = async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id);
+    const { id } = req.params;
+    let order = null;
+
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      order = await Order.findById(id);
+    }
+
+    // Fallback: match by short ID suffix from user's orders
+    if (!order && id) {
+      const userOrders = await Order.find({ userId: req.user._id });
+      order = userOrders.find(o => 
+        o._id.toString().toUpperCase().endsWith(id.toUpperCase()) ||
+        (o.orderId && o.orderId.toUpperCase().includes(id.toUpperCase()))
+      );
+    }
+
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }

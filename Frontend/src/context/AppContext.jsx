@@ -230,10 +230,7 @@ export const AppProvider = ({ children }) => {
     try {
       const token = localStorage.getItem('userToken');
       if (!token) {
-        setNotifications([
-          { _id: '1', title: 'Welcome to Aramish!', body: 'Thank you for choosing Aramish. Start shopping now!', createdAt: new Date(), read: false },
-          { _id: '2', title: 'Referral Discount Available', body: 'Refer a friend and get 10% off their first order.', createdAt: new Date(), read: true }
-        ]);
+        setNotifications([]);
         setLoadingNotifications(false);
         return;
       }

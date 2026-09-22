@@ -211,7 +211,7 @@ export default function Layout({ children }) {
 
   return (
     <div className="min-h-screen md:h-auto bg-surface text-slate-800 antialiased font-sans overflow-x-hidden">
-      <div className={`w-full ${isFixedLayoutPage ? 'h-[100dvh] md:h-[100dvh]' : 'h-[100dvh] md:h-auto md:min-h-screen'} bg-surface md:bg-transparent flex flex-col relative ${(hideMobileNav || isKeyboardOpen) ? 'pb-0' : 'pb-16 md:pb-0'}`}>
+      <div className={`w-full ${isFixedLayoutPage ? 'h-[100dvh] md:h-[100dvh]' : 'h-[100dvh] md:h-auto md:min-h-screen'} bg-surface md:bg-transparent flex flex-col relative ${(hideMobileNav || isKeyboardOpen) ? 'pb-0' : 'pb-24 md:pb-0'}`}>
         <main 
           key={location.pathname}
           id="main-scroll-container" 
@@ -241,7 +241,7 @@ export default function Layout({ children }) {
 
         {/* Global Toast Message */}
         {globalToast && (
-          <div className="absolute bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[11px] font-bold px-4 py-2 rounded-full shadow-lg z-[100] animate-fade-in whitespace-nowrap">
+          <div className="absolute bottom-24 md:bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[11px] font-bold px-4 py-2 rounded-full shadow-lg z-[100] animate-fade-in whitespace-nowrap">
             {globalToast}
           </div>
         )}

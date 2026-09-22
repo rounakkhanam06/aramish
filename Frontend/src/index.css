@@ -19,6 +19,19 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Safe area padding utilities for mobile & Android edge-to-edge / 3-button navigation */
+.pb-safe {
+  padding-bottom: max(calc(env(safe-area-inset-bottom, 0px) + 12px), 24px) !important;
+}
+
+.pb-safe-nav {
+  padding-bottom: max(calc(env(safe-area-inset-bottom, 0px) + 8px), 28px) !important;
+}
+
+.pt-safe {
+  padding-top: max(env(safe-area-inset-top, 0px), 0px);
+}
+
 .font-logo {
   font-family: 'Great Vibes', cursive !important;
   font-weight: 400;

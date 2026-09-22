@@ -32,8 +32,8 @@ export default function MobileNav() {
   ];
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-50 w-full bg-surface/90 backdrop-blur-2xl shadow-[0_-8px_30px_rgba(0,0,0,0.08)] border-t border-white/60 rounded-t-[2rem] md:hidden">
-      <nav className="flex items-center justify-between px-2 py-2.5 w-full mx-auto pb-safe">
+    <div className="fixed bottom-0 left-0 right-0 z-50 w-full bg-surface/95 backdrop-blur-2xl shadow-[0_-8px_30px_rgba(0,0,0,0.08)] border-t border-white/60 rounded-t-[2rem] md:hidden">
+      <nav className="flex items-center justify-between px-3 pt-2 pb-safe-nav w-full mx-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -42,7 +42,7 @@ export default function MobileNav() {
             <button
               key={item.id}
               onClick={() => navigate(item.path)}
-              className="relative flex flex-col items-center justify-center flex-1 max-w-[64px] h-[54px] rounded-2xl outline-none focus:outline-none [-webkit-tap-highlight-color:transparent] active:scale-95 transition-transform duration-200"
+              className="relative flex flex-col items-center justify-center flex-1 max-w-[64px] h-[50px] rounded-2xl outline-none focus:outline-none [-webkit-tap-highlight-color:transparent] active:scale-95 transition-transform duration-200"
             >
               {isActive && (
                 <motion.div

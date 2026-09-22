@@ -64,7 +64,8 @@ export default function Navbar() {
     notifications,
     loadingNotifications,
     fetchNotifications,
-    setNotifications
+    setNotifications,
+    orders
   } = useApp();
 
   const [tempLocation, setTempLocation] = useState(location);
@@ -93,60 +94,43 @@ export default function Navbar() {
           const activeChips = data.chips.filter(c => c.active && c.id !== 'for-you');
           const products = data.products || [];
           
-          // Calculate product count for each category chip
           const chipsWithCounts = activeChips.map(c => {
             const catId = (c._id || '').toLowerCase();
             const catSlug = (c.id || '').toLowerCase();
             const catName = (c.categoryName || c.name || '').toLowerCase();
             
-            const productCount = products.filter(p => {
-              const prodCat = (p.category || '').toLowerCase();
-              if (prodCat === catId || prodCat === catSlug) return true;
-              
-              const pCatObj = activeChips.find(ch => (ch._id || '').toLowerCase() === prodCat || (ch.id || '').toLowerCase() === prodCat);
-              const pCatName = pCatObj ? (pCatObj.categoryName || pCatObj.name || '').toLowerCase() : '';
-              return pCatName === catName && catName !== '';
+            const count = products.filter(p => {
+              const pCat = (p.category || '').toLowerCase();
+              return pCat === catId || pCat === catSlug || pCat === catName;
             }).length;
-            
+
             return {
               ...c,
-              productCount
+              name: c.name || c.categoryName,
+              count: count > 0 ? count : (c.count || 0)
             };
           });
-          
-          // Sort by product count descending and take the top 5
-          const sortedTop5 = chipsWithCounts
-            .sort((a, b) => b.productCount - a.productCount)
-            .slice(0, 5);
-            
-          setCategories(sortedTop5);
+
+          setCategories(chipsWithCounts.slice(0, 5));
         }
       } catch (err) {
-        console.error('Error fetching categories in Navbar:', err);
+        console.error("Error fetching homepage chips:", err);
       }
     };
     fetchCategories();
   }, []);
 
+  // Fetch addresses on mount/when modal opens
   useEffect(() => {
     const fetchAddresses = async () => {
-      if (!user) {
-        setSavedAddresses([]);
-        return;
-      }
+      if (!user) return;
       try {
         const token = localStorage.getItem('userToken');
-        if (!token) return;
         const res = await fetch(`${API_BASE}/addresses`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         });
-        if (res.status === 401) {
-          logout();
-          toast.error("Session expired. Please log in again.");
-          return;
-        }
         const data = await res.json();
         if (data.success) {
           const mapped = data.data.map(addr => ({
@@ -179,6 +163,27 @@ export default function Navbar() {
       document.body.style.overflow = '';
     };
   }, [isLocationModalOpen]);
+
+  // Close notification modal with Escape key and lock body scroll
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isNotificationModalOpen) {
+        setIsNotificationModalOpen(false);
+      }
+    };
+    if (isNotificationModalOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'hidden';
+    } else if (!isLocationModalOpen) {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (!isLocationModalOpen) {
+        document.body.style.overflow = '';
+      }
+    };
+  }, [isNotificationModalOpen, isLocationModalOpen]);
 
   const filteredAddresses = savedAddresses.filter(addr => 
     addr.name.toLowerCase().includes(addressSearchQuery.toLowerCase()) || 
@@ -274,7 +279,7 @@ export default function Navbar() {
   };
 
   const markSingleNotificationAsRead = async (id) => {
-    if (!user) return;
+    if (!user || !id) return;
     try {
       const token = localStorage.getItem('userToken');
       await fetch(`${API_BASE}/notifications/${id}/read`, {
@@ -286,6 +291,66 @@ export default function Navbar() {
     } catch (err) {
       console.error('Error marking single notification as read:', err);
     }
+  };
+
+  const handleNotificationClick = (notif) => {
+    if (!notif) return;
+    if (!notif.read && notif._id) {
+      markSingleNotificationAsRead(notif._id);
+    }
+    setIsNotificationModalOpen(false);
+
+    // If explicit direct url/link is attached
+    const directPath = notif.url || notif.link || notif.path || notif.targetUrl || notif.data?.url;
+    if (directPath) {
+      navigate(directPath);
+      return;
+    }
+
+    const title = (notif.title || '').toLowerCase();
+    const body = (notif.body || '').toLowerCase();
+
+    // Check for order-related notifications (e.g. #4127B9 or order status)
+    if (title.includes('order') || body.includes('order') || body.includes('#')) {
+      const match = (notif.body || '').match(/#([A-Za-z0-9]+)/);
+      if (match && match[1]) {
+        const shortId = match[1].toUpperCase();
+        const matched = orders?.find(o => 
+          (o._id || o.id || '').toString().toUpperCase().includes(shortId) ||
+          (o.orderId && o.orderId.toString().toUpperCase().includes(shortId))
+        );
+        if (matched) {
+          navigate(`/order-details/${matched._id || matched.id}`);
+          return;
+        }
+        // Navigate with shortId (backend handles suffix lookup)
+        navigate(`/order-details/${shortId}`);
+        return;
+      }
+      navigate('/orders');
+      return;
+    }
+
+    // Referral related notifications
+    if (title.includes('referral') || body.includes('refer') || title.includes('invite')) {
+      navigate('/refer');
+      return;
+    }
+
+    // Wallet / Coins related notifications
+    if (title.includes('wallet') || body.includes('wallet') || title.includes('coin') || body.includes('coin')) {
+      navigate('/wallet');
+      return;
+    }
+
+    // Coupons / Discount related notifications
+    if (title.includes('coupon') || body.includes('coupon') || title.includes('voucher') || body.includes('discount')) {
+      navigate('/coupons');
+      return;
+    }
+
+    // Fallback: orders page
+    navigate('/orders');
   };
 
   useEffect(() => {
@@ -323,11 +388,13 @@ export default function Navbar() {
                     setIsNotificationModalOpen(true);
                   }
                 }}
-                className="relative p-1 hover:bg-slate-100 rounded-full transition-colors"
+                className="relative p-1 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
+                title="Notifications"
+                aria-label="Notifications"
               >
                 <Bell className="w-5.5 h-5.5 stroke-[1.8]" />
-                {notifications.some(n => !n.read) && (
-                  <span className="absolute top-0.5 right-0.5 w-2.5 h-2.5 bg-surface border-2 border-[#0B132B] rounded-full"></span>
+                {user && notifications && notifications.some(n => !n.read) && (
+                  <span className="absolute top-0.5 right-0.5 w-2.5 h-2.5 bg-red-500 ring-2 ring-white rounded-full"></span>
                 )}
               </button>
               <button 
@@ -461,12 +528,13 @@ export default function Navbar() {
                 if (!user) navigate('/login');
                 else setIsNotificationModalOpen(true);
               }}
-              className="p-2 hover:bg-surface/10 rounded-full transition-colors flex items-center justify-center relative cursor-pointer"
+              className="p-2 hover:bg-slate-100 rounded-full transition-colors flex items-center justify-center relative cursor-pointer"
               title="Notifications"
+              aria-label="Notifications"
             >
               <Bell className="w-5 h-5 stroke-[1.8]" />
-              {notifications.some(n => !n.read) && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-surface border border-[#0B132B] rounded-full"></span>
+              {user && notifications && notifications.some(n => !n.read) && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 ring-2 ring-white rounded-full"></span>
               )}
             </button>
 
@@ -879,15 +947,21 @@ export default function Navbar() {
 
       {/* Notification Modal - Responsive wrapper centering on desktop */}
       {isNotificationModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60 backdrop-blur-xs transition-opacity duration-300 p-0 md:p-4">
-          <div className="w-full max-w-md md:rounded-2xl bg-surface rounded-t-3xl p-6 shadow-2xl animate-slide-up max-h-[85vh] flex flex-col animate-scale-in">
-            <div className="flex items-center justify-between mb-4 border-b border-[#0B132B]/20 pb-3 flex-shrink-0">
+        <div 
+          onClick={() => setIsNotificationModalOpen(false)}
+          className="fixed inset-0 z-[100] flex items-end md:items-center justify-center bg-black/60 backdrop-blur-xs transition-opacity duration-300 p-0 md:p-4"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md md:rounded-2xl bg-white rounded-t-3xl p-5 md:p-6 shadow-2xl animate-slide-up max-h-[85vh] flex flex-col animate-scale-in border border-slate-200"
+          >
+            <div className="flex items-center justify-between mb-4 border-b border-slate-200 pb-3 flex-shrink-0">
               <div className="flex items-baseline gap-3">
                 <h3 className="text-base font-bold text-[#02006c] nunito-heading">Notifications</h3>
-                {notifications.some(n => !n.read) && (
+                {notifications && notifications.some(n => !n.read) && (
                   <button 
                     onClick={markNotificationsAsRead}
-                    className="text-[10px] font-black text-[#0B132B] uppercase tracking-wider hover:underline cursor-pointer"
+                    className="text-[10px] font-black text-slate-700 hover:text-[#0B132B] uppercase tracking-wider hover:underline cursor-pointer"
                   >
                     Mark all as read
                   </button>
@@ -895,36 +969,53 @@ export default function Navbar() {
               </div>
               <button
                 onClick={() => setIsNotificationModalOpen(false)}
-                className="p-1 rounded-full hover:bg-surface transition-colors cursor-pointer"
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
+                title="Close"
+                aria-label="Close"
               >
-                <X className="w-5 h-5 text-slate-500" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3 overflow-y-auto pb-24 md:pb-4 scrollbar-none">
+            <div className="space-y-3 overflow-y-auto pb-24 md:pb-2 scrollbar-none">
               {loadingNotifications ? (
                 <div className="text-center py-8 text-slate-500 text-xs font-medium">
                   Loading notifications...
                 </div>
-              ) : notifications.length > 0 ? (
+              ) : notifications && notifications.length > 0 ? (
                 notifications.map((notif) => (
                   <div 
-                    key={notif._id} 
-                    onClick={() => !notif.read && markSingleNotificationAsRead(notif._id)}
-                    className={`p-3 rounded-xl border transition-all cursor-pointer ${notif.read ? 'bg-surface border-[#0B132B]/20 hover:bg-surface' : 'bg-gold/10 border-gold/20 hover:bg-gold/10'}`}
+                    key={notif._id || notif.id || Math.random()} 
+                    onClick={() => handleNotificationClick(notif)}
+                    className={`group p-3.5 rounded-xl border transition-all cursor-pointer select-none ${
+                      notif.read 
+                        ? 'bg-slate-50/80 border-slate-200 hover:bg-slate-100/90 hover:border-slate-300' 
+                        : 'bg-blue-50/60 border-blue-200/90 hover:bg-blue-50 hover:border-blue-300 shadow-xs'
+                    }`}
                   >
-                    <div className="flex items-start justify-between">
-                      <h4 className={`text-sm font-bold nunito-heading ${notif.read ? 'text-slate-700' : 'text-[#02006c]'}`}>{notif.title}</h4>
-                      {!notif.read && <span className="w-2 h-2 rounded-full bg-[#0B132B] flex-shrink-0 mt-1.5"></span>}
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className={`text-sm font-bold nunito-heading leading-tight ${notif.read ? 'text-slate-700' : 'text-[#02006c]'}`}>
+                        {notif.title}
+                      </h4>
+                      {!notif.read && (
+                        <span className="w-2 h-2 rounded-full bg-blue-600 flex-shrink-0 mt-1"></span>
+                      )}
                     </div>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">{notif.body}</p>
-                    <span className="text-[10px] text-slate-500 mt-2 block font-medium">
-                      {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' - ' + new Date(notif.createdAt).toLocaleDateString()}
-                    </span>
+                    <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
+                      {notif.body}
+                    </p>
+                    <div className="flex items-center justify-between mt-2.5 pt-1.5 border-t border-slate-100">
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        {notif.createdAt ? `${new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(notif.createdAt).toLocaleDateString()}` : ''}
+                      </span>
+                      <span className="text-[10px] font-bold text-blue-600 group-hover:underline flex items-center gap-1">
+                        View details &rarr;
+                      </span>
+                    </div>
                   </div>
                 ))
               ) : (
-                <div className="text-center py-8 text-slate-500 text-sm font-medium">
+                <div className="text-center py-10 text-slate-500 text-sm font-medium">
                   No notifications yet!
                 </div>
               )}
