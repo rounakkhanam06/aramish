@@ -160,14 +160,16 @@ const Auth = () => {
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-slate-50 flex justify-between items-center text-[11px] font-bold uppercase tracking-widest text-slate-500">
-            <button className="hover:text-blue-500 transition-colors">Recover Access</button>
-            <span>v2.4.0-Stable</span>
-          </div>
         </div>
 
         <p className="text-center text-slate-600 text-xs font-bold mt-8 uppercase tracking-widest">
-          Not an admin? <button onClick={() => navigate('/')} className="text-blue-600 hover:underline">Back to Storefront</button>
+          Not an admin?{' '}
+          <a 
+            href="https://aramishshoes.com/" 
+            className="text-blue-600 hover:underline cursor-pointer transition-colors"
+          >
+            Back to Storefront
+          </a>
         </p>
       </div>
 

@@ -875,10 +875,10 @@ export default function Home() {
                             toggleWishlist(deal);
                           }}
                           className={`absolute top-3.5 right-3.5 w-7 h-7 bg-surface rounded-full flex items-center justify-center shadow-md z-10 transition-transform hover:scale-105 active:scale-95 cursor-pointer ${
-                            isInWishlist(deal.id) ? 'text-[#0B132B]' : 'text-slate-300 hover:text-[#0B132B]'
+                            isInWishlist(deal) ? 'text-red-500' : 'text-slate-300 hover:text-red-500'
                           }`}
                         >
-                          <Heart className={`w-3.5 h-3.5 ${isInWishlist(deal.id) ? 'fill-[#0B132B] text-[#0B132B]' : ''}`} />
+                          <Heart className={`w-3.5 h-3.5 transition-colors ${isInWishlist(deal) ? 'fill-red-500 text-red-500' : ''}`} />
                         </button>
                         
                         <div>

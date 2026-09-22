@@ -79,7 +79,7 @@ export default function CrazyDealsPage() {
           ))
         ) : deals.length > 0 ? (
           deals.map((deal) => {
-            const isWished = isInWishlist(deal.id);
+            const isWished = isInWishlist(deal);
             return (
                <div 
                 key={deal.id} 
@@ -106,7 +106,7 @@ export default function CrazyDealsPage() {
                     isWished ? 'text-red-500' : 'text-slate-300 hover:text-red-500'
                   }`}
                 >
-                  <Heart className={`w-4 h-4 ${isWished ? 'fill-current' : ''}`} />
+                  <Heart className={`w-4 h-4 transition-colors ${isWished ? 'fill-current' : ''}`} />
                 </button>
                 
                 {/* Image */}

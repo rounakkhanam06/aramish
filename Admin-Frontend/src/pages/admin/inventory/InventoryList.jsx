@@ -20,6 +20,25 @@ const statusConfig = {
   'Out of Stock': { label: 'Out of Stock', color: 'bg-red-50 text-red-500 border-red-100' },
 };
 
+// Same effective-pricing rule used on the product detail page
+// (ProductDetails.jsx) and at checkout (Backend/Controllers/orderController.js):
+// a variant only overrides the product's price when useDefaultPricing is
+// explicitly false and it has its own sellingPrice; otherwise it inherits the
+// product-level price.
+const getEffectivePriceRange = (product) => {
+  const variations = product.variations || [];
+  if (variations.length === 0) {
+    return { min: product.price, max: product.price, varies: false };
+  }
+  const prices = variations.map(v => {
+    const hasCustomPricing = v.useDefaultPricing === false && v.sellingPrice !== undefined;
+    return hasCustomPricing ? v.sellingPrice : product.price;
+  });
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  return { min, max, varies: min !== max };
+};
+
 const StatCard = ({ label, value, sub, icon: Icon, color }) => (
   <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center gap-4">
     <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
@@ -854,12 +873,25 @@ export default function InventoryList() {
 
                       {/* Price */}
                       <td className="px-3 py-4">
-                        <div>
-                          <p className="text-sm font-black text-slate-900">₹{product.price?.toLocaleString()}</p>
-                          {product.originalPrice && (
-                            <p className="text-[10px] text-slate-400 font-medium line-through">₹{product.originalPrice?.toLocaleString()}</p>
-                          )}
-                        </div>
+                        {(() => {
+                          const { min, max, varies } = getEffectivePriceRange(product);
+                          if (varies) {
+                            return (
+                              <div>
+                                <p className="text-sm font-black text-slate-900">₹{min.toLocaleString()}–₹{max.toLocaleString()}</p>
+                                <span className="inline-block mt-0.5 text-[9px] font-black uppercase tracking-wider text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded">Varies by variant</span>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div>
+                              <p className="text-sm font-black text-slate-900">₹{product.price?.toLocaleString()}</p>
+                              {product.originalPrice && (
+                                <p className="text-[10px] text-slate-400 font-medium line-through">₹{product.originalPrice?.toLocaleString()}</p>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Stock */}

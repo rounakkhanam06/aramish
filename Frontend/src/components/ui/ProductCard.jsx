@@ -127,9 +127,14 @@ function ProductCard({ product }) {
             }
             toggleWishlist(product);
           }}
-          className="absolute top-2 right-2 w-7 h-7 bg-surface/90 hover:bg-surface text-slate-600 rounded-full flex items-center justify-center shadow-sm z-10 transition-all hover:scale-110 active:scale-95 cursor-pointer"
+          className={`absolute top-2 right-2 w-7 h-7 ${
+            isInWishlist(product)
+              ? 'bg-white shadow-md text-red-500'
+              : 'bg-surface/90 hover:bg-surface text-slate-600 shadow-sm'
+          } rounded-full flex items-center justify-center z-10 transition-all hover:scale-110 active:scale-95 cursor-pointer`}
+          title={isInWishlist(product) ? "Remove from Wishlist" : "Add to Wishlist"}
         >
-          <Heart className={`w-3.5 h-3.5 ${isInWishlist(product._id || product.id) ? 'fill-[#FF4500] text-[#FF4500]' : 'text-slate-600'}`} />
+          <Heart className={`w-3.5 h-3.5 transition-colors ${isInWishlist(product) ? 'fill-red-500 text-red-500' : 'text-slate-600'}`} />
         </button>
 
         {/* Bottom Left Rating Pill */}

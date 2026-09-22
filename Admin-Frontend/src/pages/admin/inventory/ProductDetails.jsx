@@ -176,20 +176,34 @@ const ProductDetails = () => {
                     <tr className="border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                       <th className="py-3 px-4">SKU</th>
                       <th className="py-3 px-4">Attributes</th>
-                      <th className="py-3 px-4">Price</th>
+                      <th className="py-3 px-4">Selling Price</th>
+                      <th className="py-3 px-4">MRP</th>
                       <th className="py-3 px-4">Stock</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 text-sm font-semibold text-slate-700">
                     {product.variations.map((v, idx) => {
-                      const attrText = v.attributes 
-                        ? Object.entries(v.attributes).map(([key, val]) => `${key}: ${val}`).join(', ')
-                        : '-';
+                      const attrText = [v.color, v.size].filter(Boolean).join(' / ') || '-';
+                      // A variant only overrides pricing when useDefaultPricing is explicitly
+                      // false and it has its own values — otherwise it inherits the product's
+                      // base price, same rule the backend applies at checkout
+                      // (Backend/Controllers/orderController.js).
+                      const hasCustomPricing = v.useDefaultPricing === false;
+                      const effSellingPrice = hasCustomPricing && v.sellingPrice !== undefined ? v.sellingPrice : product.sellingPrice;
+                      const effMrp = hasCustomPricing && v.mrp !== undefined ? v.mrp : product.mrp;
                       return (
                         <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
                           <td className="py-3.5 px-4 font-mono text-xs text-[#0B132B]">{v.sku}</td>
                           <td className="py-3.5 px-4 text-slate-500 text-xs">{attrText}</td>
-                          <td className="py-3.5 px-4">₹{v.price}</td>
+                          <td className="py-3.5 px-4">
+                            ₹{effSellingPrice}
+                            {hasCustomPricing && (
+                              <span className="ml-1.5 text-[9px] font-black uppercase tracking-wider text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded">Custom</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-500">
+                            {effMrp && effMrp > effSellingPrice ? `₹${effMrp}` : '-'}
+                          </td>
                           <td className="py-3.5 px-4">{v.stock}</td>
                         </tr>
                       );

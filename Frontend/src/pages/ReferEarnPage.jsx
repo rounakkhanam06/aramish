@@ -308,7 +308,7 @@ export default function ReferEarnPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         {ref.coinsEarned > 0 && (
-                          <span className="text-[11px] font-black text-amber-600">+{ref.coinsEarned} MC</span>
+                          <span className="text-[11px] font-black text-amber-600">+{ref.coinsEarned} Coins</span>
                         )}
                         <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full ${s.bg} ${s.text}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />

@@ -1341,14 +1341,33 @@ const bulkUploadProducts = async (req, res) => {
             ? parseBoolValue(getVarValue(rowData, 'Use Default Pricing'))
             : true;
 
+          const variantMrp = useDefaultPricing ? undefined : cleanNumber(getVarValue(rowData, 'MRP'));
+          const variantSellingPrice = useDefaultPricing ? undefined : cleanNumber(getVarValue(rowData, 'Selling Price'));
+
+          // A variant opting out of default pricing must supply its own valid MRP/Selling
+          // Price — otherwise it would silently fall back to the product's base price
+          // everywhere (admin view, checkout) while still being flagged "custom priced",
+          // which is confusing and easy to miss. Skip the variant and report it instead of
+          // saving inconsistent pricing data.
+          if (!useDefaultPricing) {
+            if (variantMrp === undefined || variantMrp <= 0 || variantSellingPrice === undefined || variantSellingPrice <= 0) {
+              errorsList.push({ row: `Variations!${i + 1}`, message: `Variant ${color}/${size} has "Use Default Pricing" set to false but is missing a valid MRP and/or Selling Price. This variant was skipped — either provide both values or leave "Use Default Pricing" as true.` });
+              continue;
+            }
+            if (variantMrp < variantSellingPrice) {
+              errorsList.push({ row: `Variations!${i + 1}`, message: `Variant ${color}/${size}: MRP (₹${variantMrp}) cannot be less than Selling Price (₹${variantSellingPrice}). This variant was skipped.` });
+              continue;
+            }
+          }
+
           const variant = {
             color,
             size,
             stock: cleanNumber(getVarValue(rowData, 'Stock'), 1),
             sku: (getVarValue(rowData, 'Variant SKU') || '').toString().trim() || `${articleKey}-${color}-${size}`.replace(/\s+/g, '-'),
             useDefaultPricing,
-            mrp: useDefaultPricing ? undefined : cleanNumber(getVarValue(rowData, 'MRP')),
-            sellingPrice: useDefaultPricing ? undefined : cleanNumber(getVarValue(rowData, 'Selling Price')),
+            mrp: variantMrp,
+            sellingPrice: variantSellingPrice,
             images: []
           };
 

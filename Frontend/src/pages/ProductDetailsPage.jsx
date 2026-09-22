@@ -635,7 +635,7 @@ export default function ProductDetailsPage() {
                   }}
                   className="w-10 h-10 bg-surface rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform cursor-pointer"
                 >
-                  <Heart className={`w-5 h-5 ${isInWishlist(product.id) ? 'fill-red-500 text-red-500' : 'text-slate-600'}`} />
+                  <Heart className={`w-5 h-5 transition-colors ${isInWishlist(product) ? 'fill-red-500 text-red-500' : 'text-slate-600'}`} />
                 </button>
                 <button 
                   onClick={handleShare}

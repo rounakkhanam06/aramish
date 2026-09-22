@@ -73,8 +73,9 @@ module.exports = (io) => {
         if (existing) {
           await Wishlist.deleteOne({ userId, productId });
           
-          // Emit to this user's room
+          // Emit to this user's room and current socket
           io.to(userId).emit('like_status', { productId, isLiked: false, action: 'removed' });
+          socket.emit('like_status', { productId, isLiked: false, action: 'removed' });
           console.log(`💔 User ${userId} unliked product ${productId}`);
         } else {
           const newLike = new Wishlist({ userId, productId });
@@ -82,8 +83,9 @@ module.exports = (io) => {
 
           const product = await Product.findById(productId);
           
-          // Emit to this user's room
+          // Emit to this user's room and current socket
           io.to(userId).emit('like_status', { productId, isLiked: true, action: 'added', product });
+          socket.emit('like_status', { productId, isLiked: true, action: 'added', product });
           console.log(`❤️ User ${userId} liked product ${productId}`);
         }
       } catch (err) {

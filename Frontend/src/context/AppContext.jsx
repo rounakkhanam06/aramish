@@ -334,45 +334,53 @@ export const AppProvider = ({ children }) => {
       });
 
       socket.on('wishlist_data', (products) => {
+        if (!Array.isArray(products)) return;
         const normalised = products.map((p) => ({
-          id: p._id || p.id,
+          id: (p._id || p.id)?.toString(),
+          _id: (p._id || p.id)?.toString(),
           name: p.name,
           desc: p.description || '',
-          price: p.sellingPrice,
-          originalPrice: p.mrp || p.sellingPrice,
-          discount: formatDiscount(p.discountLabel, p.mrp, p.sellingPrice, 'minus'),
+          price: p.sellingPrice || p.price,
+          originalPrice: p.mrp || p.originalPrice || p.sellingPrice,
+          discount: formatDiscount(p.discountLabel, p.mrp || p.originalPrice, p.sellingPrice || p.price, 'minus'),
           rating: p.rating || 0,
-          type: (p.category || '').toLowerCase(),
-          image: p.images && p.images[0] ? p.images[0] : '',
-          brandName: 'Aramish',
+          type: (p.category || p.type || '').toLowerCase(),
+          image: p.images && p.images[0] ? p.images[0] : (p.image || ''),
+          images: p.images || (p.image ? [p.image] : []),
+          brandName: p.brandName || 'Aramish',
           sales: p.sales || 0
         }));
         setWishlist(normalised);
       });
 
       socket.on('like_status', ({ productId, isLiked, product }) => {
-        if (isLiked && product) {
+        const prodIdStr = productId?.toString();
+        if (isLiked) {
           setWishlist((prev) => {
-            const exists = prev.some((item) => item.id === productId);
+            const exists = prev.some((item) => (item._id || item.id)?.toString() === prodIdStr);
             if (exists) return prev;
             
+            if (!product) return prev;
+
             const normalised = {
-              id: product._id || product.id,
+              id: (product._id || product.id)?.toString() || prodIdStr,
+              _id: (product._id || product.id)?.toString() || prodIdStr,
               name: product.name,
               desc: product.description || '',
-              price: product.sellingPrice,
-              originalPrice: product.mrp || product.sellingPrice,
-              discount: formatDiscount(product.discountLabel, product.mrp, product.sellingPrice, 'minus'),
+              price: product.sellingPrice || product.price,
+              originalPrice: product.mrp || product.originalPrice || product.sellingPrice,
+              discount: formatDiscount(product.discountLabel, product.mrp || product.originalPrice, product.sellingPrice || product.price, 'minus'),
               rating: product.rating || 0,
-              type: (product.category || '').toLowerCase(),
-              image: product.images && product.images[0] ? product.images[0] : '',
-              brandName: 'Aramish',
+              type: (product.category || product.type || '').toLowerCase(),
+              image: product.images && product.images[0] ? product.images[0] : (product.image || ''),
+              images: product.images || (product.image ? [product.image] : []),
+              brandName: product.brandName || 'Aramish',
               sales: product.sales || 0
             };
             return [...prev, normalised];
           });
         } else {
-          setWishlist((prev) => prev.filter((item) => item.id !== productId));
+          setWishlist((prev) => prev.filter((item) => (item._id || item.id)?.toString() !== prodIdStr));
         }
       });
 
@@ -739,49 +747,89 @@ export const AppProvider = ({ children }) => {
       toast.error('Please log in first!');
       return;
     }
-    const isAdding = !isInWishlist(product.id);
+    const productId = (product?._id || product?.id)?.toString();
+    if (!productId) {
+      console.error('🔌 [toggleWishlist] Product ID is missing:', product);
+      return;
+    }
+
+    const isAdding = !isInWishlist(productId);
     console.log('🔌 [toggleWishlist] Current wishlist items:', wishlist);
-    console.log('🔌 [toggleWishlist] isAdding:', isAdding);
-    analytics.track(isAdding ? 'wishlist_add' : 'wishlist_remove', 'social', { productId: product.id });
+    console.log('🔌 [toggleWishlist] isAdding:', isAdding, 'productId:', productId);
+    analytics.track(isAdding ? 'wishlist_add' : 'wishlist_remove', 'social', { productId });
+
+    // Optimistic update for instant UI feedback (heart color changes immediately)
+    if (isAdding) {
+      const normalisedProduct = {
+        id: productId,
+        _id: productId,
+        name: product.name,
+        desc: product.description || product.desc || '',
+        price: product.price || product.sellingPrice,
+        originalPrice: product.originalPrice || product.mrp || product.sellingPrice,
+        discount: formatDiscount(product.discountLabel, product.mrp || product.originalPrice, product.price || product.sellingPrice, 'minus'),
+        rating: product.rating || 0,
+        type: (product.category || product.type || '').toLowerCase(),
+        image: product.images && product.images[0] ? product.images[0] : (product.image || ''),
+        images: product.images || (product.image ? [product.image] : []),
+        brandName: product.brandName || 'Aramish',
+        sales: product.sales || 0
+      };
+      setWishlist((prev) => {
+        if (prev.some((item) => (item._id || item.id)?.toString() === productId)) {
+          return prev;
+        }
+        return [...prev, normalisedProduct];
+      });
+      toast.success('Added to Wishlist', {
+        position: 'top-center',
+        style: {
+          padding: '8px 14px',
+          fontSize: '12.5px',
+          fontWeight: '600',
+          borderRadius: '50px',
+          background: '#ffffff',
+          color: '#1e293b',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)'
+        }
+      });
+    } else {
+      setWishlist((prev) => prev.filter((item) => (item._id || item.id)?.toString() !== productId));
+      toast.success('Removed from Wishlist', {
+        position: 'top-center',
+        style: {
+          padding: '8px 14px',
+          fontSize: '12.5px',
+          fontWeight: '600',
+          borderRadius: '50px',
+          background: '#ffffff',
+          color: '#1e293b',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)'
+        }
+      });
+    }
+
     if (socketRef.current) {
-      console.log('🔌 [toggleWishlist] Emitting toggle_like with:', { userId: user.id, productId: product.id });
-      socketRef.current.emit('toggle_like', { userId: user.id, productId: product.id });
-      
-      if (isAdding) {
-        toast.success('Added to Wishlist', {
-          position: 'top-center',
-          style: {
-            padding: '8px 14px',
-            fontSize: '12.5px',
-            fontWeight: '600',
-            borderRadius: '50px',
-            background: '#ffffff',
-            color: '#1e293b',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)'
-          }
-        });
-      } else {
-        toast.success('Removed from Wishlist', {
-          position: 'top-center',
-          style: {
-            padding: '8px 14px',
-            fontSize: '12.5px',
-            fontWeight: '600',
-            borderRadius: '50px',
-            background: '#ffffff',
-            color: '#1e293b',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)'
-          }
-        });
-      }
+      console.log('🔌 [toggleWishlist] Emitting toggle_like with:', { userId: user.id, productId });
+      socketRef.current.emit('toggle_like', { userId: user.id, productId });
     } else {
       console.error('🔌 [toggleWishlist] Failed: socketRef.current is null/undefined!');
-      toast.error('Real-time connection is offline. Please retry.');
     }
   };
 
-  const isInWishlist = (productId) => {
-    return wishlist.some((item) => item.id === productId);
+  const isInWishlist = (productIdOrProduct) => {
+    if (!productIdOrProduct) return false;
+    const targetId = (
+      typeof productIdOrProduct === 'object'
+        ? (productIdOrProduct._id || productIdOrProduct.id)
+        : productIdOrProduct
+    )?.toString();
+
+    if (!targetId) return false;
+    return wishlist.some((item) => {
+      const itemId = (item._id || item.id)?.toString();
+      return itemId === targetId;
+    });
   };
 
   const addOrder = (order) => {
