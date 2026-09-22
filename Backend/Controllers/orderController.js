@@ -58,6 +58,7 @@ exports.createOrder = async (req, res) => {
       const qty = item.quantity || 1;
 
       let itemPrice = product.sellingPrice;
+      let itemMrp = product.mrp;
       let availableStock = product.stock;
 
       if (item.variationSku) {
@@ -66,6 +67,7 @@ exports.createOrder = async (req, res) => {
           throw new Error(`Variation "${item.variationSku}" of "${product.name}" not found.`);
         }
         itemPrice = (!variant.useDefaultPricing && variant.sellingPrice !== undefined) ? variant.sellingPrice : product.sellingPrice;
+        itemMrp = (!variant.useDefaultPricing && variant.mrp !== undefined) ? variant.mrp : product.mrp;
         availableStock = variant.stock;
       }
 
@@ -77,6 +79,7 @@ exports.createOrder = async (req, res) => {
         productId: item.productId,
         name: product.name,
         price: itemPrice,
+        mrp: itemMrp,
         quantity: qty,
         image: item.image || (product.images && product.images[0]) || '',
         variationSku: item.variationSku || null,
@@ -703,8 +706,21 @@ exports.updateOrderStatus = async (req, res) => {
     }
 
     if (status === 'Cancelled' && order.status !== 'Cancelled') {
-      await handleOrderCancellationStockAndCoupon(order);
+      // Stock/coupon restore, wallet/welcome-bonus/referral coin refund, and reward clawback
+      // all happen atomically together inside handleOrderCancellationRefunds.
       await handleOrderCancellationRefunds(order);
+    }
+
+    // A full refund set directly through this generic endpoint (bypassing the dedicated
+    // returns flow) must still restore wallet/welcome-bonus/referral coins and claw back any
+    // order reward — otherwise those balances are silently never refunded. We deliberately do
+    // NOT do this for 'Partially Refunded' here: that status has no tracked partial amount at
+    // this endpoint (unlike the dedicated return flow, which tracks per-item quantities and an
+    // explicit refundAmount), so applying the full-order refund logic would over-refund. We
+    // also skip stock restoration here — a generic status change isn't necessarily a physical
+    // return of goods.
+    if (status === 'Refunded' && order.status !== 'Refunded') {
+      await handleOrderCancellationRefunds(order, { restoreStock: false });
     }
 
     if (status && status !== order.status) {
@@ -954,10 +970,8 @@ exports.cancelOrder = async (req, res) => {
       });
     }
 
-    // Restore stock & coupon usage
-    await handleOrderCancellationStockAndCoupon(order);
-
-    // Refund wallet balance, coins, and online payments
+    // Restore stock & coupon usage, refund wallet/welcome-bonus/referral coins, claw back
+    // any order reward, and process the online payment refund — all atomically together.
     await handleOrderCancellationRefunds(order);
 
     // Try to cancel on Shiprocket if shiprocketOrderId exists

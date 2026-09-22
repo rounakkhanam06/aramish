@@ -16,6 +16,9 @@ const systemConfigSchema = new mongoose.Schema({
   referralCoinsReferrer: { type: Number, default: 100 },
   referralCoinsReferee: { type: Number, default: 100 },
   referralWalletMaxUsagePercentage: { type: Number, default: 25 },
+  // 'signup' = reward credited instantly when the referee registers with a code;
+  // 'first_order' = reward credited only after the referee's first delivered+paid order.
+  referralRewardTiming: { type: String, enum: ['signup', 'first_order'], default: 'first_order' },
   returnWindowDays: { type: Number, default: 2 },
   welcomeBonusEnabled: { type: Boolean, default: true },
   welcomeBonusCoins: { type: Number, default: 1000 },

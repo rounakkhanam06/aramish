@@ -20,6 +20,8 @@ export default function LoginPage() {
   });
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isNewUser, setIsNewUser] = useState(false);
+  const [referralCode, setReferralCode] = useState(refCode || '');
 
   // 6-digit OTP state
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -69,6 +71,7 @@ export default function LoginPage() {
       }
 
       setOtpSent(true);
+      setIsNewUser(!!data.isNewUser);
       const successMsg = data.isNewUser
         ? '✨ New account created! Enter the OTP.'
         : '📱 OTP sent successfully!';
@@ -123,7 +126,7 @@ export default function LoginPage() {
       const res = await fetch(`${API_URL}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phoneNumber, otp: fullOtp, referralCode: refCode })
+        body: JSON.stringify({ phone: phoneNumber, otp: fullOtp, referralCode: referralCode?.trim() || undefined })
       });
 
       const data = await res.json();
@@ -354,6 +357,22 @@ export default function LoginPage() {
                   ))}
                 </div>
               </div>
+
+              {isNewUser && (
+                <div className="space-y-1 text-left pt-2">
+                  <label className="text-[10px] font-syne font-black text-slate-700 uppercase tracking-widest">
+                    Referral Code <span className="text-slate-400 normal-case font-bold">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Enter referral code"
+                    value={referralCode}
+                    onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                    maxLength={12}
+                    className="w-full px-3 py-2.5 border-b-2 border-white/10 focus:border-[#0B132B] outline-none bg-transparent text-[13px] font-bold text-[#02006c] tracking-widest uppercase transition-colors"
+                  />
+                </div>
+              )}
 
               {signInError && (
                 <p className="text-[9px] text-rose-500 font-extrabold text-center px-1 pt-2">{signInError}</p>

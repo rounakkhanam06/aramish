@@ -233,7 +233,7 @@ export default function WalletPage() {
                                 onClick={() => navigate(`/order/${tx.orderId}`)}
                                 className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 cursor-pointer hover:bg-indigo-100 transition-colors shrink-0 shadow-sm"
                               >
-                                Order #{tx.orderId.substring(tx.orderId.length - 6).toUpperCase()}
+                                Order #{tx.orderId.slice(0, 5)}
                               </span>
                             )}
                             {isLocked ? (

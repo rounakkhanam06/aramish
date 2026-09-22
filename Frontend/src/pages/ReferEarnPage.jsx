@@ -26,7 +26,7 @@ export default function ReferEarnPage() {
   // Apply code state
   const [applyCode, setApplyCode] = useState('');
   const [applying, setApplying] = useState(false);
-  const [showApply, setShowApply] = useState(false);
+  const [showApply, setShowApply] = useState(true);
 
   const fetchReferral = async () => {
     if (!user || (!user.id && !user._id)) {
@@ -246,9 +246,17 @@ export default function ReferEarnPage() {
                   <p className="text-[11px] text-slate-400">Apply it to earn coins</p>
                 </div>
               </div>
-              <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${showApply ? 'rotate-90' : ''}`} />
+              {!referralData?.hasAppliedCode && (
+                <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${showApply ? 'rotate-90' : ''}`} />
+              )}
             </button>
-            {showApply && (
+            {referralData?.hasAppliedCode ? (
+              <div className="px-5 pb-4 border-t border-white/10 pt-3">
+                <p className="text-[12px] text-slate-400 font-semibold flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> You've already applied a referral code.
+                </p>
+              </div>
+            ) : showApply && (
               <div className="px-5 pb-4 flex gap-2 animate-fade-in border-t border-white/10 pt-3">
                 <input
                   type="text"

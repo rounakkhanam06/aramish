@@ -850,32 +850,26 @@ export default function OrderDetailsPage() {
 
   const orderTotal = globalOrder ? globalOrder.total : (product.selling + 7 - 150);
 
-  const subtotal = orderItems.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
-  const platformCommission = systemSettings?.commission ?? 15;
-  const gstPercentage = systemSettings?.gstPercentage ?? 18;
+  // All amounts below are read directly from the order as saved by the backend at
+  // checkout time (Backend/Controllers/orderController.js), which is the single source
+  // of truth for what was actually charged. We never recompute these from live product/
+  // system settings here — those can change after the order was placed, which is what
+  // previously made the displayed breakdown drift from the real Total Paid.
+  const subtotal = globalOrder ? (globalOrder.subtotal ?? 0) : orderItems.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
+  const platformCommission = globalOrder ? (globalOrder.platformCommission ?? 0) : (systemSettings?.commission ?? 15);
+  const gstAmount = globalOrder ? (globalOrder.gstAmount ?? 0) : Math.round(subtotal * ((systemSettings?.gstPercentage ?? 18) / 100));
+  const gstPercentage = subtotal > 0 ? Math.round((gstAmount / subtotal) * 100) : (systemSettings?.gstPercentage ?? 18);
   const deliveryCharge = globalOrder?.deliveryCharge || 0;
+  const codCharge = globalOrder?.codCharge || 0;
+  const prepaidDiscount = globalOrder?.prepaidDiscount || 0;
   const coinsRedeemed = globalOrder?.coinsRedeemed || 0;
   const walletUsed = globalOrder?.walletUsed || 0;
+  const referralCoinsUsed = globalOrder?.referralCoinsUsed || 0;
+  const deducedDiscount = globalOrder?.discountAmount || 0;
 
-  // Mathematically solve for coupon discount:
-  // (subtotal - discountAmount) * (1 + gstPercentage/100) + platformCommission + deliveryCharge - coinsRedeemed - walletUsed = orderTotal
-  // (subtotal - discountAmount) * (1 + gstPercentage/100) = orderTotal - platformCommission - deliveryCharge + coinsRedeemed + walletUsed
-  // subtotal - discountAmount = (orderTotal - platformCommission - deliveryCharge + coinsRedeemed + walletUsed) / (1 + gstPercentage/100)
-  // discountAmount = subtotal - (orderTotal - platformCommission - deliveryCharge + coinsRedeemed + walletUsed) / (1 + gstPercentage/100)
-  let deducedDiscount = 0;
-  let gstAmount = 0;
-
-  const gstFactor = 1 + (gstPercentage / 100);
-
-  if (globalOrder?.couponCode) {
-    const targetValue = orderTotal - platformCommission - deliveryCharge + coinsRedeemed + walletUsed;
-    const discountedSubtotal = targetValue / gstFactor;
-    deducedDiscount = Math.max(0, Math.round(subtotal - discountedSubtotal));
-    gstAmount = Math.round((subtotal - deducedDiscount) * (gstPercentage / 100));
-  } else {
-    deducedDiscount = 0;
-    gstAmount = Math.round(subtotal * (gstPercentage / 100));
-  }
+  // MRP is captured per item at order time (Order.items[].mrp). Older orders placed
+  // before this field existed fall back to the selling price (no fabricated markup).
+  const actualPrice = orderItems.reduce((acc, curr) => acc + ((curr.mrp || curr.price) * curr.quantity), 0);
 
   const returnWindowExpiry = globalOrder?.createdAt ? (() => {
     const expiry = new Date(globalOrder.createdAt);
@@ -978,12 +972,28 @@ export default function OrderDetailsPage() {
           </tr>
           <tr>
             <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569;">GST (${gstPercentage}%):</td>
-            <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569; text-align: right;">₹\${gstAmount}</td>
+            <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569; text-align: right;">₹${gstAmount}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569;">Platform Fee:</td>
+            <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569; text-align: right;">₹${platformCommission}</td>
           </tr>
           ${deliveryCharge > 0 ? `
             <tr>
               <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569;">Delivery Charge:</td>
               <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569; text-align: right;">₹${Number(deliveryCharge).toFixed(2)}</td>
+            </tr>
+          ` : ''}
+          ${codCharge > 0 ? `
+            <tr>
+              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569;">COD Charge:</td>
+              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569; text-align: right;">₹${codCharge}</td>
+            </tr>
+          ` : ''}
+          ${prepaidDiscount > 0 ? `
+            <tr style="color: #16a34a;">
+              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600;">Prepaid Discount:</td>
+              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; text-align: right;">-₹${prepaidDiscount}</td>
             </tr>
           ` : ''}
           ${deducedDiscount > 0 ? `
@@ -1002,6 +1012,12 @@ export default function OrderDetailsPage() {
             <tr style="color: #16a34a;">
               <td style="padding: 8px 12px; font-size: 13px; font-weight: 600;">Wallet Used:</td>
               <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; text-align: right;">-₹${walletUsed}</td>
+            </tr>
+          ` : ''}
+          ${referralCoinsUsed > 0 ? `
+            <tr style="color: #16a34a;">
+              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600;">Referral Coins Used:</td>
+              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; text-align: right;">-₹${referralCoinsUsed}</td>
             </tr>
           ` : ''}
           <tr style="font-size: 16px; font-weight: 900; color: #02006c; background-color: #f8fafc; border-top: 2px solid #02006c;">
@@ -1517,7 +1533,7 @@ export default function OrderDetailsPage() {
               <div className="space-y-3.5 text-xs">
                  <div className="flex justify-between items-center text-slate-600 font-semibold">
                    <span>Actual price</span>
-                   <span>₹{orderItems.reduce((acc, curr) => acc + (curr.price * 1.2 * curr.quantity), 0).toFixed(0)}</span>
+                   <span>₹{actualPrice.toFixed(0)}</span>
                  </div>
                  <div className="flex justify-between items-center text-slate-600 font-semibold">
                    <span className="flex items-center gap-1">Discounted price <div className="w-3.5 h-3.5 border border-slate-350 rounded-full flex items-center justify-center text-[8px] font-bold">i</div></span>
@@ -1577,6 +1593,13 @@ export default function OrderDetailsPage() {
                    <div className="flex justify-between items-center text-xs font-semibold text-green-600">
                      <span>Wallet Used</span>
                      <span>-₹{walletUsed}</span>
+                   </div>
+                 )}
+
+                 {referralCoinsUsed > 0 && (
+                   <div className="flex justify-between items-center text-xs font-semibold text-green-600">
+                     <span>Referral Coins Used</span>
+                     <span>-₹{referralCoinsUsed}</span>
                    </div>
                  )}
 

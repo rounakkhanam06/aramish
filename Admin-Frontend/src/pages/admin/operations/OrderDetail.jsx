@@ -509,10 +509,31 @@ const OrderDetail = () => {
                          <span>+ ₹{(order.deliveryCharge || 0).toLocaleString()}</span>
                       </div>
 
+                      {!!order.codCharge && order.codCharge > 0 && (
+                         <div className="flex justify-between text-xs font-semibold text-slate-400">
+                            <span>COD Charge</span>
+                            <span>+ ₹{Number(order.codCharge).toLocaleString()}</span>
+                         </div>
+                      )}
+
+                      {!!order.prepaidDiscount && order.prepaidDiscount > 0 && (
+                         <div className="flex justify-between text-xs font-bold text-emerald-600">
+                            <span>Prepaid Discount</span>
+                            <span>- ₹{Number(order.prepaidDiscount).toLocaleString()}</span>
+                         </div>
+                      )}
+
                       {!!order.walletUsed && order.walletUsed > 0 && (
                          <div className="flex justify-between text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200/60">
                             <span>Wallet / Coins Deducted</span>
                             <span>- ₹{Number(order.walletUsed).toLocaleString()}</span>
+                         </div>
+                      )}
+
+                      {!!order.referralCoinsUsed && order.referralCoinsUsed > 0 && (
+                         <div className="flex justify-between text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200/60">
+                            <span>Referral Coins Used</span>
+                            <span>- ₹{Number(order.referralCoinsUsed).toLocaleString()}</span>
                          </div>
                       )}
                    </div>

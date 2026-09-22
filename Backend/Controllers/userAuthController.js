@@ -172,49 +172,36 @@ const verifyOtp = async (req, res) => {
 
     // Mark verified, clear OTP
     const isNewUser = !user.isVerified;
+
+    // Referral code is optional, but if provided it must pass validation (exists, active
+    // referrer, not self) before we create the account/session. Existing users (login,
+    // not registration) never apply a referral code, even if one is passed in.
+    let referrer = null;
+    if (isNewUser && referralCode && referralCode.trim()) {
+      const { validateReferralCode } = require('./referralController');
+      const result = await validateReferralCode(referralCode, user._id);
+      if (result.error) {
+        return res.status(400).json({ success: false, message: result.error });
+      }
+      referrer = result.referrer;
+    }
+
     user.isVerified = true;
     user.otp = null;
     user.otpExpiry = null;
     user.lastLogin = new Date();
 
-    if (isNewUser && referralCode) {
+    // Link the referral relationship (one-time, at signup). Whether the reward is credited
+    // now or deferred to the referee's first delivered order is decided centrally by
+    // registerReferral() based on the admin's configured reward timing — the same helper
+    // the standalone "apply code" endpoint uses, so behavior and duplicate-reward
+    // prevention are identical regardless of how the code was submitted.
+    if (referrer) {
       try {
-        const uppercaseCode = referralCode.toUpperCase().trim();
-        const referrer = await User.findOne({ referralCode: uppercaseCode });
-        if (referrer && !referrer._id.equals(user._id)) {
+        const { registerReferral } = require('./referralController');
+        const rewardTiming = await registerReferral(referrer, user);
+        if (rewardTiming) {
           user.referredBy = referrer._id;
-          
-          const Referral = require('../Models/Referral');
-          const CoinTransaction = require('../Models/CoinTransaction');
-          const SystemConfig = require('../Models/SystemConfig');
-          
-          const existingReferral = await Referral.findOne({ referrer: referrer._id, referee: user._id });
-          if (!existingReferral) {
-            const config = await SystemConfig.findOne({});
-            const referrerReward = config && config.referralCoinsReferrer !== undefined ? config.referralCoinsReferrer : 200;
-            
-            await Referral.create({
-              referrer: referrer._id,
-              referee: user._id,
-              referralCode: uppercaseCode,
-              status: 'rewarded',
-              completedAt: new Date(),
-              referrerCoinsAwarded: referrerReward,
-              refereeCoinsAwarded: 0
-            });
-            
-            // Credit referrer immediately
-            await User.findByIdAndUpdate(referrer._id, {
-              $inc: { referralCoins: referrerReward }
-            });
-            
-            await CoinTransaction.create({
-              userId: referrer._id,
-              type: 'earned',
-              title: `Referral Reward (Invited new user)`,
-              amount: referrerReward
-            });
-          }
         }
       } catch (refErr) {
         console.error('Auto referral link error during registration:', refErr.message);

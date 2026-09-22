@@ -15,6 +15,7 @@ const orderSchema = new mongoose.Schema({
       },
       name: { type: String, required: true },
       price: { type: Number, required: true },
+      mrp: { type: Number, default: 0 },
       quantity: { type: Number, required: true },
       image: { type: String },
       variationSku: { type: String, default: null },
@@ -140,6 +141,14 @@ const orderSchema = new mongoose.Schema({
   rewardDeductedAt: {
     type: Date,
     default: null
+  },
+  refundProcessed: {
+    type: Boolean,
+    default: false
+  },
+  onlinePaymentRefundProcessed: {
+    type: Boolean,
+    default: false
   },
   awbCode: {
     type: String,

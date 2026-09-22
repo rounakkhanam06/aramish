@@ -30,6 +30,7 @@ const ReferralProgram = () => {
   const [referralCoinsReferee, setReferralCoinsReferee] = useState(0);
   const [referralWalletMaxUsagePercentage, setReferralWalletMaxUsagePercentage] = useState(25);
   const [referralEnabled, setReferralEnabled] = useState(true);
+  const [referralRewardTiming, setReferralRewardTiming] = useState('first_order');
   const [savingConfig, setSavingConfig] = useState(false);
 
   const token = localStorage.getItem('adminToken');
@@ -67,6 +68,7 @@ const ReferralProgram = () => {
         setReferralCoinsReferee(data.config.referralCoinsReferee);
         setReferralWalletMaxUsagePercentage(data.config.referralWalletMaxUsagePercentage ?? 25);
         setReferralEnabled(data.config.referralEnabled);
+        setReferralRewardTiming(data.config.referralRewardTiming === 'signup' ? 'signup' : 'first_order');
       }
     } catch { /* silent */ }
     finally { setConfigLoading(false); }
@@ -86,7 +88,8 @@ const ReferralProgram = () => {
           referralCoinsReferee,
           referralCoinsPerReferral: referralCoinsReferrer,
           referralWalletMaxUsagePercentage,
-          referralEnabled
+          referralEnabled,
+          referralRewardTiming
         })
       });
       const data = await res.json();
@@ -330,9 +333,9 @@ const ReferralProgram = () => {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="w-full max-w-md bg-white h-full rounded-[32px] shadow-2xl p-10 flex flex-col"
+              className="w-full max-w-md bg-white h-full rounded-[32px] shadow-2xl p-10 flex flex-col min-h-0"
             >
-              <div className="flex justify-between items-center mb-8">
+              <div className="flex justify-between items-center mb-8 flex-shrink-0">
                 <div>
                   <h2 className="text-2xl font-black text-slate-900 font-montserrat uppercase tracking-tight">Referral Config</h2>
                   <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Set rewards &amp; program rules</p>
@@ -350,7 +353,7 @@ const ReferralProgram = () => {
                   <Loader2 size={32} className="animate-spin text-blue-400" />
                 </div>
               ) : (
-                <div className="flex-1 space-y-8">
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-8 pr-1">
                   {/* Enable Toggle */}
                   <div className="bg-slate-50 rounded-2xl p-6 flex items-center justify-between border border-slate-100">
                     <div>
@@ -367,6 +370,37 @@ const ReferralProgram = () => {
                         ? <ToggleRight size={40} className="text-emerald-500" />
                         : <ToggleLeft size={40} className="text-slate-300" />}
                     </button>
+                  </div>
+
+                  {/* Reward Timing */}
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
+                      Reward Kab Dena Hai (Reward Timing)
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setReferralRewardTiming('signup')}
+                        className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                          referralRewardTiming === 'signup'
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        On Registration
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReferralRewardTiming('first_order')}
+                        className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                          referralRewardTiming === 'first_order'
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        After First Order
+                      </button>
+                    </div>
                   </div>
 
                   {/* Coins to Referrer */}
@@ -421,14 +455,17 @@ const ReferralProgram = () => {
                   <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 flex gap-3 items-start">
                     <AlertCircle size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
                     <p className="text-[11px] text-blue-500 font-bold leading-relaxed uppercase tracking-wide">
-                      Referrer gets coins immediately upon signup. Referee gets no referral coins. Referral wallet usage is capped per order based on the percentage above.
+                      {referralRewardTiming === 'signup'
+                        ? 'Referrer and referee both get coins instantly when the referee registers with a code.'
+                        : 'Referrer and referee both get coins only after the referee\'s first order is delivered.'}
+                      {' '}Referral wallet usage is capped per order based on the percentage above.
                     </p>
                   </div>
                 </div>
               )}
 
               {/* Save Button */}
-              <div className="pt-8 border-t border-slate-50">
+              <div className="pt-8 border-t border-slate-50 flex-shrink-0">
                 <button
                   onClick={handleSaveConfig}
                   disabled={savingConfig}

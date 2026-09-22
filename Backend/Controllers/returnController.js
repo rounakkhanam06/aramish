@@ -537,35 +537,52 @@ exports.updateReturnStatus = async (req, res) => {
       }
 
       // 2. INDEPENDENT WALLET COINS REFUND: Restore redeemed wallet coins to user's wallet
-      if (order.walletUsed && order.walletUsed > 0 && !returnRequest.walletRefundProcessed) {
-        const WalletTransaction = require('../Models/WalletTransaction');
-        
-        const SystemConfig = require('../Models/SystemConfig');
-        const systemConfig = await SystemConfig.findOne({});
-        const welcomeBonusCoins = systemConfig && systemConfig.welcomeBonusCoins !== undefined ? systemConfig.welcomeBonusCoins : 1000;
-        
-        const currentUser = await User.findById(returnRequest.userId);
-        const coinsToRestore = order.welcomeCoinsUsed !== undefined && order.welcomeCoinsUsed !== null ? order.welcomeCoinsUsed : (order.walletUsed || 0);
-        const restoredWelcomeRemaining = Math.min(welcomeBonusCoins, (currentUser?.welcomeBonusRemaining || 0) + coinsToRestore);
+      // (and, in the same idempotency-guarded step, any referral coins used on this order)
+      if (!returnRequest.walletRefundProcessed) {
+        if (order.walletUsed && order.walletUsed > 0) {
+          const WalletTransaction = require('../Models/WalletTransaction');
 
-        await User.findByIdAndUpdate(returnRequest.userId, {
-          $inc: {
-            walletBalance: order.walletUsed
-          },
-          $set: {
-            welcomeBonusRemaining: restoredWelcomeRemaining
-          }
-        });
+          const SystemConfig = require('../Models/SystemConfig');
+          const systemConfig = await SystemConfig.findOne({});
+          const welcomeBonusCoins = systemConfig && systemConfig.welcomeBonusCoins !== undefined ? systemConfig.welcomeBonusCoins : 1000;
 
-        await WalletTransaction.create({
-          userId: returnRequest.userId,
-          type: 'REFUND',
-          amount: order.walletUsed,
-          description: `Restored ${order.walletUsed} Wallet Coins for Returned Order #${order._id.toString().substring(order._id.toString().length - 6).toUpperCase()}`
-        });
+          const currentUser = await User.findById(returnRequest.userId);
+          const coinsToRestore = order.welcomeCoinsUsed !== undefined && order.welcomeCoinsUsed !== null ? order.welcomeCoinsUsed : (order.walletUsed || 0);
+          const restoredWelcomeRemaining = Math.min(welcomeBonusCoins, (currentUser?.welcomeBonusRemaining || 0) + coinsToRestore);
+
+          await User.findByIdAndUpdate(returnRequest.userId, {
+            $inc: {
+              walletBalance: order.walletUsed
+            },
+            $set: {
+              welcomeBonusRemaining: restoredWelcomeRemaining
+            }
+          });
+
+          await WalletTransaction.create({
+            userId: returnRequest.userId,
+            type: 'REFUND',
+            amount: order.walletUsed,
+            description: `Restored ${order.walletUsed} Wallet Coins for Returned Order #${order._id.toString().substring(order._id.toString().length - 6).toUpperCase()}`
+          });
+
+          console.log(`✅ Restored ${order.walletUsed} wallet coins for returned order: ${order._id}`);
+        }
+
+        if (order.referralCoinsUsed && order.referralCoinsUsed > 0) {
+          await User.findByIdAndUpdate(returnRequest.userId, {
+            $inc: { referralCoins: order.referralCoinsUsed }
+          });
+          await CoinTransaction.create({
+            userId: returnRequest.userId,
+            type: 'earned',
+            title: `Restored Referral Coins for Returned Order #${order._id.toString().substring(order._id.toString().length - 6).toUpperCase()}`,
+            amount: order.referralCoinsUsed
+          });
+          console.log(`✅ Restored ${order.referralCoinsUsed} referral coins for returned order: ${order._id}`);
+        }
 
         returnRequest.walletRefundProcessed = true;
-        console.log(`✅ Restored ${order.walletUsed} wallet coins for returned order: ${order._id}`);
       }
 
       // 3. INDEPENDENT PAYMENT REFUND: Process Cash / Paid Amount Refund (Razorpay online or store credit fallback)
