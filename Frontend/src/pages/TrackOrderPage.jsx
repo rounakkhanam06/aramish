@@ -248,7 +248,7 @@ export default function TrackOrderPage() {
         title: history.status,
         desc: history.activity || history.location || 'Update from courier',
         date: new Date(history.timestamp).toLocaleString(),
-        icon: history.status.includes('DELIVERED') ? Home : (history.status.includes('OUT FOR DELIVERY') ? MapPin : Truck),
+        icon: history.status.toUpperCase().includes('DELIVERED') ? Home : (history.status.toUpperCase().includes('OUT FOR DELIVERY') ? MapPin : Truck),
         status: 'completed'
       }))
     ];

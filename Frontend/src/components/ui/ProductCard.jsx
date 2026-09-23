@@ -1,12 +1,29 @@
-import React, { useState, memo } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, Heart } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import OptimizedImage from './OptimizedImage';
+import { cachedFetch } from '../../utils/apiCache';
 
 function ProductCard({ product }) {
   const { toggleWishlist, isInWishlist, user } = useApp();
   const navigate = useNavigate();
+
+  const [ratingSummary, setRatingSummary] = useState({ avgRating: 0, count: 0 });
+  const productId = product._id || product.id;
+
+  useEffect(() => {
+    if (!productId) return;
+    let cancelled = false;
+    cachedFetch(`/reels/product/${productId}/summary`, { ttl: 300 })
+      .then(data => {
+        if (!cancelled && data?.success) {
+          setRatingSummary({ avgRating: data.avgRating || 0, count: data.count || 0 });
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [productId]);
 
   const getProductBrand = (type) => {
     switch (type) {
@@ -138,12 +155,22 @@ function ProductCard({ product }) {
         </button>
 
         {/* Bottom Left Rating Pill */}
-        <div className="absolute bottom-2 left-2 bg-surface/95 backdrop-blur-sm px-1.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm z-10">
-          <span className="text-[10px] font-bold text-slate-800">{product.rating}</span>
-          <Star className="w-2.5 h-2.5 text-teal-600 fill-current" />
-          <div className="w-px h-2.5 bg-surface mx-0.5"></div>
-          <span className="text-[9px] font-medium text-slate-600">{product.sales || 0}</span>
-        </div>
+        {(ratingSummary.count > 0 || product.sales > 0) && (
+          <div className="absolute bottom-2 left-2 bg-surface/95 backdrop-blur-sm px-1.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm z-10">
+            {ratingSummary.count > 0 && (
+              <>
+                <span className="text-[10px] font-bold text-slate-800">{ratingSummary.avgRating.toFixed(1)}</span>
+                <Star className="w-2.5 h-2.5 text-teal-600 fill-current" />
+              </>
+            )}
+            {ratingSummary.count > 0 && product.sales > 0 && (
+              <div className="w-px h-2.5 bg-surface mx-0.5"></div>
+            )}
+            {product.sales > 0 && (
+              <span className="text-[9px] font-medium text-slate-600">{product.sales} sold</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Info Section */}

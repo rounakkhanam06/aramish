@@ -94,16 +94,17 @@ exports.createOrder = async (req, res) => {
       let result;
       if (item.variationSku) {
         result = await Product.findOneAndUpdate(
-          { 
-            _id: item.productId, 
-            'variations.sku': item.variationSku,
-            'variations.stock': { $gte: item.quantity } 
+          {
+            _id: item.productId,
+            variations: {
+              $elemMatch: { sku: item.variationSku, stock: { $gte: item.quantity } }
+            }
           },
-          { 
-            $inc: { 
-              'variations.$.stock': -item.quantity, 
-              sales: item.quantity 
-            } 
+          {
+            $inc: {
+              'variations.$.stock': -item.quantity,
+              sales: item.quantity
+            }
           },
           { new: true, ...sessionOpt }
         );
@@ -644,6 +645,7 @@ exports.updateOrderStatus = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
 
+    const previousStatus = order.status;
     const targetStatus = status || order.status;
     const targetPaymentStatus = paymentStatus || order.paymentStatus;
 
@@ -679,7 +681,13 @@ exports.updateOrderStatus = async (req, res) => {
         'Shipped': ['Out for Delivery', 'Cancelled'],
         'Out for Delivery': ['Delivered', 'Cancelled'],
         'Delivered': ['Return Requested', 'Refunded', 'Partially Refunded', 'Exchange Requested'],
-        'Return Requested': ['Cancelled', 'Refunded', 'Partially Refunded'],
+        // Once a ReturnRequest exists ('Return Requested'), the refund MUST go through the
+        // dedicated /returns/admin/:id/status endpoint (returnController.updateReturnStatus),
+        // which restores stock for the specific returned items and processes the tracked
+        // refundAmount atomically. Allowing 'Refunded'/'Partially Refunded' here would let an
+        // admin bypass that per-item accounting via this generic endpoint (money/coins refunded,
+        // stock and shipment left untouched). Only 'Cancelled' remains available here.
+        'Return Requested': ['Cancelled'],
         'Cancelled': [],
         'Refunded': [],
         'Partially Refunded': [],
@@ -752,6 +760,14 @@ exports.updateOrderStatus = async (req, res) => {
       order.status = status;
       if (status === 'Delivered') {
         order.paymentStatus = 'Paid';
+      }
+      if (status !== previousStatus) {
+        order.trackingHistory = order.trackingHistory || [];
+        order.trackingHistory.push({
+          status,
+          timestamp: new Date(),
+          activity: `Order status updated to ${status}`
+        });
       }
     }
     if (paymentStatus && status !== 'Delivered') {

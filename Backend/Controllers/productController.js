@@ -18,6 +18,29 @@ const parseJsonField = (field, defaultVal = {}) => {
   }
 };
 
+// Two variants sharing the same SKU (or the same color+size pair) makes stock updates
+// ambiguous at the DB level — a query matching one SKU can resolve to either element.
+// Returns a human-readable error string, or null if every variant is unique.
+const findDuplicateVariant = (variations) => {
+  const seenSkus = new Map();
+  const seenPairs = new Map();
+  for (const v of variations) {
+    const skuKey = (v.sku || '').toString().trim().toLowerCase();
+    if (skuKey) {
+      if (seenSkus.has(skuKey)) {
+        return `Variant SKU "${v.sku}" is used by more than one variant on this product. Each variant needs a unique SKU.`;
+      }
+      seenSkus.set(skuKey, true);
+    }
+    const pairKey = `${(v.color || '').toString().trim().toLowerCase()}::${(v.size || '').toString().trim().toLowerCase()}`;
+    if (seenPairs.has(pairKey)) {
+      return `Duplicate variant: Color "${v.color || ''}" / Size "${v.size || ''}" appears more than once on this product.`;
+    }
+    seenPairs.set(pairKey, true);
+  }
+  return null;
+};
+
 const ensureProductFallbackImage = (product) => {
   if (!product) return product;
   const hasValidImages = product.images && product.images.filter(img => img && img.trim() !== '' && img !== 'undefined').length > 0;
@@ -244,6 +267,11 @@ const createProduct = async (req, res) => {
         }
     }
 
+    const duplicateVariantError = findDuplicateVariant(variations);
+    if (duplicateVariantError) {
+      return res.status(400).json({ success: false, message: duplicateVariantError });
+    }
+
     if (stock !== undefined && Number(stock) < 0) {
       return res.status(400).json({ success: false, message: 'Stock cannot be negative' });
     }
@@ -454,6 +482,11 @@ const updateProduct = async (req, res) => {
                 return res.status(400).json({ success: false, message: `Variant MRP cannot be less than Variant Selling Price for variant ${v.sku}.` });
             }
         }
+      }
+
+      const duplicateVariantError = findDuplicateVariant(variations);
+      if (duplicateVariantError) {
+        return res.status(400).json({ success: false, message: duplicateVariantError });
       }
 
       // Process variant images on the raw array before assigning to product.variations
@@ -1382,6 +1415,16 @@ const bulkUploadProducts = async (req, res) => {
 
           const key = articleKey.toLowerCase();
           if (!variationsByArticle[key]) variationsByArticle[key] = [];
+
+          // Two variants on the same product sharing a SKU (or the same color+size) make
+          // stock updates ambiguous at the DB level, so reject the duplicate row instead of
+          // silently creating a product with two indistinguishable variants.
+          const duplicateVariantError = findDuplicateVariant([...variationsByArticle[key], variant]);
+          if (duplicateVariantError) {
+            errorsList.push({ row: `Variations!${i + 1}`, message: `${duplicateVariantError} This variant row was skipped.` });
+            continue;
+          }
+
           variationsByArticle[key].push(variant);
           if (!variationArticleDisplay[key]) variationArticleDisplay[key] = articleKey;
         }

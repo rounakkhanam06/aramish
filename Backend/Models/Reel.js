@@ -29,8 +29,17 @@ const reelSchema = new mongoose.Schema({
     type: String
   },
   video: {
-    type: String,
-    required: true
+    type: String
+  },
+  photos: [{
+    type: String
+  }],
+  reviewText: {
+    type: String
+  },
+  orderId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Order'
   },
   rating: {
     type: Number,

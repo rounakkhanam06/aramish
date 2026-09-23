@@ -14,7 +14,7 @@ export default function WishlistPage() {
   return (
     <div className="flex-grow flex flex-col bg-surface min-h-screen select-none">
       {/* Elevated Sticky Header (Mobile Only) */}
-      <header className="sticky top-0 bg-gold/10 border-b border-gold/20 px-4 py-3 flex items-center justify-between z-40 md:hidden">
+      <header className="sticky top-0 bg-white border-b border-gold/20 px-4 py-3 flex items-center justify-between z-40 md:hidden">
         <div className="flex items-center gap-3">
           <button 
             onClick={() => navigate(-1)}

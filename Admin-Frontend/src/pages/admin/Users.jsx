@@ -44,6 +44,18 @@ const Users = () => {
   const [editingUser, setEditingUser] = useState(null);
   const limit = 10;
 
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (isAddModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isAddModalOpen]);
+
   const handleCloseModal = () => {
     setIsAddModalOpen(false);
     setEditingUser(null);
@@ -75,10 +87,14 @@ const Users = () => {
           name: u.name || 'Anonymous User',
           email: u.email || 'N/A',
           phone: u.phone || 'N/A',
-          joined: new Date(u.createdAt).toISOString().split('T')[0],
+          // en-CA gives YYYY-MM-DD in the browser's local timezone (unlike toISOString,
+          // which is always UTC and can show the wrong calendar day for IST admins).
+          joined: new Date(u.createdAt).toLocaleDateString('en-CA'),
           totalSpent: `₹${(u.totalSpent || 0).toLocaleString('en-IN')}`,
           orders: u.ordersCount || 0,
-          status: u.derivedStatus || 'Active'
+          status: u.derivedStatus || 'Active',
+          walletBalance: u.walletBalance || 0,
+          referralCoins: u.referralCoins || 0
         }));
         setUsersList(formattedUsers);
         setTotalPages(data.pages || 1);
@@ -313,19 +329,21 @@ const Users = () => {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        const headers = ['ID', 'Name', 'Email', 'Phone', 'Joined', 'Spent Amount', 'Orders', 'Status'];
+        const headers = ['ID', 'Name', 'Email', 'Phone', 'Joined', 'Spent Amount', 'Wallet Balance', 'Referral Coins', 'Orders', 'Status'];
         const csvContent = [
           headers.join(','),
           ...data.users.map(u => {
-            const joined = new Date(u.createdAt).toISOString().split('T')[0];
+            const joined = new Date(u.createdAt).toLocaleDateString('en-CA');
             const spent = u.totalSpent || 0;
+            const walletBal = u.walletBalance || 0;
+            const refCoins = u.referralCoins || 0;
             const orders = u.ordersCount || 0;
             const status = u.derivedStatus || 'Active';
-            return `${u._id},"${u.name || 'Anonymous'}",${u.email || 'N/A'},${u.phone || 'N/A'},${joined},${spent},${orders},${status}`;
+            return `"${u._id}","${u.name || 'Anonymous'}","${u.email || 'N/A'}","${u.phone || 'N/A'}","${joined}",${spent},${walletBal},${refCoins},${orders},"${status}"`;
           })
         ].join('\n');
 
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
@@ -481,6 +499,8 @@ const Users = () => {
               <tr className="bg-slate-50/50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 <th className="px-6 py-4">Customer Details</th>
                 <th className="px-6 py-4">Total Spent</th>
+                <th className="px-6 py-4">Wallet Balance</th>
+                <th className="px-6 py-4">Referral Coins</th>
                 <th className="px-6 py-4">Orders</th>
                 <th className="px-6 py-4">Member Since</th>
                 <th className="px-6 py-4">Status</th>
@@ -500,6 +520,8 @@ const Users = () => {
                          </div>
                       </div>
                     </td>
+                    <td className="px-6 py-5"><div className="w-16 h-4 bg-slate-200 rounded"></div></td>
+                    <td className="px-6 py-5"><div className="w-16 h-4 bg-slate-200 rounded"></div></td>
                     <td className="px-6 py-5"><div className="w-16 h-4 bg-slate-200 rounded"></div></td>
                     <td className="px-6 py-5"><div className="w-20 h-6 bg-slate-200 rounded-lg"></div></td>
                     <td className="px-6 py-5"><div className="w-24 h-4 bg-slate-200 rounded"></div></td>
@@ -525,6 +547,16 @@ const Users = () => {
                     </div>
                   </td>
                   <td className="px-6 py-5 font-black text-slate-900 font-roboto">{user.totalSpent}</td>
+                  <td className="px-6 py-5">
+                     <span className="px-2 py-1 bg-amber-50 text-amber-700 rounded-lg text-[10px] font-black border border-amber-100">
+                        ₹{user.walletBalance.toLocaleString('en-IN')}
+                     </span>
+                  </td>
+                  <td className="px-6 py-5">
+                     <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded-lg text-[10px] font-black border border-purple-100">
+                        {user.referralCoins.toLocaleString('en-IN')} Coins
+                     </span>
+                  </td>
                   <td className="px-6 py-5">
                      <span className="px-2 py-1 bg-slate-50 text-slate-600 rounded-lg text-[10px] font-black border border-slate-100">
                         {user.orders} Orders
@@ -583,7 +615,7 @@ const Users = () => {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="6" className="px-6 py-20 text-center">
+                  <td colSpan="8" className="px-6 py-20 text-center">
                     <div className="flex flex-col items-center gap-3 text-slate-300">
                       <UsersIcon size={48} className="opacity-20" />
                       <p className="text-sm font-bold uppercase tracking-widest">No customers found matching your search</p>
@@ -692,12 +724,13 @@ const Users = () => {
       {/* Add Customer Slide-over */}
       <AnimatePresence>
         {isAddModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-end p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[100] flex items-center justify-end p-4 bg-slate-900/40 backdrop-blur-sm" onClick={handleCloseModal}>
             <motion.div 
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
-              className="w-full max-w-lg bg-white h-full rounded-[32px] shadow-2xl p-10 flex flex-col"
+              onClick={e => e.stopPropagation()}
+              className="w-full max-w-lg bg-white h-full rounded-[32px] shadow-2xl p-10 flex flex-col overflow-hidden"
             >
               <div className="flex justify-between items-center mb-10">
                 <h2 className="text-2xl font-black text-slate-900 font-montserrat uppercase tracking-tight">

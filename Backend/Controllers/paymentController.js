@@ -158,16 +158,17 @@ exports.webhookReceiver = async (req, res) => {
           let updateResult;
           if (item.variationSku) {
             updateResult = await Product.findOneAndUpdate(
-              { 
-                _id: item.productId, 
-                'variations.sku': item.variationSku,
-                'variations.stock': { $gte: item.quantity }
+              {
+                _id: item.productId,
+                variations: {
+                  $elemMatch: { sku: item.variationSku, stock: { $gte: item.quantity } }
+                }
               },
-              { 
-                $inc: { 
-                  'variations.$.stock': -item.quantity, 
-                  sales: item.quantity 
-                } 
+              {
+                $inc: {
+                  'variations.$.stock': -item.quantity,
+                  sales: item.quantity
+                }
               },
               { new: true }
             );

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { ShoppingBag, Trash2, ShieldCheck, ChevronLeft, ChevronDown, Star, Truck, Bookmark, Zap, Percent, CheckCircle2, Info, MapPin, X, Plus } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import Lottie from 'lottie-react';
@@ -255,8 +255,19 @@ export default function CartPage() {
 
   const mockSavings = 2458;
   const platformCommission = systemSettings?.commission ?? 15;
-  const gstPercentage = systemSettings?.gstPercentage ?? 18;
-  const gstAmount = Math.round(Math.max(0, totalCartPrice - discountAmount) * (gstPercentage / 100));
+  
+  // Calculate dynamic GST per item based on actual product GST
+  let calculatedGstAmount = 0;
+  cart.forEach(item => {
+    const itemTotal = item.price * item.quantity;
+    const itemDiscount = discountAmount > 0 ? (itemTotal / totalCartPrice) * discountAmount : 0;
+    const finalItemPrice = Math.max(0, itemTotal - itemDiscount);
+    const itemGst = item.gstPercentage ?? systemSettings?.gstPercentage ?? 18;
+    calculatedGstAmount += finalItemPrice * (itemGst / 100);
+  });
+  
+  const gstAmount = Math.round(calculatedGstAmount);
+  const effectiveGstPercentage = totalCartPrice > 0 ? Math.round((gstAmount / Math.max(1, totalCartPrice - discountAmount)) * 100) : (systemSettings?.gstPercentage ?? 18);
   const finalTotal = Math.max(0, totalCartPrice - discountAmount + gstAmount + platformCommission);
   const mockOriginalTotal = totalCartPrice + mockSavings;
 
@@ -372,13 +383,7 @@ export default function CartPage() {
                             </div>
                           )}
 
-                          {/* Rating */}
-                          <div className="flex items-center gap-1.5 mt-2">
-                            <div className="flex items-center gap-0.5 bg-green-600 text-white px-1 py-[2px] rounded-sm text-[10px] font-bold leading-none">
-                              4.5 <Star className="w-2.5 h-2.5 fill-white" />
-                            </div>
-                            <span className="text-[10px] text-slate-400 font-medium">(408 reviews)</span>
-                          </div>
+
                         </div>
                         
                         {/* Pricing & delivery */}
@@ -441,7 +446,7 @@ export default function CartPage() {
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span>GST ({gstPercentage}% inclusive)</span>
+                  <span>GST ({effectiveGstPercentage}%)</span>
                   <span className="text-slate-900">₹{Number(gstAmount).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
@@ -468,7 +473,10 @@ export default function CartPage() {
               </button>
 
               <div className="text-[10px] text-slate-400 font-semibold text-center leading-relaxed">
-                By placing your order, you agree to Aramish's Terms of Service and Privacy Policy.
+                By placing your order, you agree to Aramish's{' '}
+                <Link to="/terms" className="text-[#0B132B] underline hover:text-gold">Terms of Service</Link>
+                {' '}and{' '}
+                <Link to="/privacy" className="text-[#0B132B] underline hover:text-gold">Privacy Policy</Link>.
               </div>
             </div>
             

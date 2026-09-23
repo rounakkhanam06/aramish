@@ -353,7 +353,7 @@ const Orders = () => {
       ...orders.map(o => `"${o._id}","${o.userId?.name || 'Guest'}","${o.userId?.email || ''}",${o.total},"${o.status}","${o.paymentMethod}","${o.paymentStatus}","${new Date(o.createdAt).toLocaleString()}"`)
     ].join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);

@@ -153,3 +153,20 @@ input::-ms-reveal,
 input::-ms-clear {
   display: none;
 }
+
+@media print {
+  aside, header, .no-print {
+    display: none !important;
+  }
+
+  .pl-72, .pl-24 {
+    padding-left: 0 !important;
+  }
+
+  body, #root, .flex-1, .admin-content {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background-color: white !important;
+  }
+}

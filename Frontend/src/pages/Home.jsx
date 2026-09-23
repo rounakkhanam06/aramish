@@ -9,6 +9,7 @@ import LazySection from '../components/ui/LazySection';
 import { cachedFetch } from '../utils/apiCache';
 import { getImageUrl } from '../utils/imageHelper';
 import { formatDiscount } from '../utils/discountHelper';
+import { isMobileAppWebView } from '../utils/platform';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -575,10 +576,26 @@ export default function Home() {
               {activeBannersList.length > 0 && [...activeBannersList, activeBannersList[0]].map((banner, idx) => (
                 <div
                   key={`banner-${banner.id || banner._id || idx}-${idx}`}
-                  className="w-full h-full flex-shrink-0 cursor-pointer"
+                  className="w-full h-full flex-shrink-0 cursor-pointer relative"
                   onClick={() => navigate(banner.link || '/categories')}
                 >
-                  <OptimizedImage src={getImageUrl(banner.image)} alt="Banner" type="banner" fetchPriority="high" className="w-full h-full object-cover" />
+                  <OptimizedImage src={getImageUrl(banner.image)} alt={banner.title || "Banner"} type="banner" fetchPriority="high" className="w-full h-full object-cover" />
+                  
+                  {/* Title and Subtitle Overlay */}
+                  {(banner.title || banner.subtitle) && (
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex flex-col justify-end p-4 md:p-6 text-white pointer-events-none">
+                      {banner.title && (
+                        <h2 className="text-lg md:text-3xl font-black mb-1 drop-shadow-md tracking-wide font-montserrat uppercase">
+                          {banner.title}
+                        </h2>
+                      )}
+                      {banner.subtitle && (
+                        <p className="text-xs md:text-base font-medium text-white/90 drop-shadow max-w-[80%]">
+                          {banner.subtitle}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -618,23 +635,25 @@ export default function Home() {
           )}
         </div>
 
-        {/* Refer & Earn Banner */}
-        <div 
-          onClick={() => navigate('/refer')}
-          className="bg-gradient-to-r from-[#02006c] to-purple-800 text-white text-center py-2.5 px-4 rounded-2xl cursor-pointer hover:opacity-95 transition-opacity flex justify-center items-center gap-2 shadow-md"
-        >
-          <span className="animate-pulse">🎁</span>
-          <p className="text-[11px] md:text-sm font-black tracking-wide">
-            Refer friends and Earn <span className="text-amber-300 font-extrabold">{systemSettings?.referralCoinsPerReferral || 200} coins</span> on successful download of our mobile application!
-          </p>
-          <span className="animate-pulse">🎁</span>
-        </div>
+        {/* Refer & Earn Banner (hidden inside the mobile app WebView) */}
+        {!isMobileAppWebView() && (
+          <div
+            onClick={() => navigate('/refer')}
+            className="bg-gradient-to-r from-[#02006c] to-purple-800 text-white text-center py-2.5 px-4 rounded-2xl cursor-pointer hover:opacity-95 transition-opacity flex justify-center items-center gap-2 shadow-md"
+          >
+            <span className="animate-pulse">🎁</span>
+            <p className="text-[11px] md:text-sm font-black tracking-wide">
+              Refer friends and Earn <span className="text-amber-300 font-extrabold">{systemSettings?.referralCoinsPerReferral || 200} coins</span> on successful download of our mobile application!
+            </p>
+            <span className="animate-pulse">🎁</span>
+          </div>
+        )}
 
         {/* CONDITIONAL RENDER: "For You" vs Other Categories */}
         {selectedCategory === 'for-you' ? (
           <>
             {/* Marquee Banner above Crazy Deals */}
-            {(systemSettings?.marqueeEnabled !== false) && !user && (
+            {(systemSettings?.marqueeEnabled !== false) && !user && !isMobileAppWebView() && (
               <div className="w-full bg-[#0B132B] rounded-xl py-4 overflow-hidden select-none marquee-container relative mb-2">
                 <div className="animate-marquee flex items-center gap-8 text-[11px] font-bold text-amber-400 tracking-wider uppercase font-sans">
                   <span>Download the Aramish App, Login & Get {systemSettings?.welcomeBonusCoins || 1000} Welcome Coins.</span>

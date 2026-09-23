@@ -55,6 +55,9 @@ export default function LoginPage() {
   const [signInError, setSignInError] = useState('');
   const [signInSuccess, setSignInSuccess] = useState('');
 
+  // Resend OTP cooldown timer (seconds remaining before "Resend" becomes clickable again)
+  const [resendCooldown, setResendCooldown] = useState(0);
+
   // Autofocus the first digit input when OTP screen is loaded
   React.useEffect(() => {
     if (otpSent) {
@@ -63,6 +66,15 @@ export default function LoginPage() {
       }, 100);
     }
   }, [otpSent]);
+
+  // Tick the resend cooldown down every second
+  React.useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setTimeout(() => {
+      setResendCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
 
   const handleSendOtp = async (e) => {
     e.preventDefault();
@@ -94,6 +106,7 @@ export default function LoginPage() {
 
       setOtpSent(true);
       setIsNewUser(!!data.isNewUser);
+      setResendCooldown(data.resendCooldownSeconds || 30);
       const successMsg = data.isNewUser
         ? '✨ New account created! Enter the OTP.'
         : '📱 OTP sent successfully!';
@@ -250,8 +263,10 @@ export default function LoginPage() {
   };
 
   const handleResendOtp = async () => {
+    if (resendCooldown > 0 || loading) return;
     setOtp(['', '', '', '', '', '']);
     setSignInError('');
+    setSignInSuccess('');
     setLoading(true);
 
     try {
@@ -261,7 +276,20 @@ export default function LoginPage() {
         body: JSON.stringify({ phone: phoneNumber })
       });
       const data = await res.json();
-      setSignInSuccess(data.success ? '📱 New OTP sent!' : 'Failed to resend OTP');
+
+      if (res.status === 429) {
+        // Server-enforced cooldown (e.g. a second tab bypassing the local timer) — sync to it
+        setResendCooldown(data.secondsRemaining || 30);
+        setSignInError(data.message || 'Please wait before requesting another OTP.');
+        return;
+      }
+
+      if (data.success) {
+        setSignInSuccess('📱 New OTP sent!');
+        setResendCooldown(data.resendCooldownSeconds || 30);
+      } else {
+        setSignInError(data.message || 'Failed to resend OTP');
+      }
     } catch {
       setSignInError('Server error. Try again.');
     } finally {
@@ -500,14 +528,20 @@ export default function LoginPage() {
               </div>
 
               <div className="text-center mt-1">
-                <button
-                  type="button"
-                  onClick={handleResendOtp}
-                  disabled={loading}
-                  className="text-[10px] font-extrabold text-[#1A2542] hover:underline cursor-pointer tracking-wide disabled:opacity-50"
-                >
-                  Resend Verification Code?
-                </button>
+                {resendCooldown > 0 ? (
+                  <span className="text-[10px] font-extrabold text-slate-400 tracking-wide">
+                    Resend OTP in 0:{resendCooldown.toString().padStart(2, '0')}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    disabled={loading}
+                    className="text-[10px] font-extrabold text-[#1A2542] hover:underline cursor-pointer tracking-wide disabled:opacity-50"
+                  >
+                    Resend Verification Code?
+                  </button>
+                )}
               </div>
             </form>
           </div>

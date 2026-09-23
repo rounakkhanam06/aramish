@@ -276,7 +276,7 @@ const ReferralProgram = () => {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center font-black text-indigo-600 text-xs">
-                          {ref.referrer?.name?.charAt(0)?.toUpperCase() || '?'}
+                          {ref.referrer?.name ? ref.referrer.name.charAt(0).toUpperCase() : 'U'}
                         </div>
                         <div>
                           <p className="font-bold text-slate-900 text-[13px]">{ref.referrer?.name || 'Unknown'}</p>
@@ -287,7 +287,7 @@ const ReferralProgram = () => {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center font-black text-slate-500 text-xs">
-                          {ref.referee?.name?.charAt(0)?.toUpperCase() || '?'}
+                          {ref.referee?.name ? ref.referee.name.charAt(0).toUpperCase() : 'N'}
                         </div>
                         <div>
                           <p className="font-bold text-slate-900 text-[13px]">{ref.referee?.name || 'New User'}</p>
@@ -308,7 +308,7 @@ const ReferralProgram = () => {
                     </td>
                     <td className="px-6 py-4">
                       {ref.referrerCoinsAwarded > 0 ? (
-                        <span className="font-black text-amber-600 text-[13px]">+{ref.referrerCoinsAwarded} MC</span>
+                        <span className="font-black text-amber-600 text-[13px]">+{ref.referrerCoinsAwarded} Coins</span>
                       ) : (
                         <span className="text-slate-300 text-[12px] font-bold">—</span>
                       )}
@@ -406,7 +406,7 @@ const ReferralProgram = () => {
                   {/* Coins to Referrer */}
                   <div className="space-y-3">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                      Coins to Referrer (Jo refer kar raha hai)
+                      Coins to Referrer (The person who invites)
                     </label>
                     <div className="relative">
                       <input
@@ -422,7 +422,7 @@ const ReferralProgram = () => {
                   {/* Coins to Referee */}
                   <div className="space-y-3">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                      Coins to Referee (Jo refer ho raha hai)
+                      Coins to Referee (The person who is invited)
                     </label>
                     <div className="relative">
                       <input

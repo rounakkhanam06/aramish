@@ -150,6 +150,7 @@ export default function ProfilePage() {
   const [infoModalType, setInfoModalType] = useState(null); // 'faq', 'editProfile', or null
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteSuccess, setDeleteSuccess] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showWalletBalance, setShowWalletBalance] = useState(false);
   const [modalStep, setModalStep] = useState(0); // 0 = Welcome onboarding, 1 = Creator editor
   const [tempConfig, setTempConfig] = useState({ ...avatarConfig });
@@ -163,7 +164,7 @@ export default function ProfilePage() {
 
   // Prevent background scrolling when modals are open
   useEffect(() => {
-    const isAnyModalActive = isModalOpen || !!infoModalType || showDeleteModal;
+    const isAnyModalActive = isModalOpen || !!infoModalType || showDeleteModal || showLogoutModal;
     if (isAnyModalActive) {
       document.body.style.overflow = 'hidden';
     } else {
@@ -172,7 +173,7 @@ export default function ProfilePage() {
     return () => {
       document.body.style.overflow = '';
     };
-  }, [isModalOpen, infoModalType, showDeleteModal]);
+  }, [isModalOpen, infoModalType, showDeleteModal, showLogoutModal]);
 
   const handleSaveName = async () => {
     if (!newName.trim() || newName.trim() === user?.name) {
@@ -640,8 +641,8 @@ export default function ProfilePage() {
 
             {/* Logout and Delete Actions on Desktop Left Column */}
             <div className="hidden md:flex flex-col gap-2 pt-2 border-t border-white/10">
-              <button 
-                onClick={() => { logout(); navigate('/login'); }}
+              <button
+                onClick={() => setShowLogoutModal(true)}
                 className="w-full flex items-center justify-between p-3.5 rounded-xl hover:bg-rose-50/50 text-left cursor-pointer group transition-colors"
               >
                 <div className="flex items-center gap-3">
@@ -779,8 +780,8 @@ export default function ProfilePage() {
             {/* Log out controls on mobile view (Hidden on desktop) */}
             <div className="space-y-3.5 md:hidden">
               <div className="bg-surface rounded p-2 shadow-sm border border-white/10">
-                <button 
-                  onClick={() => { logout(); navigate('/login'); }}
+                <button
+                  onClick={() => setShowLogoutModal(true)}
                   className="w-full flex items-center justify-between p-3.5 rounded hover:bg-rose-50/60 active:scale-[0.98] transition-all duration-300 text-left cursor-pointer group"
                 >
                   <div className="flex items-center gap-4">
@@ -927,6 +928,59 @@ export default function ProfilePage() {
                   </p>
                 </motion.div>
               )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Logout Confirmation Modal */}
+      <AnimatePresence>
+        {showLogoutModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-[#0a0927]/70 backdrop-blur-sm flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.85, y: 24 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 16 }}
+              transition={{ type: 'spring', damping: 22, stiffness: 220 }}
+              className="bg-surface rounded-[28px] w-full max-w-sm p-6 shadow-2xl border border-white/10 relative overflow-hidden"
+            >
+              {/* Icon */}
+              <div className="flex justify-center mb-4">
+                <div className="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center shadow-inner">
+                  <LogOut className="w-7 h-7 text-rose-500" />
+                </div>
+              </div>
+
+              {/* Text */}
+              <h3 className="text-[18px] font-black text-[#02006c] text-center mb-1">Log Out?</h3>
+              <p className="text-[12px] text-slate-500 font-medium text-center leading-relaxed mb-6">
+                Are you sure you want to log out of your account?
+              </p>
+
+              {/* Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowLogoutModal(false)}
+                  className="flex-1 py-3 rounded-2xl border border-white/10 bg-surface text-slate-700 text-[14px] font-bold hover:bg-surface active:scale-95 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowLogoutModal(false);
+                    logout();
+                    navigate('/login');
+                  }}
+                  className="flex-1 py-3 rounded-2xl bg-rose-500 hover:bg-rose-600 text-white text-[14px] font-bold active:scale-95 transition-all cursor-pointer shadow-md shadow-rose-200"
+                >
+                  Yes, Log Out
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

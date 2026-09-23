@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import toast from 'react-hot-toast';
 import { requestFcmToken, messaging } from '../firebase';
@@ -448,54 +448,55 @@ export const AppProvider = ({ children }) => {
     syncAndFetchCart();
   }, [user]);
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      if (!user || !user.id) {
-        setOrders([]);
+  const refreshOrders = useCallback(async () => {
+    if (!user || !user.id) {
+      setOrders([]);
+      return;
+    }
+    try {
+      const token = localStorage.getItem('userToken');
+      if (!token) return;
+      const res = await fetch(`${API_BASE}/orders`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.status === 401) {
+        triggerForceLogoutUI();
         return;
       }
-      try {
-        const token = localStorage.getItem('userToken');
-        if (!token) return;
-        const res = await fetch(`${API_BASE}/orders`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.status === 401) {
-          triggerForceLogoutUI();
-          return;
-        }
-        const data = await res.json();
-        if (data.success && data.orders) {
-          const mappedOrders = data.orders.map(o => ({
-            id: o._id || o.id,
-            date: new Date(o.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }),
-            items: o.items.map(item => ({
-              id: item.productId,
-              name: item.name,
-              price: item.price,
-              quantity: item.quantity,
-              image: item.image
-            })),
-            total: o.total,
-            status: o.status,
-            paymentMethod: o.paymentMethod,
-            paymentStatus: o.paymentStatus,
-            deliveryAddress: o.deliveryAddress,
-            deliveryCharge: o.deliveryCharge,
-            etd: o.etd,
-            walletUsed: o.walletUsed,
-            coinsRedeemed: o.coinsRedeemed,
-            couponCode: o.couponCode,
-            createdAt: o.createdAt
-          }));
-          setOrders(mappedOrders);
-        }
-      } catch (err) {
-        console.error("Error fetching orders from DB:", err);
+      const data = await res.json();
+      if (data.success && data.orders) {
+        const mappedOrders = data.orders.map(o => ({
+          id: o._id || o.id,
+          date: new Date(o.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }),
+          items: o.items.map(item => ({
+            id: item.productId,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            image: item.image
+          })),
+          total: o.total,
+          status: o.status,
+          paymentMethod: o.paymentMethod,
+          paymentStatus: o.paymentStatus,
+          deliveryAddress: o.deliveryAddress,
+          deliveryCharge: o.deliveryCharge,
+          etd: o.etd,
+          walletUsed: o.walletUsed,
+          coinsRedeemed: o.coinsRedeemed,
+          couponCode: o.couponCode,
+          createdAt: o.createdAt
+        }));
+        setOrders(mappedOrders);
       }
-    };
-    fetchOrders();
+    } catch (err) {
+      console.error("Error fetching orders from DB:", err);
+    }
   }, [user]);
+
+  useEffect(() => {
+    refreshOrders();
+  }, [refreshOrders]);
 
   // Address functions
   const fetchAddresses = async () => {
@@ -870,6 +871,7 @@ export const AppProvider = ({ children }) => {
         isInWishlist,
         orders,
         addOrder,
+        refreshOrders,
         location,
         setLocation,
         searchQuery,

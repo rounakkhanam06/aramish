@@ -53,7 +53,9 @@ const Notifications = () => {
 
     try {
       const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      const res = await fetch(`${apiBase}/admin/auth/users`, {
+      // No limit param defaults to only 10 users server-side — fetch every registered
+      // user so the "Selected Users" search can actually find anyone on the platform.
+      const res = await fetch(`${apiBase}/admin/auth/users?limit=100000`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();

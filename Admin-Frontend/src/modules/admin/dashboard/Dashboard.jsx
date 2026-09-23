@@ -84,10 +84,10 @@ const Dashboard = () => {
 
     // Recent Customers
     csvContent += "Recent Customers\n";
-    csvContent += "Name,Email,Joined Date\n";
+    csvContent += "Name,Phone,Email,Joined Date\n";
     const recentCusts = stats.recentCustomers || [];
     recentCusts.forEach(cust => {
-      csvContent += `"${cust.name || 'Anonymous'}",${cust.email || 'N/A'},${new Date(cust.createdAt).toLocaleDateString()}\n`;
+      csvContent += `"${cust.name || 'Anonymous'}",${cust.phone || 'N/A'},${cust.email || 'N/A'},${new Date(cust.createdAt).toLocaleDateString()}\n`;
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -320,7 +320,7 @@ const Dashboard = () => {
                     </div>
                     <div>
                       <h4 className="font-black text-slate-900 text-sm">{customer.name || 'Anonymous Customer'}</h4>
-                      <p className="text-xs text-slate-400 font-medium">{customer.email}</p>
+                      <p className="text-xs text-slate-400 font-medium">{customer.phone ? `+91 ${customer.phone}` : (customer.email || 'No contact info')}</p>
                     </div>
                   </div>
                   <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">

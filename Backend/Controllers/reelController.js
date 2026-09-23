@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Reel = require('../Models/Reel');
 const Product = require('../Models/Product');
 
@@ -6,45 +7,62 @@ const Product = require('../Models/Product');
 // @access  Private
 exports.createReel = async (req, res) => {
   try {
-    const { productId, rating, caption } = req.body;
+    const { productId, orderId, rating, caption, reviewText } = req.body;
 
     if (!productId) {
       return res.status(400).json({ success: false, message: 'Product ID is required' });
     }
 
-    // Verify if user is a verified buyer
+    // Verify if user is a verified buyer who has received the product
     const Order = require('../Models/Order');
     const hasPurchased = await Order.exists({
       userId: req.user._id,
       "items.productId": productId,
-      status: { $ne: 'Cancelled' }
+      status: 'Delivered'
     });
 
     if (!hasPurchased) {
-      return res.status(403).json({ success: false, message: 'You can only review products that you have purchased.' });
+      return res.status(403).json({ success: false, message: 'You can only review products after your order is delivered.' });
     }
 
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'Please upload a video review' });
+    const alreadyReviewed = await Reel.exists({
+      productId,
+      uploadedBy: req.user._id,
+      userModel: 'User'
+    });
+
+    if (alreadyReviewed) {
+      return res.status(409).json({ success: false, message: 'You have already submitted a review for this product.' });
     }
 
-    const videoUrl = `/uploads/videos/${req.file.filename}`;
+    const videoFile = req.files?.video?.[0];
+    const photoFiles = req.files?.photos || [];
+
+    if (!videoFile && photoFiles.length === 0 && !reviewText && !rating) {
+      return res.status(400).json({ success: false, message: 'Please add a rating, review, photo, or video.' });
+    }
+
+    const videoUrl = videoFile ? `/uploads/videos/${videoFile.filename}` : undefined;
+    const photoUrls = photoFiles.map(f => `/uploads/videos/${f.filename}`);
 
     const reel = await Reel.create({
       productId,
+      orderId: orderId || undefined,
       uploadedBy: req.user._id,
       userModel: 'User',
       userType: 'user',
       username: req.user.name || 'Anonymous User',
       profileImage: req.user.profileImage || '',
       video: videoUrl,
+      photos: photoUrls,
+      reviewText: reviewText || '',
       rating: rating || 5,
       caption: caption || '',
       status: 'pending',
       section: 'following'
     });
 
-    res.status(201).json({ success: true, message: 'Reel review uploaded successfully, awaiting moderation.', reel });
+    res.status(201).json({ success: true, message: 'Review submitted successfully, awaiting moderation.', reel });
   } catch (error) {
     console.error('Error creating reel:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -65,12 +83,70 @@ exports.checkEligibility = async (req, res) => {
     const hasPurchased = await Order.exists({
       userId: req.user._id,
       "items.productId": productId,
-      status: { $ne: 'Cancelled' }
+      status: 'Delivered'
     });
 
-    res.status(200).json({ success: true, eligible: !!hasPurchased });
+    const existingReview = await Reel.findOne({
+      productId,
+      uploadedBy: req.user._id,
+      userModel: 'User'
+    }).sort({ createdAt: -1 });
+
+    res.status(200).json({ success: true, eligible: !!hasPurchased, existingReview: existingReview || null });
   } catch (error) {
     console.error('Error checking review eligibility:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get the current user's own reviews/reels (any status)
+// @route   GET /api/reels/my-reviews
+// @access  Private
+exports.getMyReviews = async (req, res) => {
+  try {
+    const reviews = await Reel.find({
+      uploadedBy: req.user._id,
+      userModel: 'User'
+    }).sort({ createdAt: -1 });
+
+    res.status(200).json({ success: true, reviews });
+  } catch (error) {
+    console.error('Error fetching my reviews:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get aggregate rating summary for a product (approved reviews only)
+// @route   GET /api/reels/product/:productId/summary
+// @access  Public
+exports.getProductRatingSummary = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const result = await Reel.aggregate([
+      {
+        $match: {
+          productId: new mongoose.Types.ObjectId(productId),
+          status: 'approved',
+          rating: { $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          avgRating: { $avg: '$rating' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const summary = result[0] || { avgRating: 0, count: 0 };
+    res.status(200).json({
+      success: true,
+      avgRating: Math.round((summary.avgRating || 0) * 10) / 10,
+      count: summary.count || 0
+    });
+  } catch (error) {
+    console.error('Error fetching rating summary:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -80,7 +156,7 @@ exports.checkEligibility = async (req, res) => {
 // @access  Private/Admin
 exports.createAdminReel = async (req, res) => {
   try {
-    const { productId, caption, rating, featured, section } = req.body;
+    const { productId, caption, rating, featured, section, displayName } = req.body;
 
     if (!productId) {
       return res.status(400).json({ success: false, message: 'Product ID is required' });
@@ -97,7 +173,7 @@ exports.createAdminReel = async (req, res) => {
       uploadedBy: req.admin._id,
       userModel: 'Admin',
       userType: 'admin',
-      username: req.admin.username || 'Admin',
+      username: (displayName && displayName.trim()) || req.admin.username || 'Admin',
       profileImage: '/uploads/admin-avatar.png',
       video: videoUrl,
       rating: rating || 5,
@@ -118,10 +194,13 @@ exports.createAdminReel = async (req, res) => {
 // @access  Public
 exports.getReels = async (req, res) => {
   try {
-    const { section } = req.query; // 'forYou' or 'following'
+    const { section, productId } = req.query; // 'forYou' or 'following'
     const query = { status: 'approved' };
     if (section) {
       query.section = section;
+    }
+    if (productId) {
+      query.productId = productId;
     }
 
     const reels = await Reel.find(query)

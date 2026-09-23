@@ -43,6 +43,10 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  otpLastSentAt: {
+    type: Date,
+    default: null
+  },
   lastLogin: {
     type: Date,
     default: null

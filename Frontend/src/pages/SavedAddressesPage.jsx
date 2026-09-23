@@ -293,9 +293,9 @@ export default function SavedAddressesPage() {
       {/* Add/Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[60] bg-[#0a0927]/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4">
-          <div className="bg-surface rounded-t-[32px] sm:rounded-[24px] w-full max-w-md shadow-2xl animate-slide-up sm:animate-fade-in overflow-hidden">
+          <div className="bg-surface rounded-t-[32px] sm:rounded-[24px] w-full max-w-md shadow-2xl animate-slide-up sm:animate-fade-in overflow-hidden flex flex-col max-h-[90dvh]">
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-surface">
+            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-surface flex-shrink-0">
               <h3 className="text-lg font-black text-[#02006c]">
                 {editingAddress ? 'Edit Address' : 'Add New Address'}
               </h3>
@@ -308,7 +308,7 @@ export default function SavedAddressesPage() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
               {/* Full Name */}
               <div className="space-y-1.5">
                 <label className="text-[13px] font-bold text-slate-700">Full Name</label>
@@ -395,7 +395,7 @@ export default function SavedAddressesPage() {
             </div>
 
             {/* Save button */}
-            <div className="p-4 bg-surface border-t border-white/10 shadow-[0_-5px_15px_rgba(0,0,0,0.02)]">
+            <div className="p-4 bg-surface border-t border-white/10 shadow-[0_-5px_15px_rgba(0,0,0,0.02)] flex-shrink-0">
               <button
                 onClick={handleSaveAddress}
                 disabled={saving}

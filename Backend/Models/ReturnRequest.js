@@ -66,7 +66,28 @@ const returnRequestSchema = new mongoose.Schema({
   awbCode: { type: String, default: null },
   courierName: { type: String, default: null },
   walletRefundProcessed: { type: Boolean, default: false },
-  pickupScheduled: { type: Boolean, default: false }
+  pickupScheduled: { type: Boolean, default: false },
+
+  // Refund idempotency claims (guard the 'Refunded' branch against double stock
+  // restoration / double cash refund on retry after a partial failure)
+  stockRefundClaimed: { type: Boolean, default: false },
+  cashRefundProcessed: { type: Boolean, default: false },
+
+  // Shiprocket reverse-pickup shipment retry tracking (mirrors ExchangeRequest)
+  shipmentStatus: {
+    type: String,
+    enum: ['Pending', 'Created', 'Failed', 'Manual Review'],
+    default: 'Pending'
+  },
+  shipmentRetryInProgress: { type: Boolean, default: false },
+  shipmentRetryCount: { type: Number, default: 0 },
+  shipmentErrors: [
+    {
+      error: { type: String },
+      timestamp: { type: Date, default: Date.now }
+    }
+  ],
+  lastShipmentRetryAt: { type: Date, default: null }
 }, { timestamps: true });
 
 returnRequestSchema.index({ orderId: 1 });

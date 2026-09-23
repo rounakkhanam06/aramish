@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { getImageUrl } from '../../utils/imageHelper';
 import { Image } from 'lucide-react';
 
@@ -42,6 +42,14 @@ export default function OptimizedImage({
     }
     return url;
   }, [src, type]);
+
+  // A src that changes after a prior load failure (e.g. a freshly uploaded profile
+  // photo replacing a broken/missing one) must clear the stale error/loaded state,
+  // otherwise this component keeps rendering the old fallback forever.
+  useEffect(() => {
+    setLoaded(false);
+    setError(false);
+  }, [resolvedSrc]);
 
   const fallback = FALLBACK_GRADIENTS[type] || FALLBACK_GRADIENTS.default;
   const finalObjectFit = objectFit || (type === 'product' ? 'contain' : 'cover');

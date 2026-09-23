@@ -16,6 +16,8 @@ const StockAlerts = () => {
   const [editingStock, setEditingStock] = useState(null);
   const [stockValue, setStockValue] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [variantStockModal, setVariantStockModal] = useState(null);
+  const [variantStockValues, setVariantStockValues] = useState({});
 
   const fetchProducts = async () => {
     try {
@@ -50,7 +52,7 @@ const StockAlerts = () => {
     fetchProducts();
   }, []);
 
-  const handleSaveStock = async (id, newStock) => {
+  const handleSaveStock = async (id, newStock, variationsToUpdate = null) => {
     if (newStock < 0) {
       toast.error('Stock cannot be negative!');
       return;
@@ -64,18 +66,24 @@ const StockAlerts = () => {
 
     try {
       const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const bodyPayload = { stock: newStock };
+      if (variationsToUpdate) {
+        bodyPayload.variations = variationsToUpdate;
+      }
+      
       const res = await fetch(`${apiBase}/admin/catalog/products/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ stock: newStock })
+        body: JSON.stringify(bodyPayload)
       });
       const data = await res.json();
       if (res.ok && data.success) {
         toast.success('Stock updated successfully');
         fetchProducts();
+        if (variationsToUpdate) setVariantStockModal(null);
       } else {
         toast.error(data.message || 'Failed to update stock');
       }
@@ -83,6 +91,16 @@ const StockAlerts = () => {
       console.error(err);
       toast.error('Could not connect to backend server');
     }
+  };
+
+  const handleSaveVariantStock = () => {
+    if (!variantStockModal) return;
+    const updatedVariations = variantStockModal.variations.map(v => ({
+      ...v,
+      stock: variantStockValues[v.sku] !== undefined ? Number(variantStockValues[v.sku]) : v.stock
+    }));
+    const newTotalStock = updatedVariations.reduce((sum, v) => sum + Number(v.stock), 0);
+    handleSaveStock(variantStockModal.id, newTotalStock, updatedVariations);
   };
 
   // Map all products to alert items structure
@@ -103,7 +121,8 @@ const StockAlerts = () => {
       threshold: 10,
       status: status,
       image: p.images && p.images[0] ? p.images[0] : '',
-      vendor: p.brandName || 'Generic'
+      vendor: p.brandName || 'Generic',
+      variations: p.variations || []
     };
   });
 
@@ -256,8 +275,15 @@ const StockAlerts = () => {
                         <div 
                           className="flex items-center gap-2 cursor-pointer group/stock"
                           onClick={() => {
-                            setEditingStock(item.id);
-                            setStockValue(item.stock);
+                            if (item.variations.length > 0) {
+                              setVariantStockModal(item);
+                              const initialVals = {};
+                              item.variations.forEach(v => initialVals[v.sku] = v.stock);
+                              setVariantStockValues(initialVals);
+                            } else {
+                              setEditingStock(item.id);
+                              setStockValue(item.stock);
+                            }
                           }}
                         >
                           <div className={`w-2 h-2 rounded-full ${item.stock === 0 ? 'bg-red-500' : item.stock <= 3 ? 'bg-red-500' : item.stock <= 10 ? 'bg-amber-500' : 'bg-green-500'}`} />
@@ -274,8 +300,15 @@ const StockAlerts = () => {
                       <div className="flex justify-end gap-2">
                          <button 
                           onClick={() => {
-                            setEditingStock(item.id);
-                            setStockValue(Number(item.stock) + 10);
+                            if (item.variations.length > 0) {
+                              setVariantStockModal(item);
+                              const initialVals = {};
+                              item.variations.forEach(v => initialVals[v.sku] = v.stock);
+                              setVariantStockValues(initialVals);
+                            } else {
+                              setEditingStock(item.id);
+                              setStockValue(Number(item.stock) + 10);
+                            }
                           }}
                           className="px-4 py-2 bg-[#0B132B] text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-md shadow-orange-100"
                          >
@@ -290,6 +323,67 @@ const StockAlerts = () => {
           </table>
         </div>
       </div>
+
+      {variantStockModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex justify-center items-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-lg text-slate-900">Manage Variant Stocks</h3>
+              <button onClick={() => setVariantStockModal(null)} className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors">
+                <XCircle size={20} />
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl mb-4 border border-slate-100">
+               <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center border border-slate-200 overflow-hidden shrink-0">
+                  <OptimizedImage src={variantStockModal.image} alt="product" type="product" className="w-full h-full" />
+               </div>
+               <div>
+                  <p className="font-black text-slate-900 text-sm font-montserrat uppercase">{variantStockModal.name}</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">Total current stock: {variantStockModal.stock}</p>
+               </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1 space-y-2 mb-6 border border-slate-100 rounded-xl bg-slate-50/50 p-2">
+               {variantStockModal.variations.map(v => (
+                 <div key={v.sku} className="flex justify-between items-center bg-white p-3 rounded-lg border border-slate-100">
+                    <div>
+                       <p className="font-bold text-slate-800 text-xs">SKU: {v.sku}</p>
+                       <p className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">{v.color} {v.color && v.size ? '/' : ''} {v.size}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                       <span className="text-[10px] font-bold text-slate-400">Stock:</span>
+                       <input 
+                         type="number"
+                         min="0"
+                         className="w-20 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-black outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                         value={variantStockValues[v.sku] ?? ''}
+                         onChange={(e) => setVariantStockValues(prev => ({...prev, [v.sku]: e.target.value}))}
+                       />
+                    </div>
+                 </div>
+               ))}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button 
+                onClick={() => setVariantStockModal(null)}
+                className="px-5 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSaveVariantStock}
+                className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-200 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+              >
+                <CheckCircle2 size={16} />
+                Save Variant Stocks
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

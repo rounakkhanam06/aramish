@@ -2,6 +2,8 @@ const User = require('../Models/User');
 const jwt = require('jsonwebtoken');
 const { getImageUrl } = require('../utils/imageHelper');
 
+const OTP_RESEND_COOLDOWN_SECONDS = 30;
+
 // Generate JWT Token
 const generateToken = (id, phone, tokenVersion = 0) => {
   return jwt.sign(
@@ -51,6 +53,20 @@ const sendOtp = async (req, res) => {
       user = new User({ phone });
     }
 
+    // Enforce a minimum interval between OTP sends so the resend timer shown on the
+    // frontend can't be bypassed by calling this endpoint directly.
+    if (user.otpLastSentAt) {
+      const secondsSinceLastSend = (Date.now() - new Date(user.otpLastSentAt).getTime()) / 1000;
+      const secondsRemaining = Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - secondsSinceLastSend);
+      if (secondsRemaining > 0) {
+        return res.status(429).json({
+          success: false,
+          message: `Please wait ${secondsRemaining}s before requesting another OTP.`,
+          secondsRemaining
+        });
+      }
+    }
+
     const otp = getOtp(phone);
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
@@ -59,6 +75,7 @@ const sendOtp = async (req, res) => {
     const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
     user.otp = otpHash;
     user.otpExpiry = otpExpiry;
+    user.otpLastSentAt = new Date();
     await user.save();
 
     if (process.env.ENV !== 'production') {
@@ -121,6 +138,7 @@ const sendOtp = async (req, res) => {
         ? `OTP sent (Staging: use ${process.env.STATIC_OTP || '123456'})`
         : 'OTP sent to your phone number',
       isNewUser,
+      resendCooldownSeconds: OTP_RESEND_COOLDOWN_SECONDS,
       // Only expose OTP in staging for dev convenience
       ...(process.env.ENV === 'staging' && { otp })
     });

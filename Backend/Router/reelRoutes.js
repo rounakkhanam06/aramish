@@ -16,7 +16,9 @@ const {
   updateReelComment,
   deleteReelComment,
   incrementViews,
-  checkEligibility
+  checkEligibility,
+  getMyReviews,
+  getProductRatingSummary
 } = require('../Controllers/reelController');
 
 const { protectUser } = require('../Middlewares/userAuthMiddleware');
@@ -39,10 +41,10 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('video/')) {
+  if (file.mimetype.startsWith('video/') || file.mimetype.startsWith('image/')) {
     cb(null, true);
   } else {
-    cb(new Error('Only video files are allowed!'), false);
+    cb(new Error('Only video or image files are allowed!'), false);
   }
 };
 
@@ -54,13 +56,20 @@ const uploadVideo = multer({
   fileFilter: fileFilter
 });
 
+const uploadReviewMedia = uploadVideo.fields([
+  { name: 'video', maxCount: 1 },
+  { name: 'photos', maxCount: 5 }
+]);
+
 // Public routes
 router.get('/', getReels);
+router.get('/product/:productId/summary', getProductRatingSummary);
 router.post('/:id/view', incrementViews);
 
 // User protected routes
 router.get('/check-eligibility', protectUser, checkEligibility);
-router.post('/', protectUser, uploadVideo.single('video'), createReel);
+router.get('/my-reviews', protectUser, getMyReviews);
+router.post('/', protectUser, uploadReviewMedia, createReel);
 router.post('/:id/like', protectUser, likeReel);
 router.post('/:id/comment', protectUser, commentReel);
 router.put('/:id/comment/:commentId', protectUser, updateReelComment);

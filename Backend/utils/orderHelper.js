@@ -429,8 +429,266 @@ const handleOrderCancellationRefunds = async (order, options = {}) => {
   order.paymentStatus = 'Refunded';
 };
 
+/**
+ * Atomically processes a return request's refund (the returnController.updateReturnStatus
+ * 'Refunded' branch). Mirrors handleOrderCancellationRefunds's two-phase design but is scoped
+ * to the specific items/amount on the ReturnRequest rather than the whole order:
+ *
+ * Phase 1 (DB-only, ONE MongoDB transaction, guarded by ReturnRequest.stockRefundClaimed):
+ * restores stock for the returned items, and refunds wallet balance + welcome-bonus coins +
+ * referral coins that were used on the order (folded into the SAME claim/transaction so a
+ * retry after a mid-flight failure can never double-restore stock or double-credit wallet
+ * coins). Falls back to manual compensation when transactions aren't supported.
+ *
+ * Phase 2 (external, best-effort, separate claim: ReturnRequest.cashRefundProcessed): the
+ * cash refund for the returned items — Razorpay refund for online payments, or a wallet
+ * store-credit fallback when the customer chose 'Wallet' as their refund destination. Checks
+ * for an existing Razorpay refund before issuing a new one, same as the order-cancellation path.
+ *
+ * @param {Object} returnRequest - The ReturnRequest Mongoose document
+ * @param {Object} order - The associated Order Mongoose document
+ */
+const handleReturnRefund = async (returnRequest, order) => {
+  const Order = require('../Models/Order');
+  const User = require('../Models/User');
+  const WalletTransaction = require('../Models/WalletTransaction');
+  const CoinTransaction = require('../Models/CoinTransaction');
+  const ReturnRequest = require('../Models/ReturnRequest');
+  const axios = require('axios');
+  const { isTransientTransactionError, sleep } = require('./transactionRetry');
+
+  const walletAmount = order.walletUsed || 0;
+  const referralAmount = order.referralCoinsUsed || 0;
+
+  // ---- Phase 1: stock restoration + wallet/welcome-bonus + referral coin restore ----
+  const MAX_TRANSIENT_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
+    const session = await mongoose.startSession();
+    let transactionActive = false;
+    let claimed = false;
+
+    const restoredStockItems = []; // { productId, quantity }
+    let walletCredited = false;
+    let referralCredited = false;
+
+    try {
+      try {
+        session.startTransaction();
+        transactionActive = true;
+      } catch (txErr) {
+        console.warn('MongoDB transactions not supported by deployment. Processing return refund non-transactionally (with manual compensation on failure).');
+      }
+      const sessionOpt = transactionActive ? { session } : {};
+
+      // Single atomic claim guards stock restoration + wallet/referral restore together.
+      // A retried 'Refunded' call (after a prior partial failure, or a duplicate admin
+      // request) can never re-run this bundle once it has been claimed.
+      const claimResult = await ReturnRequest.findOneAndUpdate(
+        { _id: returnRequest._id, stockRefundClaimed: { $ne: true } },
+        { $set: { stockRefundClaimed: true } },
+        sessionOpt
+      );
+
+      if (!claimResult) {
+        if (transactionActive) { await session.abortTransaction(); transactionActive = false; }
+        session.endSession();
+        break;
+      }
+      claimed = true;
+
+      // 1. Restore stock for the returned items only
+      for (const item of returnRequest.items) {
+        if (item.productId) {
+          const qty = item.quantity || 1;
+          await Product.findByIdAndUpdate(item.productId, {
+            $inc: { stock: qty, sales: -qty }
+          }, sessionOpt);
+          restoredStockItems.push({ productId: item.productId, quantity: qty });
+        }
+      }
+
+      // 2. Restore redeemed wallet coins (+ welcome-bonus split) if wallet was used on the order
+      if (walletAmount > 0) {
+        const SystemConfig = require('../Models/SystemConfig');
+        const systemConfig = await SystemConfig.findOne({}, null, sessionOpt);
+        const welcomeBonusCoins = systemConfig && systemConfig.welcomeBonusCoins !== undefined ? systemConfig.welcomeBonusCoins : 1000;
+
+        const currentUser = await User.findById(returnRequest.userId, null, sessionOpt);
+        const coinsToRestore = order.welcomeCoinsUsed !== undefined && order.welcomeCoinsUsed !== null ? order.welcomeCoinsUsed : walletAmount;
+        const restoredWelcomeRemaining = Math.min(welcomeBonusCoins, (currentUser?.welcomeBonusRemaining || 0) + coinsToRestore);
+
+        await User.findByIdAndUpdate(returnRequest.userId, {
+          $inc: { walletBalance: walletAmount },
+          $set: { welcomeBonusRemaining: restoredWelcomeRemaining }
+        }, sessionOpt);
+        walletCredited = true;
+
+        await WalletTransaction.create([{
+          userId: returnRequest.userId,
+          type: 'REFUND',
+          amount: walletAmount,
+          description: `Restored ${walletAmount} Wallet Coins for Returned Order #${order._id.toString().substring(order._id.toString().length - 6).toUpperCase()}`
+        }], sessionOpt);
+      }
+
+      // 3. Restore referral coins used on the order
+      if (referralAmount > 0) {
+        await User.findByIdAndUpdate(returnRequest.userId, {
+          $inc: { referralCoins: referralAmount }
+        }, sessionOpt);
+        referralCredited = true;
+
+        await CoinTransaction.create([{
+          userId: returnRequest.userId,
+          type: 'earned',
+          title: `Restored Referral Coins for Returned Order #${order._id.toString().substring(order._id.toString().length - 6).toUpperCase()}`,
+          amount: referralAmount
+        }], sessionOpt);
+      }
+
+      returnRequest.walletRefundProcessed = true;
+
+      if (transactionActive) {
+        await session.commitTransaction();
+        transactionActive = false;
+      }
+      session.endSession();
+      break;
+    } catch (error) {
+      if (transactionActive) {
+        try { await session.abortTransaction(); } catch (_) { /* ignore */ }
+        session.endSession();
+
+        if (isTransientTransactionError(error) && attempt < MAX_TRANSIENT_RETRIES) {
+          console.warn(`Transient transaction conflict processing return refund for return ${returnRequest._id} (attempt ${attempt}/${MAX_TRANSIENT_RETRIES}), retrying...`);
+          await sleep(20 * attempt);
+          continue;
+        }
+      } else {
+        session.endSession();
+        // No transaction support: manually undo whatever already succeeded, in reverse order.
+        if (referralCredited) {
+          try {
+            await User.findByIdAndUpdate(returnRequest.userId, { $inc: { referralCoins: -referralAmount } });
+          } catch (compErr) {
+            console.error(`CRITICAL: failed to compensate referral coins after partial return-refund failure for return ${returnRequest._id}. Manual reconciliation required.`, compErr);
+          }
+        }
+        if (walletCredited) {
+          try {
+            await User.findByIdAndUpdate(returnRequest.userId, { $inc: { walletBalance: -walletAmount } });
+          } catch (compErr) {
+            console.error(`CRITICAL: failed to compensate wallet balance after partial return-refund failure for return ${returnRequest._id}. Manual reconciliation required.`, compErr);
+          }
+        }
+        if (restoredStockItems.length > 0) {
+          try {
+            for (const item of restoredStockItems) {
+              await Product.findByIdAndUpdate(item.productId, {
+                $inc: { stock: -item.quantity, sales: item.quantity }
+              });
+            }
+          } catch (compErr) {
+            console.error(`CRITICAL: failed to compensate stock restoration after partial return-refund failure for return ${returnRequest._id}. Manual reconciliation required.`, compErr);
+          }
+        }
+        if (claimed) {
+          try {
+            await ReturnRequest.updateOne({ _id: returnRequest._id }, { $set: { stockRefundClaimed: false } });
+          } catch (revertErr) {
+            console.error(`CRITICAL: failed to revert stockRefundClaimed claim after failure for return ${returnRequest._id}. Manual reconciliation required.`, revertErr);
+          }
+        }
+      }
+      console.error('Error processing return refund:', error);
+      throw error;
+    }
+  }
+
+  // ---- Phase 2: cash refund for the returned items (Razorpay, or wallet store-credit fallback) ----
+  const cashRefundAmount = Number(returnRequest.refundAmount) || 0;
+
+  if (cashRefundAmount > 0) {
+    const cashClaim = await ReturnRequest.findOneAndUpdate(
+      { _id: returnRequest._id, cashRefundProcessed: { $ne: true } },
+      { $set: { cashRefundProcessed: true } }
+    );
+
+    if (cashClaim) {
+      let refundProcessedOnline = false;
+
+      if (order.paymentMethod === 'Online' && order.paymentId) {
+        const rzpKeyId = process.env.RAZORPAY_KEY_ID;
+        const rzpKeySecret = process.env.RAZORPAY_KEY_SECRET;
+
+        if (rzpKeyId && rzpKeySecret) {
+          try {
+            const rzpAuth = Buffer.from(`${rzpKeyId}:${rzpKeySecret}`).toString('base64');
+
+            // Idempotency guard: don't issue a second Razorpay refund for this payment if one
+            // was already created by a previous attempt that crashed before we recorded it.
+            const existingRefunds = await axios.get(`https://api.razorpay.com/v1/payments/${order.paymentId}/refunds`, {
+              headers: { 'Authorization': `Basic ${rzpAuth}` }
+            });
+            const alreadyRefunded = existingRefunds.data && Array.isArray(existingRefunds.data.items) && existingRefunds.data.items.length > 0;
+
+            if (alreadyRefunded) {
+              refundProcessedOnline = true;
+              console.log(`Razorpay refund already exists for payment ${order.paymentId}, skipping duplicate return refund call.`);
+            } else {
+              await axios.post(`https://api.razorpay.com/v1/payments/${order.paymentId}/refund`, {
+                amount: Math.round(cashRefundAmount * 100)
+              }, {
+                headers: {
+                  'Authorization': `Basic ${rzpAuth}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              refundProcessedOnline = true;
+              console.log(`Razorpay refund processed successfully for payment: ${order.paymentId}`);
+            }
+          } catch (refundErr) {
+            console.error('Razorpay refund API call failed, falling back to coins store credit:', refundErr.response?.data || refundErr.message);
+          }
+        }
+      }
+
+      const isWalletSelected = returnRequest.refundMethod === 'Wallet';
+
+      if (!refundProcessedOnline && isWalletSelected) {
+        try {
+          await WalletTransaction.create({
+            userId: returnRequest.userId,
+            type: 'Refund',
+            amount: cashRefundAmount,
+            description: `Cash Refund for Return #${returnRequest._id.toString().substring(returnRequest._id.toString().length - 6).toUpperCase()}`
+          });
+
+          await User.findByIdAndUpdate(returnRequest.userId, {
+            $inc: { walletBalance: cashRefundAmount }
+          });
+          console.log(`✅ Credited cash refund of ₹${cashRefundAmount} to wallet balance (Refund method: Wallet)`);
+        } catch (fallbackErr) {
+          try {
+            await ReturnRequest.updateOne({ _id: returnRequest._id }, { $set: { cashRefundProcessed: false } });
+          } catch (revertErr) {
+            console.error(`CRITICAL: failed to revert cashRefundProcessed claim after failure for return ${returnRequest._id}. Manual reconciliation required.`, revertErr);
+          }
+          console.error('Wallet store-credit fallback refund failed for return:', fallbackErr.message);
+        }
+      } else {
+        // Not processed online and the customer didn't choose Wallet as the refund
+        // destination — this is an intentional manual (Bank/UPI) refund, not a failure, so
+        // the claim stands: an admin handles it offline and there's nothing to retry.
+        console.log(`ℹ️ Cash refund of ₹${cashRefundAmount} for return ${returnRequest._id} processed manually via ${returnRequest.refundMethod || 'Bank/UPI'} - skipped wallet credit.`);
+      }
+    }
+  }
+};
+
 module.exports = {
   handleOrderCancellationStockAndCoupon,
   handleOrderCancellationRefunds,
+  handleReturnRefund,
   checkAndTriggerReferral
 };

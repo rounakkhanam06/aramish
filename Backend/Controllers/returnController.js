@@ -1,10 +1,101 @@
 const ReturnRequest = require('../Models/ReturnRequest');
 const Order = require('../Models/Order');
 const Product = require('../Models/Product');
-const CoinTransaction = require('../Models/CoinTransaction');
 const shiprocketService = require('../Router/shiprocketService');
-const User = require('../Models/User');
-const axios = require('axios');
+const { handleReturnRefund } = require('../utils/orderHelper');
+
+// Builds the Shiprocket reverse-pickup order and attempts AWB assignment for a return
+// request, mutating the passed returnRequest document's shipment fields in place. Used both
+// on initial 'Approved' transition and by the admin retry endpoint below, so a Shiprocket
+// outage on approval doesn't leave the return stuck with no way to (re)try the pickup.
+// Throws on failure — callers are responsible for recording the failure/retry state.
+const createReturnShipment = async (returnRequest, order) => {
+  // Calculate weight
+  let totalWeight = 0;
+  for (const item of returnRequest.items) {
+    const product = await Product.findById(item.productId);
+    const w = (product && product.shippingSpecs && product.shippingSpecs.weight) ? product.shippingSpecs.weight : 0.5;
+    totalWeight += (w * item.quantity);
+  }
+
+  const cityState = shiprocketService.parseCityState(order.deliveryAddress.address);
+
+  // Get return shipping address from env or defaults
+  const returnShippingAddress = {
+    name: process.env.RETURN_SHIPPING_NAME || "Aramish Warehouse",
+    address: process.env.RETURN_SHIPPING_ADDRESS || "Warehouse 12, Sector 63",
+    address_2: process.env.RETURN_SHIPPING_ADDRESS_2 || "",
+    city: process.env.RETURN_SHIPPING_CITY || "Noida",
+    state: process.env.RETURN_SHIPPING_STATE || "Uttar Pradesh",
+    country: "India",
+    pincode: process.env.SHIPROCKET_PICKUP_PINCODE || "201301",
+    phone: process.env.RETURN_SHIPPING_PHONE || "9876543210",
+    email: process.env.RETURN_SHIPPING_EMAIL || "warehouse@aramish.com"
+  };
+
+  const returnPayload = {
+    order_id: `RET_${returnRequest._id.toString()}`,
+    order_date: new Date(returnRequest.createdAt).toISOString().slice(0, 16).replace('T', ' '),
+    channel_id: "",
+    pickup_customer_name: order.deliveryAddress.name || order.userId?.name || "Customer",
+    pickup_last_name: "",
+    pickup_address: order.deliveryAddress.address,
+    pickup_address_2: "",
+    pickup_city: cityState.city,
+    pickup_state: cityState.state,
+    pickup_country: "India",
+    pickup_pincode: order.deliveryAddress.pincode,
+    pickup_email: order.userId?.email || "customer@aramish.com",
+    pickup_phone: order.userId?.phone || "9876543210",
+    shipping_customer_name: returnShippingAddress.name,
+    shipping_last_name: "",
+    shipping_address: returnShippingAddress.address,
+    shipping_address_2: returnShippingAddress.address_2,
+    shipping_city: returnShippingAddress.city,
+    shipping_state: returnShippingAddress.state,
+    shipping_country: "India",
+    shipping_pincode: returnShippingAddress.pincode,
+    shipping_phone: returnShippingAddress.phone,
+    shipping_email: returnShippingAddress.email,
+    order_items: returnRequest.items.map(item => ({
+      name: item.name,
+      sku: item.productId ? item.productId.toString() : "PRODUCT",
+      units: item.quantity,
+      selling_price: item.price,
+      discount: 0,
+      tax: 0,
+      hsn: 441122
+    })),
+    payment_method: "Prepaid",
+    sub_total: returnRequest.refundAmount,
+    length: 10,
+    breadth: 10,
+    height: 10,
+    weight: totalWeight || 0.5
+  };
+
+  const srResponse = await shiprocketService.createShiprocketReturnOrder(returnPayload);
+  if (!srResponse || !srResponse.order_id) {
+    throw new Error('Shiprocket did not return an order_id for the return pickup shipment');
+  }
+
+  returnRequest.shiprocketReturnOrderId = srResponse.order_id;
+  returnRequest.shiprocketReturnShipmentId = srResponse.shipment_id;
+  returnRequest.shipmentStatus = 'Created';
+
+  if (srResponse.shipment_id) {
+    try {
+      const awbResponse = await shiprocketService.assignAWB(srResponse.shipment_id);
+      if (awbResponse && awbResponse.response && awbResponse.response.data) {
+        const data = awbResponse.response.data;
+        returnRequest.awbCode = data.awb_code;
+        returnRequest.courierName = data.courier_name;
+      }
+    } catch (awbErr) {
+      console.error("Failed to automatically assign return AWB:", awbErr.message);
+    }
+  }
+};
 
 // @desc    Create a return request (User)
 // @route   POST /returns
@@ -418,91 +509,17 @@ exports.updateReturnStatus = async (req, res) => {
       try {
         const order = await Order.findById(returnRequest.orderId).populate('userId');
         if (order) {
-          // Calculate weight
-          let totalWeight = 0;
-          for (const item of returnRequest.items) {
-            const product = await Product.findById(item.productId);
-            const w = (product && product.shippingSpecs && product.shippingSpecs.weight) ? product.shippingSpecs.weight : 0.5;
-            totalWeight += (w * item.quantity);
-          }
-
-          const cityState = shiprocketService.parseCityState(order.deliveryAddress.address);
-
-          // Get return shipping address from env or defaults
-          const returnShippingAddress = {
-            name: process.env.RETURN_SHIPPING_NAME || "Aramish Warehouse",
-            address: process.env.RETURN_SHIPPING_ADDRESS || "Warehouse 12, Sector 63",
-            address_2: process.env.RETURN_SHIPPING_ADDRESS_2 || "",
-            city: process.env.RETURN_SHIPPING_CITY || "Noida",
-            state: process.env.RETURN_SHIPPING_STATE || "Uttar Pradesh",
-            country: "India",
-            pincode: process.env.SHIPROCKET_PICKUP_PINCODE || "201301",
-            phone: process.env.RETURN_SHIPPING_PHONE || "9876543210",
-            email: process.env.RETURN_SHIPPING_EMAIL || "warehouse@aramish.com"
-          };
-
-          const returnPayload = {
-            order_id: `RET_${returnRequest._id.toString()}`,
-            order_date: new Date(returnRequest.createdAt).toISOString().slice(0, 16).replace('T', ' '),
-            channel_id: "",
-            pickup_customer_name: order.deliveryAddress.name || order.userId?.name || "Customer",
-            pickup_last_name: "",
-            pickup_address: order.deliveryAddress.address,
-            pickup_address_2: "",
-            pickup_city: cityState.city,
-            pickup_state: cityState.state,
-            pickup_country: "India",
-            pickup_pincode: order.deliveryAddress.pincode,
-            pickup_email: order.userId?.email || "customer@aramish.com",
-            pickup_phone: order.userId?.phone || "9876543210",
-            shipping_customer_name: returnShippingAddress.name,
-            shipping_last_name: "",
-            shipping_address: returnShippingAddress.address,
-            shipping_address_2: returnShippingAddress.address_2,
-            shipping_city: returnShippingAddress.city,
-            shipping_state: returnShippingAddress.state,
-            shipping_country: "India",
-            shipping_pincode: returnShippingAddress.pincode,
-            shipping_phone: returnShippingAddress.phone,
-            shipping_email: returnShippingAddress.email,
-            order_items: returnRequest.items.map(item => ({
-              name: item.name,
-              sku: item.productId ? item.productId.toString() : "PRODUCT",
-              units: item.quantity,
-              selling_price: item.price,
-              discount: 0,
-              tax: 0,
-              hsn: 441122
-            })),
-            payment_method: "Prepaid",
-            sub_total: returnRequest.refundAmount,
-            length: 10,
-            breadth: 10,
-            height: 10,
-            weight: totalWeight || 0.5
-          };
-
-          const srResponse = await shiprocketService.createShiprocketReturnOrder(returnPayload);
-          if (srResponse && srResponse.order_id) {
-            returnRequest.shiprocketReturnOrderId = srResponse.order_id;
-            returnRequest.shiprocketReturnShipmentId = srResponse.shipment_id;
-            // Attempt to assign AWB if shipment ID is generated
-            if (srResponse.shipment_id) {
-              try {
-                const awbResponse = await shiprocketService.assignAWB(srResponse.shipment_id);
-                if (awbResponse && awbResponse.response && awbResponse.response.data) {
-                  const data = awbResponse.response.data;
-                  returnRequest.awbCode = data.awb_code;
-                  returnRequest.courierName = data.courier_name;
-                }
-              } catch (awbErr) {
-                console.error("Failed to automatically assign return AWB:", awbErr.message);
-              }
-            }
-          }
+          await createReturnShipment(returnRequest, order);
         }
       } catch (srError) {
         console.error("Shiprocket return order creation failed:", srError.message);
+        returnRequest.shipmentStatus = 'Failed';
+        returnRequest.shipmentRetryCount = (returnRequest.shipmentRetryCount || 0) + 1;
+        returnRequest.lastShipmentRetryAt = new Date();
+        returnRequest.shipmentErrors.push({ error: srError.message, timestamp: new Date() });
+        if (returnRequest.shipmentRetryCount >= 3) {
+          returnRequest.shipmentStatus = 'Manual Review';
+        }
       }
     }
 
@@ -518,122 +535,23 @@ exports.updateReturnStatus = async (req, res) => {
     // Handle refund processing
     if (status === 'Refunded') {
       const order = await Order.findById(returnRequest.orderId);
-      
+
+      // Throw (rather than returning directly) so the catch block below reverts the status
+      // lock acquired above — otherwise the return would be stranded at 'Refunded' with no
+      // refund actually processed, and no valid transition would let anyone retry it.
       if (!order) {
-        return res.status(404).json({ success: false, message: 'Original order not found for return request' });
+        throw new Error('Original order not found for return request');
       }
 
       if (order.paymentMethod === 'Online' && order.paymentStatus !== 'Paid') {
-        return res.status(400).json({ success: false, message: 'Cannot process refund for unpaid online order' });
+        throw new Error('Cannot process refund for unpaid online order');
       }
 
-      // 1. Restore stock for returned items
-      for (const item of returnRequest.items) {
-        if (item.productId) {
-          await Product.findByIdAndUpdate(item.productId, {
-            $inc: { stock: item.quantity, sales: -item.quantity }
-          });
-        }
-      }
-
-      // 2. INDEPENDENT WALLET COINS REFUND: Restore redeemed wallet coins to user's wallet
-      // (and, in the same idempotency-guarded step, any referral coins used on this order)
-      if (!returnRequest.walletRefundProcessed) {
-        if (order.walletUsed && order.walletUsed > 0) {
-          const WalletTransaction = require('../Models/WalletTransaction');
-
-          const SystemConfig = require('../Models/SystemConfig');
-          const systemConfig = await SystemConfig.findOne({});
-          const welcomeBonusCoins = systemConfig && systemConfig.welcomeBonusCoins !== undefined ? systemConfig.welcomeBonusCoins : 1000;
-
-          const currentUser = await User.findById(returnRequest.userId);
-          const coinsToRestore = order.welcomeCoinsUsed !== undefined && order.welcomeCoinsUsed !== null ? order.welcomeCoinsUsed : (order.walletUsed || 0);
-          const restoredWelcomeRemaining = Math.min(welcomeBonusCoins, (currentUser?.welcomeBonusRemaining || 0) + coinsToRestore);
-
-          await User.findByIdAndUpdate(returnRequest.userId, {
-            $inc: {
-              walletBalance: order.walletUsed
-            },
-            $set: {
-              welcomeBonusRemaining: restoredWelcomeRemaining
-            }
-          });
-
-          await WalletTransaction.create({
-            userId: returnRequest.userId,
-            type: 'REFUND',
-            amount: order.walletUsed,
-            description: `Restored ${order.walletUsed} Wallet Coins for Returned Order #${order._id.toString().substring(order._id.toString().length - 6).toUpperCase()}`
-          });
-
-          console.log(`✅ Restored ${order.walletUsed} wallet coins for returned order: ${order._id}`);
-        }
-
-        if (order.referralCoinsUsed && order.referralCoinsUsed > 0) {
-          await User.findByIdAndUpdate(returnRequest.userId, {
-            $inc: { referralCoins: order.referralCoinsUsed }
-          });
-          await CoinTransaction.create({
-            userId: returnRequest.userId,
-            type: 'earned',
-            title: `Restored Referral Coins for Returned Order #${order._id.toString().substring(order._id.toString().length - 6).toUpperCase()}`,
-            amount: order.referralCoinsUsed
-          });
-          console.log(`✅ Restored ${order.referralCoinsUsed} referral coins for returned order: ${order._id}`);
-        }
-
-        returnRequest.walletRefundProcessed = true;
-      }
-
-      // 3. INDEPENDENT PAYMENT REFUND: Process Cash / Paid Amount Refund (Razorpay online or store credit fallback)
-      let refundProcessedOnline = false;
-      const cashRefundAmount = Number(returnRequest.refundAmount) || 0;
-      
-      if (cashRefundAmount > 0) {
-        if (order && order.paymentMethod === 'Online' && order.paymentId) {
-          const rzpKeyId = process.env.RAZORPAY_KEY_ID;
-          const rzpKeySecret = process.env.RAZORPAY_KEY_SECRET;
-
-          if (rzpKeyId && rzpKeySecret) {
-            try {
-              const rzpAuth = Buffer.from(`${rzpKeyId}:${rzpKeySecret}`).toString('base64');
-              await axios.post(`https://api.razorpay.com/v1/payments/${order.paymentId}/refund`, {
-                amount: Math.round(cashRefundAmount * 100)
-              }, {
-                headers: {
-                  'Authorization': `Basic ${rzpAuth}`,
-                  'Content-Type': 'application/json'
-                }
-              });
-              refundProcessedOnline = true;
-              console.log(`Razorpay refund processed successfully for payment: ${order.paymentId}`);
-            } catch (refundErr) {
-              console.error('Razorpay refund API call failed, falling back to coins store credit:', refundErr.response?.data || refundErr.message);
-            }
-          }
-        }
-
-        // Only add cash refund to wallet balance if customer specifically chose 'Wallet' as their refund destination
-        const isWalletSelected = returnRequest.refundMethod === 'Wallet';
-
-        if (!refundProcessedOnline && isWalletSelected) {
-          const WalletTransaction = require('../Models/WalletTransaction');
-          await WalletTransaction.create({
-            userId: returnRequest.userId,
-            type: 'Refund',
-            amount: cashRefundAmount,
-            description: `Cash Refund for Return #${returnRequest._id.toString().substring(returnRequest._id.toString().length - 6).toUpperCase()}`
-          });
-
-          // Update the User document's walletBalance
-          await User.findByIdAndUpdate(returnRequest.userId, {
-            $inc: { walletBalance: cashRefundAmount }
-          });
-          console.log(`✅ Credited cash refund of ₹${cashRefundAmount} to wallet balance (Refund method: Wallet)`);
-        } else if (!refundProcessedOnline) {
-          console.log(`ℹ️ Cash refund of ₹${cashRefundAmount} processed manually via ${returnRequest.refundMethod || 'Bank/UPI'} - skipped wallet credit.`);
-        }
-      }
+      // 1-3. Stock restoration + wallet/referral coin restore + cash refund (Razorpay/wallet
+      // store-credit) all happen atomically/idempotently together inside handleReturnRefund,
+      // guarded by their own claims so a retry after a partial failure can never double-restore
+      // stock or double-refund cash.
+      await handleReturnRefund(returnRequest, order);
 
       // 4. Update order status
       if (order) {
@@ -681,6 +599,70 @@ exports.getReturnByOrderId = async (req, res) => {
     res.status(200).json({ success: true, returnRequest: returnRequest || null });
   } catch (error) {
     console.error('Error fetching return by order ID:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Retry Shiprocket reverse-pickup shipment creation for an Approved return whose
+//          initial shipment creation failed (mirrors ExchangeRequest's retry endpoint)
+// @route   POST /returns/admin/:id/retry-shipment
+// @access  Private (Admin)
+exports.retryReturnShipment = async (req, res) => {
+  try {
+    const returnRequest = await ReturnRequest.findById(req.params.id);
+    if (!returnRequest) {
+      return res.status(404).json({ success: false, message: 'Return request not found' });
+    }
+
+    if (!['Approved', 'Pick-up Scheduled'].includes(returnRequest.status)) {
+      return res.status(400).json({ success: false, message: `Cannot retry shipment for a return in status '${returnRequest.status}'.` });
+    }
+
+    if (returnRequest.shipmentRetryInProgress) {
+      return res.status(409).json({ success: false, message: 'A retry attempt is already in progress for this return.' });
+    }
+
+    if (returnRequest.shipmentStatus === 'Created') {
+      return res.status(400).json({ success: false, message: 'Shipment has already been created for this return. Cannot retry.' });
+    }
+
+    if (returnRequest.shipmentRetryCount >= 3) {
+      returnRequest.shipmentStatus = 'Manual Review';
+      await returnRequest.save();
+      return res.status(400).json({ success: false, message: 'Maximum retry limit (3) exceeded. Return moved to Manual Review.', returnRequest });
+    }
+
+    returnRequest.shipmentRetryInProgress = true;
+    await returnRequest.save();
+
+    try {
+      const order = await Order.findById(returnRequest.orderId).populate('userId');
+      if (!order) {
+        throw new Error('Original order not found for this return request');
+      }
+
+      await createReturnShipment(returnRequest, order);
+
+      returnRequest.shipmentRetryInProgress = false;
+      await returnRequest.save();
+
+      return res.status(200).json({ success: true, message: 'Return pickup shipment created successfully', returnRequest });
+    } catch (srError) {
+      console.error('retryReturnShipment failed:', srError.message);
+      returnRequest.shipmentStatus = 'Failed';
+      returnRequest.shipmentRetryCount = (returnRequest.shipmentRetryCount || 0) + 1;
+      returnRequest.lastShipmentRetryAt = new Date();
+      returnRequest.shipmentErrors.push({ error: srError.message, timestamp: new Date() });
+      if (returnRequest.shipmentRetryCount >= 3) {
+        returnRequest.shipmentStatus = 'Manual Review';
+      }
+      returnRequest.shipmentRetryInProgress = false;
+      await returnRequest.save();
+
+      return res.status(502).json({ success: false, message: `Failed to create return pickup shipment: ${srError.message}`, returnRequest });
+    }
+  } catch (error) {
+    console.error('retryReturnShipment outer error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

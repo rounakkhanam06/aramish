@@ -403,9 +403,6 @@ export default function Navbar() {
                 className="relative p-1 hover:bg-slate-100 rounded-full transition-colors"
               >
                 <Heart className="w-5.5 h-5.5 stroke-[1.8]" />
-                {user && wishlist && wishlist.length > 0 && (
-                  <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-surface border border-[#0B132B] rounded-full"></span>
-                )}
               </button>
               <button
                 onClick={() => navigate('/cart')}
@@ -546,9 +543,6 @@ export default function Navbar() {
               title="Wishlist"
             >
               <Heart className="w-5 h-5 stroke-[1.8]" />
-              {user && wishlist && wishlist.length > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-surface border border-[#0B132B] rounded-full"></span>
-              )}
             </button>
 
             {/* Cart */}
@@ -644,12 +638,13 @@ export default function Navbar() {
                       </button>
                       
                       <div className="border-t border-[#0B132B]/20 my-1"></div>
-                      <button 
+                      <button
                         onMouseDown={(e) => {
                           e.preventDefault();
-                          logout();
                           setProfileDropdownOpen(false);
-                        }} 
+                          if (!confirm('Are you sure you want to log out?')) return;
+                          logout();
+                        }}
                         className="w-full text-left px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-2"
                       >
                         <LogOut className="w-3.5 h-3.5" />

@@ -470,8 +470,9 @@ exports.updateExchangeStatus = async (req, res) => {
       const reservationResult = await Product.findOneAndUpdate(
         {
           _id: exchange.requestedVariant.productId,
-          'variations.sku': exchange.requestedVariant.sku,
-          'variations.stock': { $gt: 0 }
+          variations: {
+            $elemMatch: { sku: exchange.requestedVariant.sku, stock: { $gt: 0 } }
+          }
         },
         { $inc: { 'variations.$.stock': -1 } },
         { new: true }

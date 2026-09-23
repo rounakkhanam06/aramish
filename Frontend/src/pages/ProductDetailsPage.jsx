@@ -26,9 +26,6 @@ export default function ProductDetailsPage() {
   const [similarProducts, setSimilarProducts] = useState([]);
   const [notFound, setNotFound] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
-  const [showHeader, setShowHeader] = useState(true);
-  const lastScrollY = useRef(0);
-  
   // Video Reels States
   const [productReels, setProductReels] = useState([]);
   const [isUploadReelOpen, setIsUploadReelOpen] = useState(false);
@@ -37,7 +34,9 @@ export default function ProductDetailsPage() {
   const [reelVideoFile, setReelVideoFile] = useState(null);
   const [isUploadingReel, setIsUploadingReel] = useState(false);
   const [isEligibleToReview, setIsEligibleToReview] = useState(false);
+  const [myExistingReview, setMyExistingReview] = useState(null);
   const [selectedReviewMedia, setSelectedReviewMedia] = useState(null);
+  const [ratingSummary, setRatingSummary] = useState({ avgRating: 0, count: 0 });
 
   const isAnyModalOpen = isSizeChartOpen || Boolean(fullscreenImage) || isShareModalOpen || isUploadReelOpen || Boolean(selectedReviewMedia);
 
@@ -96,48 +95,31 @@ export default function ProductDetailsPage() {
       const data = await res.json();
       if (res.ok && data.success) {
         setIsEligibleToReview(data.eligible);
+        setMyExistingReview(data.existingReview || null);
       }
     } catch (err) {
       console.error('Error checking review eligibility:', err);
     }
   };
 
+  const fetchRatingSummary = async () => {
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetch(`${apiBase}/reels/product/${id}/summary`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setRatingSummary({ avgRating: data.avgRating || 0, count: data.count || 0 });
+      }
+    } catch (err) {
+      console.error('Error fetching rating summary:', err);
+    }
+  };
+
   useEffect(() => {
     fetchProductReels();
     fetchReviewEligibility();
+    fetchRatingSummary();
   }, [id, user]);
-
-  useEffect(() => {
-    const scrollContainer = document.getElementById('main-scroll-container');
-
-    const handleScroll = () => {
-      const currentScrollY = Math.max(
-        window.scrollY || 0,
-        document.documentElement.scrollTop || 0,
-        scrollContainer ? scrollContainer.scrollTop : 0
-      );
-      if (currentScrollY > 5) {
-        setShowHeader(false);
-      } else {
-        setShowHeader(true);
-      }
-      lastScrollY.current = currentScrollY;
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    document.addEventListener('scroll', handleScroll, { passive: true });
-    if (scrollContainer) {
-      scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
-    }
-
-    return () => {
-      window.removeEventListener('scroll', handleScroll);
-      document.removeEventListener('scroll', handleScroll);
-      if (scrollContainer) {
-        scrollContainer.removeEventListener('scroll', handleScroll);
-      }
-    };
-  }, []);
 
   const handleUploadReel = async (e) => {
     e.preventDefault();
@@ -180,6 +162,7 @@ export default function ProductDetailsPage() {
         setIsUploadReelOpen(false);
         setReelCaption('');
         setReelVideoFile(null);
+        fetchReviewEligibility();
       } else {
         alert(data.message || 'Failed to upload video review');
       }
@@ -542,10 +525,10 @@ export default function ProductDetailsPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-surface font-sans relative pb-[80px] md:pb-12 animate-fade-in select-none">
+    <div className="flex flex-col shrink-0 min-h-screen bg-surface font-sans relative pb-[80px] md:pb-12 animate-fade-in select-none">
       
       {/* Sticky Header (Mobile Only) */}
-      <header className={`bg-surface sticky top-0 z-50 flex items-center justify-between px-3 py-2 shadow-sm md:hidden transition-transform duration-300 ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}>
+      <header className="bg-surface sticky top-0 z-50 flex items-center justify-between px-3 py-2 shadow-sm md:hidden">
         <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-slate-700">
           <ArrowLeft className="w-6 h-6" />
         </button>
@@ -1171,57 +1154,39 @@ export default function ProductDetailsPage() {
 
             {isReviewsOpen && (
               <div className="space-y-4 animate-fade-in border-t border-white/10 pt-4">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-3xl font-black text-slate-800">4.1</span>
-                  <Star className="w-6 h-6 fill-emerald-600 text-emerald-600" />
-                  <span className="bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded text-xs font-extrabold">Very Good</span>
-                </div>
-                <div className="flex items-center gap-1 text-[11px] text-slate-500">
-                  <span>based on 63 ratings by</span>
-                  <CheckCircle className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Verified Buyers</span>
-                </div>
-
-                {/* Video Review Reels list */}
-                {productReels.length > 0 && (
-                  <div className="border-t border-white/10 pt-4">
-                    <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3">Video Reviews (Reels)</h4>
-                    <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2">
-                      {productReels.map((reel) => {
-                        const videoUrl = getImageUrl(reel.video);
-                        return (
-                          <div 
-                            key={reel._id}
-                            onClick={() => setSelectedReviewMedia({ type: 'video', url: videoUrl, reel })}
-                            className="relative w-20 h-32 rounded-xl overflow-hidden flex-shrink-0 bg-black cursor-pointer shadow-md group border border-white/10"
-                          >
-                            <div className="absolute inset-0 bg-black/15 flex items-center justify-center group-hover:bg-black/35 transition-colors z-10">
-                              <Play className="w-6 h-6 text-white fill-white opacity-85" />
-                            </div>
-                            <video src={videoUrl} className="w-full h-full object-cover opacity-80" muted playsInline />
-                            
-                            <div className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/90 to-transparent text-white text-[8px] z-10">
-                              <p className="font-bold truncate">@{reel.username}</p>
-                              <div className="flex items-center gap-0.5 mt-0.5">
-                                <span>{reel.rating}</span>
-                                <Star className="w-1.5 h-1.5 fill-amber-400 text-amber-400" />
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                {ratingSummary.count > 0 ? (
+                  <>
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-3xl font-black text-slate-800">{ratingSummary.avgRating.toFixed(1)}</span>
+                      <Star className="w-6 h-6 fill-emerald-600 text-emerald-600" />
+                      {ratingSummary.avgRating >= 4 && (
+                        <span className="bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded text-xs font-extrabold">Very Good</span>
+                      )}
                     </div>
-                  </div>
+                    <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                      <span>based on {ratingSummary.count} rating{ratingSummary.count !== 1 ? 's' : ''} by</span>
+                      <CheckCircle className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Verified Buyers</span>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-slate-400 font-semibold">No ratings yet. Be the first to review this product!</p>
                 )}
 
                 {/* Upload Reel button */}
                 <div>
-                  {user && !isEligibleToReview ? (
+                  {user && myExistingReview ? (
+                    <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-center text-xs text-indigo-700 font-bold leading-relaxed">
+                      {myExistingReview.status === 'approved' ? '✓ Your review is live.' :
+                       myExistingReview.status === 'rejected' ? 'Your review was rejected by admin.' :
+                       '⏳ Your review is pending admin approval.'}
+                    </div>
+                  ) : user && !isEligibleToReview ? (
                     <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl text-center text-xs text-rose-600 font-bold leading-relaxed">
                       ⚠️ You can only review products that you have purchased.
                     </div>
                   ) : (
-                    <button 
+                    <button
                       onClick={() => {
                         if (!user) navigate('/login');
                         else setIsUploadReelOpen(true);
@@ -1240,49 +1205,77 @@ export default function ProductDetailsPage() {
                   
                   {productReels.length === 0 ? (
                     <p className="text-center text-slate-400 text-xs py-6 font-semibold">
-                      No reviews yet. Be the first to submit a video review!
+                      No reviews yet. Be the first to review this product!
                     </p>
                   ) : (
                     <div className="space-y-3.5">
                       {productReels.map((reel) => {
-                        const videoUrl = getImageUrl(reel.video);
+                        const videoUrl = reel.video ? getImageUrl(reel.video) : null;
+                        const photoUrls = (reel.photos || []).map(getImageUrl);
+                        const reviewBody = reel.reviewText || reel.caption;
                         return (
-                          <div key={reel._id} className="p-3.5 bg-surface border border-white/10 rounded-xl flex gap-3.5 items-start">
-                            {/* Playable Video Thumbnail */}
-                            <div 
-                              onClick={() => setSelectedReviewMedia({ type: 'video', url: videoUrl, reel })}
-                              className="relative w-14 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-black cursor-pointer shadow-sm border border-white/10 group"
-                            >
-                              <div className="absolute inset-0 bg-black/20 flex items-center justify-center group-hover:bg-black/40 transition-colors">
-                                <Play className="w-4 h-4 text-white fill-white opacity-90" />
+                          <div key={reel._id} className="p-3.5 bg-surface border border-white/10 rounded-xl space-y-2.5">
+                            <div className="flex items-start gap-3">
+                              <div className="w-9 h-9 rounded-full bg-indigo-50 text-indigo-700 font-black text-xs flex items-center justify-center flex-shrink-0">
+                                {reel.username ? reel.username.charAt(0).toUpperCase() : '?'}
                               </div>
-                              <video src={videoUrl} className="w-full h-full object-cover" muted playsInline />
+                              <div className="flex-grow min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-extrabold text-[12px] text-slate-800 truncate">
+                                    {reel.username}
+                                  </span>
+                                  <span className="text-[9px] text-slate-400 font-bold flex-shrink-0">
+                                    {new Date(reel.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <div className="flex items-center gap-0.5">
+                                    {Array.from({ length: 5 }).map((_, i) => (
+                                      <Star
+                                        key={i}
+                                        className={`w-3 h-3 ${i < (reel.rating || 5) ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}`}
+                                      />
+                                    ))}
+                                  </div>
+                                  {reel.userModel === 'User' && (
+                                    <span className="flex items-center gap-0.5 text-[9px] font-bold text-emerald-600">
+                                      <CheckCircle className="w-2.5 h-2.5" /> Verified Purchase
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
 
-                            {/* Text content */}
-                            <div className="flex-grow space-y-1 min-w-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="font-extrabold text-[11px] text-slate-800 truncate">
-                                  {reel.username}
-                                </span>
-                                <span className="text-[9px] text-slate-400 font-bold">
-                                  {new Date(reel.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                                </span>
-                              </div>
+                            {reviewBody && (
+                              <p className="text-[11.5px] text-slate-600 font-bold leading-normal break-words">
+                                {reviewBody}
+                              </p>
+                            )}
 
-                              <div className="flex items-center gap-0.5">
-                                {Array.from({ length: 5 }).map((_, i) => (
-                                  <Star 
-                                    key={i} 
-                                    className={`w-3 h-3 ${i < (reel.rating || 5) ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}`} 
-                                  />
+                            {(videoUrl || photoUrls.length > 0) && (
+                              <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
+                                {videoUrl && (
+                                  <div
+                                    onClick={() => setSelectedReviewMedia({ type: 'video', url: videoUrl, reel })}
+                                    className="relative w-16 h-24 rounded-lg overflow-hidden flex-shrink-0 bg-black cursor-pointer shadow-sm border border-white/10 group"
+                                  >
+                                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center group-hover:bg-black/40 transition-colors">
+                                      <Play className="w-4 h-4 text-white fill-white opacity-90" />
+                                    </div>
+                                    <video src={videoUrl} className="w-full h-full object-cover" muted playsInline />
+                                  </div>
+                                )}
+                                {photoUrls.map((url, i) => (
+                                  <div
+                                    key={i}
+                                    onClick={() => setSelectedReviewMedia({ type: 'image', url, reel })}
+                                    className="w-16 h-24 rounded-lg overflow-hidden flex-shrink-0 border border-white/10 cursor-pointer"
+                                  >
+                                    <img src={url} className="w-full h-full object-cover" alt="Review" />
+                                  </div>
                                 ))}
                               </div>
-
-                              <p className="text-[11.5px] text-slate-600 font-bold leading-normal break-words">
-                                {reel.caption || "No comment provided."}
-                              </p>
-                            </div>
+                            )}
                           </div>
                         );
                       })}
@@ -1317,10 +1310,6 @@ export default function ProductDetailsPage() {
                 >
                   <div className="aspect-square bg-surface rounded-xl overflow-hidden relative mb-2.5 flex items-center justify-center border border-white/10">
                     <OptimizedImage src={getImageUrl(deal.images && deal.images[0])} alt={deal.name} type="product" objectFit="contain" className="absolute inset-0 group-hover:scale-105 transition-transform duration-500" />
-                    <div className="absolute bottom-2 left-2 bg-surface/90 px-1.5 py-0.5 rounded flex items-center gap-0.5 shadow-sm">
-                      <span className="text-[9.5px] font-bold text-slate-800">{deal.rating || '4.2'}</span>
-                      <Star className="w-2.5 h-2.5 fill-emerald-600 text-emerald-600" />
-                    </div>
                   </div>
                   <h4 className="text-xs font-bold text-[#02006c] truncate group-hover:text-[#0B132B]">{deal.name}</h4>
                   <p className="text-[10px] text-slate-400 truncate mt-0.5">{deal.description || 'Premium Product'}</p>
@@ -1520,9 +1509,11 @@ export default function ProductDetailsPage() {
                     <div className="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center text-[10px] font-bold">
                       {(selectedReviewMedia.reel?.username || 'A').charAt(0).toUpperCase()}
                     </div>
-                    <span className="text-xs font-bold shadow-sm">@{selectedReviewMedia.reel?.username || 'Aman Sharma'}</span>
+                    <span className="text-xs font-bold shadow-sm">@{selectedReviewMedia.reel?.username || 'Customer'}</span>
                   </div>
-                  <p className="text-[10px] line-clamp-2 text-white/90">{selectedReviewMedia.reel?.caption || 'Amazing quality! The fabric feels premium and the fit is exactly as shown.'}</p>
+                  {(selectedReviewMedia.reel?.reviewText || selectedReviewMedia.reel?.caption) && (
+                    <p className="text-[10px] line-clamp-2 text-white/90">{selectedReviewMedia.reel?.reviewText || selectedReviewMedia.reel?.caption}</p>
+                  )}
                 </div>
               </div>
             ) : (

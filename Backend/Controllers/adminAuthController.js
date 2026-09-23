@@ -602,6 +602,7 @@ const forceLogoutAllUsers = async (req, res) => {
 const getUserDetails = async (req, res) => {
   try {
     const User = require('../Models/User');
+    const Product = require('../Models/Product');
     const Order = require('../Models/Order');
     const Address = require('../Models/Address');
     const Wishlist = require('../Models/Wishlist');
@@ -628,7 +629,7 @@ const getUserDetails = async (req, res) => {
     const wishlist = await Wishlist.find({ userId })
       .populate({
         path: 'productId',
-        select: 'name price images description'
+        select: 'name sellingPrice mrp variations images article sku category brandName'
       })
       .sort({ createdAt: -1 })
       .lean();
@@ -641,7 +642,17 @@ const getUserDetails = async (req, res) => {
 
     // 5.1. Fetch dynamic average rating and reviews from Reel model
     const Reel = require('../Models/Reel');
-    const userReviews = await Reel.find({ uploadedBy: userId }).populate('productId', 'name price images').lean();
+    const mongoose = require('mongoose');
+    const userReviews = await Reel.find({
+      $or: [
+        { uploadedBy: userId },
+        ...(mongoose.Types.ObjectId.isValid(userId) ? [{ uploadedBy: new mongoose.Types.ObjectId(userId) }] : [])
+      ]
+    })
+      .populate('productId', 'name price images article sku category')
+      .sort({ createdAt: -1 })
+      .lean();
+
     let avgRating = 0;
     if (userReviews.length > 0) {
       const sum = userReviews.reduce((acc, r) => acc + (r.rating || 0), 0);
@@ -674,24 +685,93 @@ const getUserDetails = async (req, res) => {
         status: o.status,
         itemsCount: o.items.reduce((sum, item) => sum + item.quantity, 0)
       })),
-      wishlist: wishlist.filter(w => w.productId).map(w => ({
-        id: w._id,
-        productId: w.productId._id,
-        name: w.productId.name,
-        price: w.productId.price,
-        image: w.productId.images && w.productId.images[0] ? w.productId.images[0] : null
-      })),
+      wishlist: wishlist.filter(w => w.productId).map(w => {
+        const prod = w.productId;
+
+        // 1. Check if a specific variation is saved on the wishlist item
+        let matchedVariant = null;
+        if (prod.variations && prod.variations.length > 0) {
+          if (w.variationSku) {
+            matchedVariant = prod.variations.find(v => v.sku === w.variationSku);
+          } else if (w.variantId) {
+            matchedVariant = prod.variations.find(v => v._id?.toString() === w.variantId?.toString());
+          } else if (w.size || w.color) {
+            matchedVariant = prod.variations.find(v => 
+              (!w.size || v.size?.toLowerCase() === w.size?.toLowerCase()) &&
+              (!w.color || v.color?.toLowerCase() === w.color?.toLowerCase())
+            );
+          }
+          
+          // If no specific variant was chosen in wishlist, find first variant with custom price or first variant
+          if (!matchedVariant && prod.variations.length > 0) {
+            matchedVariant = prod.variations.find(v => !v.useDefaultPricing && v.sellingPrice > 0) || prod.variations[0];
+          }
+        }
+
+        // 2. Resolve actual price & mrp
+        let finalPrice = 0;
+        let finalMrp = 0;
+
+        if (matchedVariant && !matchedVariant.useDefaultPricing && matchedVariant.sellingPrice !== undefined && matchedVariant.sellingPrice !== null && Number(matchedVariant.sellingPrice) > 0) {
+          finalPrice = Number(matchedVariant.sellingPrice);
+          finalMrp = Number(matchedVariant.mrp || prod.mrp || finalPrice);
+        } else if (prod.sellingPrice !== undefined && prod.sellingPrice !== null && Number(prod.sellingPrice) > 0) {
+          finalPrice = Number(prod.sellingPrice);
+          finalMrp = Number(prod.mrp || (matchedVariant && matchedVariant.mrp) || finalPrice);
+        } else if (matchedVariant && matchedVariant.sellingPrice > 0) {
+          finalPrice = Number(matchedVariant.sellingPrice);
+          finalMrp = Number(matchedVariant.mrp || prod.mrp || finalPrice);
+        } else if (prod.mrp > 0) {
+          finalPrice = Number(prod.mrp);
+          finalMrp = Number(prod.mrp);
+        }
+
+        // 3. Resolve image (variant image, product images, or first variation image)
+        let finalImage = null;
+        if (matchedVariant && matchedVariant.images && matchedVariant.images.length > 0) {
+          finalImage = matchedVariant.images[0];
+        } else if (prod.images && prod.images.length > 0) {
+          finalImage = prod.images[0];
+        } else if (prod.variations && prod.variations.length > 0) {
+          const varWithImg = prod.variations.find(v => v.images && v.images.length > 0);
+          if (varWithImg) finalImage = varWithImg.images[0];
+        }
+
+        return {
+          id: w._id,
+          productId: prod._id,
+          name: prod.name,
+          price: finalPrice,
+          mrp: finalMrp,
+          image: finalImage,
+          variant: matchedVariant ? {
+            sku: matchedVariant.sku,
+            color: matchedVariant.color,
+            size: matchedVariant.size
+          } : null,
+          article: prod.article,
+          category: prod.category
+        };
+      }),
       reviews: userReviews.map(r => ({
         id: r._id,
         productId: r.productId ? r.productId._id : null,
         productName: r.productId ? r.productId.name : 'Unknown Product',
         productPrice: r.productId ? r.productId.price : 0,
         productImage: r.productId && r.productId.images && r.productId.images[0] ? r.productId.images[0] : null,
-        video: r.video,
-        rating: r.rating || 0,
+        productArticle: r.productId ? r.productId.article : null,
+        productSku: r.productId ? r.productId.sku : null,
+        video: r.video || null,
+        photos: Array.isArray(r.photos) ? r.photos : [],
+        reviewText: r.reviewText || '',
         caption: r.caption || '',
-        status: r.status,
-        createdAt: new Date(r.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+        rating: r.rating || 0,
+        status: r.status || 'pending',
+        likesCount: r.likes ? r.likes.length : 0,
+        views: r.views || 0,
+        commentsCount: r.comments ? r.comments.length : 0,
+        createdAt: new Date(r.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+        rawCreatedAt: r.createdAt
       })),
       tickets: userTickets.map(t => ({
         id: t._id,

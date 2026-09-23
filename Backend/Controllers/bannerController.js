@@ -25,9 +25,6 @@ const getBanners = async (req, res) => {
 const createBanner = async (req, res) => {
   try {
     const { title, subtitle, active } = req.body;
-    if (!title) {
-      return res.status(400).json({ success: false, message: 'Title is required' });
-    }
 
     let image = null;
     if (req.file) {

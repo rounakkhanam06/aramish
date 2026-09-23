@@ -32,7 +32,7 @@ const BannerForm = ({
     </div>
     <div className="grid grid-cols-2 gap-3">
       <div>
-        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Banner Title *</label>
+        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Banner Title</label>
         <input
           value={formData.title}
           onChange={e => setFormData(p => ({ ...p, title: e.target.value }))}
@@ -275,7 +275,6 @@ const BannerManager = () => {
   };
 
   const handleSaveEdit = async () => {
-    if (!formData.title) return;
     const token = localStorage.getItem('adminToken');
     if (!token) {
       toast.error('Unauthorized');
@@ -323,7 +322,6 @@ const BannerManager = () => {
   };
 
   const handleAddNew = async () => {
-    if (!formData.title) return;
     const token = localStorage.getItem('adminToken');
     if (!token) {
       toast.error('Unauthorized');

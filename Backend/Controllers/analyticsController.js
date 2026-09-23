@@ -201,9 +201,17 @@ const getOverview = async (req, res) => {
       }
     ]);
 
+    // Product.category stores the CategoryChip's ObjectId as a string, not a
+    // human-readable slug — resolve it to the real category name for display.
+    const CategoryChip = require('../Models/CategoryChip');
+    const categoryIds = categoryStats.map(item => item._id).filter(id => id && mongoose.Types.ObjectId.isValid(id));
+    const categoryDocs = await CategoryChip.find({ _id: { $in: categoryIds } }, 'categoryName').lean();
+    const categoryNameMap = new Map(categoryDocs.map(c => [c._id.toString(), c.categoryName]));
+
     const totalProductCount = totalProducts || 1;
     const categoryData = categoryStats.map(item => {
-      let label = item._id ? item._id.charAt(0).toUpperCase() + item._id.slice(1).replace('-', ' ') : 'Others';
+      const label = (item._id && categoryNameMap.get(item._id)) ||
+        (item._id ? item._id.charAt(0).toUpperCase() + item._id.slice(1).replace('-', ' ') : 'Others');
       return {
         name: label,
         value: Math.round((item.count / totalProductCount) * 100)
@@ -215,7 +223,7 @@ const getOverview = async (req, res) => {
     }
 
     // 7. Recent Customers (latest 5 signups)
-    const recentCustomers = await User.find({}, 'name email createdAt').sort({ createdAt: -1 }).limit(5);
+    const recentCustomers = await User.find({}, 'name phone email createdAt').sort({ createdAt: -1 }).limit(5);
 
     // 8. Recent activities (customer signups, orders, gameplay)
     const recentUsers = await User.find({}, 'name createdAt').sort({ createdAt: -1 }).limit(5);
@@ -790,7 +798,7 @@ const getTopProducts = async (req, res) => {
         }
       },
       { $sort: { views: -1 } },
-      { $limit: 10 }
+      { $limit: 50 }
     ]);
 
     // 2. Top Purchased (from Orders schema to be 100% accurate, combined with product details)

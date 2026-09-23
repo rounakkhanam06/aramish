@@ -383,7 +383,7 @@ const OrderDetail = () => {
       {/* Header */}
       <div className="flex justify-between items-center bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex-wrap gap-4">
         <div className="flex items-center gap-4">
-           <button onClick={() => navigate(-1)} className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-slate-100 transition-all">
+           <button onClick={() => navigate(-1)} className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-slate-100 transition-all no-print">
               <ArrowLeft size={20} />
            </button>
            <div>
@@ -394,7 +394,7 @@ const OrderDetail = () => {
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Placed on {new Date(order.createdAt).toLocaleString()}</p>
            </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 no-print">
            <button onClick={() => window.print()} className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-slate-100 transition-all">
               <Printer size={20} />
            </button>

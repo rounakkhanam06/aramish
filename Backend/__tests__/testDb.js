@@ -23,7 +23,8 @@ const startTestDb = async () => {
     require('../Models/WalletTransaction'),
     require('../Models/CoinTransaction'),
     require('../Models/SystemConfig'),
-    require('../Models/Referral')
+    require('../Models/Referral'),
+    require('../Models/ReturnRequest')
   ];
   for (const model of models) {
     await model.createCollection();

@@ -3,9 +3,10 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, AreaChart, Area, PieChart, Pie, Cell
 } from 'recharts';
-import { 
-  TrendingUp, TrendingDown, Users, ShoppingBag, 
-  DollarSign, Activity, Calendar, Download, RefreshCw, Gamepad2, Search, ArrowRight, Eye, ArrowUpRight, Coins
+import {
+  TrendingUp, TrendingDown, Users, ShoppingBag,
+  DollarSign, Activity, Calendar, Download, RefreshCw, Gamepad2, Search, ArrowRight, Eye, ArrowUpRight, Coins,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -52,6 +53,10 @@ const Analytics = () => {
   const [searches, setSearches] = useState([]);
   const [products, setProducts] = useState(null);
   const [games, setGames] = useState(null);
+
+  // Top Viewed Products pagination
+  const [topViewsPage, setTopViewsPage] = useState(1);
+  const TOP_VIEWS_PAGE_SIZE = 5;
 
   // DAU Filters state
   const [dauRange, setDauRange] = useState('month'); // 'today', 'week', 'month', 'custom'
@@ -163,6 +168,10 @@ const Analytics = () => {
   }, []);
 
   useEffect(() => {
+    setTopViewsPage(1);
+  }, [products?.topViews]);
+
+  useEffect(() => {
     if (loading) return; 
     if (dauRange === 'custom') {
       if (customStartDate && customEndDate) {
@@ -182,14 +191,14 @@ const Analytics = () => {
       ['Daily Active Users (DAU)', overview?.dau || 0],
       ['Monthly Active Users (MAU)', overview?.mau || 0],
       ['Orders Today', overview?.ordersToday || 0],
-      ['Revenue Today', '₹' + (overview?.revenueToday || 0)],
+      ['Revenue Today', 'INR ' + (overview?.revenueToday || 0)],
       ['Conversion Rate', (overview?.conversionRate || 0) + '%'],
       ['Avg Session Duration (min)', (overview?.avgSessionDurationMinutes || 0) + 'm'],
       ['Weekly Retention Rate', (overview?.weeklyRetentionRate || 0) + '%'],
     ];
 
     const csvContent = csvRows.map(e => e.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
@@ -234,6 +243,13 @@ const Analytics = () => {
     if (pct >= 20) return 'bg-blue-200 text-blue-900';
     return 'bg-blue-100 text-blue-900';
   };
+
+  const allTopViews = products?.topViews || [];
+  const topViewsTotalPages = Math.max(1, Math.ceil(allTopViews.length / TOP_VIEWS_PAGE_SIZE));
+  const paginatedTopViews = allTopViews.slice(
+    (topViewsPage - 1) * TOP_VIEWS_PAGE_SIZE,
+    topViewsPage * TOP_VIEWS_PAGE_SIZE
+  );
 
   return (
     <div className="space-y-6 pb-10 animate-in fade-in duration-700">
@@ -517,7 +533,7 @@ const Analytics = () => {
             <p className="text-xs text-slate-400 font-bold mb-6 uppercase">Products with highest customer visits (last 30 days)</p>
             
             <div className="space-y-3">
-               {products?.topViews && products.topViews.length > 0 ? products.topViews.map((prod, idx) => (
+               {paginatedTopViews.length > 0 ? paginatedTopViews.map((prod, idx) => (
                   <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
                      <div className="flex items-center gap-3.5">
                         <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-black text-slate-400 border border-slate-100">
@@ -543,6 +559,28 @@ const Analytics = () => {
                   </div>
                )}
             </div>
+
+            {allTopViews.length > TOP_VIEWS_PAGE_SIZE && (
+               <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-50">
+                  <button
+                     onClick={() => setTopViewsPage(p => Math.max(1, p - 1))}
+                     disabled={topViewsPage === 1}
+                     className="flex items-center gap-1 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >
+                     <ChevronLeft size={14} /> Prev
+                  </button>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                     Page {topViewsPage} of {topViewsTotalPages}
+                  </span>
+                  <button
+                     onClick={() => setTopViewsPage(p => Math.min(topViewsTotalPages, p + 1))}
+                     disabled={topViewsPage === topViewsTotalPages}
+                     className="flex items-center gap-1 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >
+                     Next <ChevronRight size={14} />
+                  </button>
+               </div>
+            )}
          </div>
 
          {/* Top Purchased */}

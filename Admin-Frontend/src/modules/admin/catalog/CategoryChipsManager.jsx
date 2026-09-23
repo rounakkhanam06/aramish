@@ -11,7 +11,7 @@ import { getImageUrl } from '../../../utils/imageHelper';
 
 const BANNER_TABS = ['Home', 'Fashion', 'Beauty', 'Toys', 'Electronics', 'Jewellery', 'Art. Jewellery', '1g Gold', 'Cosmetics'];
 
-const EMPTY_CAT = { categoryName: '', image: '', active: true, sizeChart: null };
+const EMPTY_CAT = { categoryName: '', image: '', active: true, sizeChart: null, order: '' };
 
 // Define SizeChartModal component
 const SizeChartModal = ({ isOpen, onClose, sizeChart, onSave }) => {
@@ -178,8 +178,8 @@ const CategoryForm = ({ onSave, onCancel, label, formData, setFormData, imagePre
     className="bg-blue-50/60 border border-blue-100 rounded-xl p-4 space-y-3"
   >
     <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{label}</p>
-    <div className="grid grid-cols-3 gap-3">
-      <div className="col-span-2">
+    <div className="grid grid-cols-12 gap-3">
+      <div className="col-span-12 md:col-span-5">
         <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Category Name *</label>
         <input
           value={formData.categoryName}
@@ -188,7 +188,17 @@ const CategoryForm = ({ onSave, onCancel, label, formData, setFormData, imagePre
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[12px] font-bold outline-none focus:ring-2 focus:ring-blue-200 bg-white"
         />
       </div>
-      <div>
+      <div className="col-span-12 md:col-span-3">
+        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Display Order</label>
+        <input
+          type="number"
+          value={formData.order}
+          onChange={e => setFormData(p => ({ ...p, order: e.target.value }))}
+          placeholder="e.g. 1"
+          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-[12px] font-bold outline-none focus:ring-2 focus:ring-blue-200 bg-white"
+        />
+      </div>
+      <div className="col-span-12 md:col-span-4">
         <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Image Upload *</label>
         <div className="flex items-center gap-2">
           <OptimizedImage src={imagePreview} className="w-9 h-9 rounded-lg object-contain bg-white border border-slate-200 p-0.5" alt="Preview" type="category" objectFit="contain" />
@@ -361,7 +371,7 @@ const CategoryChipsManager = () => {
 
   const handleEdit = (cat) => {
     setEditingId(cat.id);
-    setFormData({ categoryName: cat.categoryName, image: cat.image, active: cat.active, sizeChart: cat.sizeChart || null });
+    setFormData({ categoryName: cat.categoryName, image: cat.image, active: cat.active, sizeChart: cat.sizeChart || null, order: cat.order || '' });
     setImagePreview(cat.image || '');
     setImageFile(null);
     setIsAdding(false);
@@ -376,6 +386,9 @@ const CategoryChipsManager = () => {
       const bodyFormData = new FormData();
       bodyFormData.append('categoryName', formData.categoryName);
       bodyFormData.append('active', formData.active);
+      if (formData.order !== undefined && formData.order !== '') {
+        bodyFormData.append('order', formData.order);
+      }
       if (formData.sizeChart) {
         bodyFormData.append('sizeChart', JSON.stringify(formData.sizeChart));
       } else {
@@ -420,7 +433,11 @@ const CategoryChipsManager = () => {
       const bodyFormData = new FormData();
       bodyFormData.append('categoryName', formData.categoryName);
       bodyFormData.append('active', formData.active);
-      bodyFormData.append('order', categories.length + 1);
+      if (formData.order !== undefined && formData.order !== '') {
+        bodyFormData.append('order', formData.order);
+      } else {
+        bodyFormData.append('order', categories.length + 1);
+      }
       if (formData.sizeChart) {
         bodyFormData.append('sizeChart', JSON.stringify(formData.sizeChart));
       }
@@ -477,7 +494,12 @@ const CategoryChipsManager = () => {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => { setIsAdding(true); setEditingId(null); setFormData(EMPTY_CAT); }}
+            onClick={() => { 
+              setIsAdding(true); 
+              setEditingId(null); 
+              const nextOrder = categories.length > 0 ? Math.max(...categories.map(c => c.order || 0)) + 1 : 1;
+              setFormData({ ...EMPTY_CAT, order: nextOrder }); 
+            }}
             className="flex items-center gap-1.5 px-4 py-2 bg-blue-500 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-blue-100 hover:scale-105 active:scale-95 transition-all"
           >
             <Plus size={13} /> Add Category
@@ -583,7 +605,7 @@ const CategoryChipsManager = () => {
                       <GripVertical size={15} />
                     </div>
                     {/* Order */}
-                    <span className="text-[11px] font-black text-slate-300 w-6 text-center font-roboto">#{index + 1}</span>
+                    <span className="text-[11px] font-black text-slate-300 w-6 text-center font-roboto">#{cat.order || index + 1}</span>
                     {/* Image */}
                     <div className="w-10 h-10 bg-slate-50 rounded-xl overflow-hidden flex items-center justify-center border border-slate-100 flex-shrink-0 shadow-sm">
                       <OptimizedImage src={cat.image} className="w-full h-full object-contain p-0.5" alt="icon" type="category" objectFit="contain" />

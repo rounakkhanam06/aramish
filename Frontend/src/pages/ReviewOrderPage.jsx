@@ -914,18 +914,6 @@ export default function ReviewOrderPage() {
                 <span className="text-emerald-600 font-medium">- ₹{Number(discountAmount).toFixed(2)}</span>
               </div>
             )}
-            {redeemWallet && walletUsedAmount > 0 && (
-              <div className="flex justify-between items-center">
-                <span>Wallet Balance Used</span>
-                <span className="text-emerald-600 font-medium">- ₹{Number(walletUsedAmount).toFixed(2)}</span>
-              </div>
-            )}
-            {redeemReferralCoins && referralCoinsUsedAmount > 0 && (
-              <div className="flex justify-between items-center">
-                <span>Referral Coins Used</span>
-                <span className="text-emerald-600 font-medium">- ₹{Number(referralCoinsUsedAmount).toFixed(2)}</span>
-              </div>
-            )}
             <div className="flex justify-between items-center">
               <span>Product GST</span>
               <span className="text-slate-800">₹{Number(gstAmount).toFixed(2)}</span>

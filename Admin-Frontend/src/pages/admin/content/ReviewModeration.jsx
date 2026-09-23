@@ -1,18 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  MessageSquare, Star, Search, Filter, MoreVertical, 
-  CheckCircle2, XCircle, AlertCircle, Trash2, 
+import {
+  MessageSquare, Star, Search, Filter, MoreVertical,
+  CheckCircle2, XCircle, AlertCircle, Trash2,
   User, ShoppingBag, Calendar, ThumbsUp, Play, Upload, Plus, Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '../../../utils/toast';
 import { getImageUrl } from '../../../utils/imageHelper';
 
-const MOCK_REVIEWS = [];
-
 const ReviewModeration = () => {
-  const [reviews, setReviews] = useState(MOCK_REVIEWS);
-  const [reviewType, setReviewType] = useState('reels'); // 'text' or 'reels'
   const [activeTab, setActiveTab] = useState('All'); // 'All', 'Pending', 'Approved', 'Flagged'/'Rejected'
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -25,6 +21,7 @@ const ReviewModeration = () => {
   
   // Admin Upload form fields
   const [selectedProductId, setSelectedProductId] = useState('');
+  const [reelDisplayName, setReelDisplayName] = useState('');
   const [reelCaption, setReelCaption] = useState('');
   const [reelRating, setReelRating] = useState(5);
   const [reelSection, setReelSection] = useState('forYou');
@@ -34,7 +31,6 @@ const ReviewModeration = () => {
   const [productSearchQuery, setProductSearchQuery] = useState('');
 
   const tabs = ['All', 'Pending', 'Approved', 'Flagged'];
-  const reelsTabs = ['pending', 'approved', 'rejected', 'All'];
 
   // Fetch reels for admin moderation
   const fetchReels = async () => {
@@ -78,23 +74,10 @@ const ReviewModeration = () => {
     }
   };
 
-  const handleUpdateReviewStatus = (reviewId, newStatus) => {
-    setReviews(prev => prev.map(r => r.id === reviewId ? { ...r, status: newStatus } : r));
-    toast.success(`Review marked as ${newStatus}`);
-  };
-
-  const handleDeleteReview = (reviewId) => {
-    if (!window.confirm('Are you sure you want to permanently delete this review?')) return;
-    setReviews(prev => prev.filter(r => r.id !== reviewId));
-    toast.success('Review deleted successfully');
-  };
-
   useEffect(() => {
-    if (reviewType === 'reels') {
-      fetchReels();
-      fetchProducts();
-    }
-  }, [reviewType]);
+    fetchReels();
+    fetchProducts();
+  }, []);
 
   useEffect(() => {
     if (isUploadOpen) {
@@ -177,6 +160,7 @@ const ReviewModeration = () => {
 
     const formData = new FormData();
     formData.append('productId', selectedProductId);
+    formData.append('displayName', reelDisplayName);
     formData.append('caption', reelCaption);
     formData.append('rating', reelRating);
     formData.append('section', reelSection);
@@ -195,6 +179,7 @@ const ReviewModeration = () => {
       if (res.ok && data.success) {
         toast.success('Reel uploaded and published successfully!');
         setIsUploadOpen(false);
+        setReelDisplayName('');
         setReelCaption('');
         setSelectedProductId('');
         setReelVideoFile(null);
@@ -232,6 +217,7 @@ const ReviewModeration = () => {
     const matchesSearch = searchQuery === '' ||
       (r.username || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (r.caption || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (r.reviewText || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (r.productId?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
     return matchesTab && matchesSearch;
   });
@@ -242,18 +228,16 @@ const ReviewModeration = () => {
       <div className="flex justify-between items-end">
         <div>
           <h1 className="text-4xl font-semibold text-slate-900 tracking-tight font-montserrat uppercase">Review Moderation</h1>
-          <p className="text-slate-500 font-medium mt-1 font-raleway">Monitor and approve customer feedback and review reels to maintain platform quality.</p>
+          <p className="text-slate-500 font-medium mt-1 font-raleway">Monitor and approve customer ratings, written reviews, and video reels to maintain platform quality.</p>
         </div>
         
-        {reviewType === 'reels' && (
-          <button 
-            onClick={() => setIsUploadOpen(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg shadow-blue-100"
-          >
-            <Plus size={16} />
-            Add Admin Reel
-          </button>
-        )}
+        <button
+          onClick={() => setIsUploadOpen(true)}
+          className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg shadow-blue-100"
+        >
+          <Plus size={16} />
+          Add Admin Reel
+        </button>
       </div>
 
 
@@ -288,98 +272,25 @@ const ReviewModeration = () => {
           </div>
         </div>
 
-        {reviewType === 'text' ? (
-          <div className="divide-y divide-slate-50">
-            {reviews.filter(r => (activeTab === 'All' || r.status === activeTab) && (
-              searchQuery === '' ||
-              (r.user || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-              (r.product || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-              (r.comment || '').toLowerCase().includes(searchQuery.toLowerCase())
-            )).map((review) => (
-              <motion.div 
-                key={review.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="p-6 hover:bg-slate-50/50 transition-colors flex gap-6"
-              >
-                <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 flex-shrink-0">
-                   <User size={24} />
-                </div>
-                <div className="flex-1 space-y-3">
-                   <div className="flex justify-between items-start">
-                      <div>
-                         <div className="flex items-center gap-3">
-                            <h4 className="font-black text-slate-900 font-montserrat uppercase tracking-tight">{review.user}</h4>
-                            <StatusBadge status={review.status} />
-                         </div>
-                         <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                            <ShoppingBag size={12} />
-                            {review.product}
-                            <span className="mx-1">•</span>
-                            <Calendar size={12} />
-                            {review.date}
-                         </div>
-                      </div>
-                      <div className="flex gap-1">
-                         {[...Array(5)].map((_, i) => (
-                            <Star key={i} size={14} className={i < review.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200'} />
-                         ))}
-                      </div>
-                   </div>
-                   <p className="text-sm text-slate-600 font-medium leading-relaxed italic">
-                      "{review.comment}"
-                   </p>
-                   <div className="flex justify-between items-center pt-2">
-                     <div></div>
-                     <div className="flex gap-2">
-                        {review.status !== 'Approved' && (
-                          <button 
-                            onClick={() => handleUpdateReviewStatus(review.id, 'Approved')}
-                            className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all shadow-sm"
-                          >
-                             <CheckCircle2 size={14} />
-                             Approve
-                          </button>
-                        )}
-                        {review.status !== 'Flagged' && (
-                          <button 
-                            onClick={() => handleUpdateReviewStatus(review.id, 'Flagged')}
-                            className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-500 border border-red-100 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all shadow-sm"
-                          >
-                             <XCircle size={14} />
-                             Reject
-                          </button>
-                        )}
-                        <button 
-                          onClick={() => handleDeleteReview(review.id)}
-                          className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-500 transition-all border border-slate-100"
-                        >
-                           <Trash2 size={16} />
-                        </button>
-                     </div>
-                   </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-50">
-            {loadingReels ? (
-              <div className="py-20 text-center text-slate-400 font-black text-xs uppercase tracking-widest animate-pulse">
-                Loading Video Reels...
-              </div>
-            ) : filteredReels.length > 0 ? (
-              filteredReels.map((reel) => {
-                const videoUrl = getImageUrl(reel.video);
-                return (
-                  <motion.div 
-                    key={reel._id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="p-6 hover:bg-slate-50/50 transition-colors flex gap-6"
-                  >
-                    {/* Video Thumbnail with hover play */}
-                    <div 
+        <div className="divide-y divide-slate-50">
+          {loadingReels ? (
+            <div className="py-20 text-center text-slate-400 font-black text-xs uppercase tracking-widest animate-pulse">
+              Loading Reviews...
+            </div>
+          ) : filteredReels.length > 0 ? (
+            filteredReels.map((reel) => {
+              const videoUrl = reel.video ? getImageUrl(reel.video) : null;
+              const photoUrls = (reel.photos || []).map(getImageUrl);
+              return (
+                <motion.div
+                  key={reel._id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="p-6 hover:bg-slate-50/50 transition-colors flex gap-6"
+                >
+                  {/* Media: video thumbnail, photo strip, or a plain text icon */}
+                  {videoUrl ? (
+                    <div
                       onClick={() => setPreviewVideoUrl(videoUrl)}
                       className="relative w-28 h-48 bg-black rounded-2xl overflow-hidden flex-shrink-0 shadow-md group border border-slate-100 cursor-pointer"
                     >
@@ -393,83 +304,100 @@ const ReviewModeration = () => {
                         {reel.section}
                       </div>
                     </div>
-
-                    <div className="flex-1 space-y-3">
-                       <div className="flex justify-between items-start">
-                          <div>
-                             <div className="flex items-center gap-3">
-                                <h4 className="font-black text-slate-900 font-montserrat uppercase tracking-tight">@{reel.username}</h4>
-                                <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-                                  reel.userType === 'admin' || reel.userModel === 'Admin'
-                                    ? 'bg-purple-100 text-purple-700 border border-purple-200' 
-                                    : 'bg-amber-100 text-amber-700 border border-amber-200'
-                                }`}>
-                                   {reel.userType === 'admin' || reel.userModel === 'Admin' ? 'Admin' : 'Customer'}
-                                </span>
-                                <StatusBadge status={reel.status} />
-                             </div>
-                             <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                                <ShoppingBag size={12} />
-                                {reel.productId?.name || 'Unknown Product'}
-                                <span className="mx-1">•</span>
-                                <Calendar size={12} />
-                                {new Date(reel.createdAt).toLocaleDateString()}
-                             </div>
-                          </div>
-                          <div className="flex gap-1">
-                             {[...Array(5)].map((_, i) => (
-                                <Star key={i} size={14} className={i < reel.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200'} />
-                             ))}
-                          </div>
-                       </div>
-                       
-                       {reel.caption && (
-                         <p className="text-sm text-slate-600 font-medium leading-relaxed italic bg-slate-50 p-3 rounded-xl border border-slate-100">
-                            "{reel.caption}"
-                         </p>
-                       )}
-
-                       <div className="flex justify-between items-center pt-2">
-                          <div className="flex gap-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                             <span>Views: {reel.views}</span>
-                             <span>Likes: {reel.likes?.length || 0}</span>
-                             <span>Comments: {reel.comments?.length || 0}</span>
-                          </div>
-
-                          <div className="flex gap-2">
-                             {reel.status !== 'approved' && (
-                               <button 
-                                 onClick={() => handleUpdateReelStatus(reel._id, 'approved')}
-                                 className="flex items-center gap-2 px-4 py-2.5 bg-green-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all shadow-sm"
-                               >
-                                  <CheckCircle2 size={14} />
-                                  Approve
-                               </button>
-                             )}
-                             {reel.status !== 'rejected' && (
-                               <button 
-                                 onClick={() => handleUpdateReelStatus(reel._id, 'rejected')}
-                                 className="flex items-center gap-2 px-4 py-2.5 bg-red-50 text-red-500 border border-red-100 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all shadow-sm"
-                               >
-                                  <XCircle size={14} />
-                                  Reject
-                               </button>
-                             )}
-                             <button 
-                               onClick={() => handleDeleteReel(reel._id)}
-                               className="p-2.5 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-500 transition-all border border-slate-100"
-                             >
-                                <Trash2 size={16} />
-                             </button>
-                          </div>
-                       </div>
+                  ) : photoUrls.length > 0 ? (
+                    <div className="flex flex-col gap-2 flex-shrink-0 w-28">
+                      {photoUrls.slice(0, 2).map((url, i) => (
+                        <img key={i} src={url} className="w-28 h-[92px] object-cover rounded-2xl border border-slate-100 shadow-sm" />
+                      ))}
                     </div>
-                  </motion.div>
-                );
-              })
-            ) : null}
-          </div>
-        )}
+                  ) : (
+                    <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 flex-shrink-0">
+                      <User size={24} />
+                    </div>
+                  )}
+
+                  <div className="flex-1 space-y-3">
+                     <div className="flex justify-between items-start">
+                        <div>
+                           <div className="flex items-center gap-3">
+                              <h4 className="font-black text-slate-900 font-montserrat uppercase tracking-tight">@{reel.username}</h4>
+                              <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                                reel.userType === 'admin' || reel.userModel === 'Admin'
+                                  ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                                  : 'bg-amber-100 text-amber-700 border border-amber-200'
+                              }`}>
+                                 {reel.userType === 'admin' || reel.userModel === 'Admin' ? 'Admin' : 'Customer'}
+                              </span>
+                              <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+                                 {videoUrl ? 'Video Review' : photoUrls.length > 0 ? 'Photo Review' : 'Text Review'}
+                              </span>
+                              <StatusBadge status={reel.status} />
+                           </div>
+                           <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                              <ShoppingBag size={12} />
+                              {reel.productId?.name || 'Unknown Product'}
+                              <span className="mx-1">•</span>
+                              <Calendar size={12} />
+                              {new Date(reel.createdAt).toLocaleDateString()}
+                           </div>
+                        </div>
+                        <div className="flex gap-1">
+                           {[...Array(5)].map((_, i) => (
+                              <Star key={i} size={14} className={i < reel.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200'} />
+                           ))}
+                        </div>
+                     </div>
+
+                     {(reel.reviewText || reel.caption) && (
+                       <p className="text-sm text-slate-600 font-medium leading-relaxed italic bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          "{reel.reviewText || reel.caption}"
+                       </p>
+                     )}
+
+                     <div className="flex justify-between items-center pt-2">
+                        <div className="flex gap-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                           <span>Views: {reel.views}</span>
+                           <span>Likes: {reel.likes?.length || 0}</span>
+                           <span>Comments: {reel.comments?.length || 0}</span>
+                        </div>
+
+                        <div className="flex gap-2">
+                           {reel.status !== 'approved' && (
+                             <button
+                               onClick={() => handleUpdateReelStatus(reel._id, 'approved')}
+                               className="flex items-center gap-2 px-4 py-2.5 bg-green-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-all shadow-sm"
+                             >
+                                <CheckCircle2 size={14} />
+                                Approve
+                             </button>
+                           )}
+                           {reel.status !== 'rejected' && (
+                             <button
+                               onClick={() => handleUpdateReelStatus(reel._id, 'rejected')}
+                               className="flex items-center gap-2 px-4 py-2.5 bg-red-50 text-red-500 border border-red-100 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all shadow-sm"
+                             >
+                                <XCircle size={14} />
+                                Reject
+                             </button>
+                           )}
+                           <button
+                             onClick={() => handleDeleteReel(reel._id)}
+                             className="p-2.5 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-500 transition-all border border-slate-100"
+                           >
+                              <Trash2 size={16} />
+                           </button>
+                        </div>
+                     </div>
+                  </div>
+                </motion.div>
+              );
+            })
+          ) : (
+            <div className="py-20 text-center text-slate-400 font-black text-xs uppercase tracking-widest">
+              No reviews found
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Admin Reels Upload slide-over / Modal */}
@@ -545,6 +473,18 @@ const ReviewModeration = () => {
                       </div>
                     </div>
                   )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Display Name Shown to Users</label>
+                  <input
+                    type="text"
+                    value={reelDisplayName}
+                    onChange={(e) => setReelDisplayName(e.target.value)}
+                    placeholder="E.g. shoe_lover_23 (leave blank to use your admin username)"
+                    maxLength={40}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 text-sm font-black focus:ring-4 focus:ring-blue-50 outline-none transition-all"
+                  />
                 </div>
 
                 <div className="space-y-2">
