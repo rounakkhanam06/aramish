@@ -443,12 +443,15 @@ export default function ProductDetailsPage() {
   }
 
   const activeVariant = product?.variations?.find(v => v.color === selectedColor && v.size === selectedSize) || product?.variations?.[0];
-  const displayPrice = activeVariant && !activeVariant.useDefaultPricing ? activeVariant.sellingPrice : product?.price;
-  const displayOriginalPrice = activeVariant && !activeVariant.useDefaultPricing ? activeVariant.mrp : product?.originalPrice;
+  // A variant only overrides pricing when it opts out of default pricing AND has its own
+  // selling price; otherwise (e.g. legacy variants saved without prices) use the base price.
+  const hasVariantPricing = !!activeVariant && !activeVariant.useDefaultPricing && Number(activeVariant.sellingPrice) > 0;
+  const displayPrice = hasVariantPricing ? activeVariant.sellingPrice : product?.price;
+  const displayOriginalPrice = hasVariantPricing ? (activeVariant.mrp || activeVariant.sellingPrice) : product?.originalPrice;
   const displayStock = activeVariant ? activeVariant.stock : product?.stock;
-  
+
   let displayDiscount = product?.discount;
-  if (activeVariant && !activeVariant.useDefaultPricing && displayOriginalPrice && displayPrice) {
+  if (hasVariantPricing && displayOriginalPrice && displayPrice) {
       displayDiscount = formatDiscount('', displayOriginalPrice, displayPrice, 'off');
   }
   const colorVariantWithImage = product?.variations?.find(v => v.color?.toLowerCase() === selectedColor?.toLowerCase() && v.images && v.images.length > 0);

@@ -93,8 +93,9 @@ export const AppProvider = ({ children }) => {
       const p = item.productId;
       if (!p) return null;
       const variant = item.variationSku && p.variations ? p.variations.find(v => v.sku === item.variationSku) : null;
-      const itemPrice = variant && !variant.useDefaultPricing ? variant.sellingPrice : p.sellingPrice;
-      const itemOriginalPrice = variant && !variant.useDefaultPricing ? variant.mrp : p.mrp;
+      const hasVariantPricing = !!variant && !variant.useDefaultPricing && Number(variant.sellingPrice) > 0;
+      const itemPrice = hasVariantPricing ? variant.sellingPrice : p.sellingPrice;
+      const itemOriginalPrice = hasVariantPricing ? (variant.mrp || variant.sellingPrice) : p.mrp;
       const attributes = item.attributes || {};
       const colorVal = typeof attributes.get === 'function' ? attributes.get('Color') : attributes.Color;
       const sizeVal = typeof attributes.get === 'function' ? attributes.get('Size') : attributes.Size;

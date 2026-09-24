@@ -845,7 +845,6 @@ export default function ReviewOrderPage() {
                   type="button"
                   onClick={() => {
                     setPaymentMethod('COD');
-                    setIsPaymentDropdownOpen(false);
                   }}
                   className={`w-full p-3.5 rounded-xl border text-left flex items-center justify-between cursor-pointer transition-all bg-white ${
                     paymentMethod === 'COD'
@@ -862,12 +861,11 @@ export default function ReviewOrderPage() {
                   {paymentMethod === 'COD' && <span className="w-2 h-2 rounded-full bg-[#0B132B]" />}
                 </button>
 
-                {/* Online Payment option */}
+                {/* Online Payment option (Commented out)
                 <button
                   type="button"
                   onClick={() => {
                     setPaymentMethod('ONLINE');
-                    setIsPaymentDropdownOpen(false);
                   }}
                   className={`w-full p-3.5 rounded-xl border text-left flex items-center justify-between cursor-pointer transition-all bg-white ${
                     paymentMethod === 'ONLINE'
@@ -888,6 +886,7 @@ export default function ReviewOrderPage() {
                   </div>
                   {paymentMethod === 'ONLINE' && <span className="w-2 h-2 rounded-full bg-[#0B132B]" />}
                 </button>
+                */}
               </div>
             )}
           </div>

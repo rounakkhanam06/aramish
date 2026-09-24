@@ -1370,9 +1370,11 @@ const bulkUploadProducts = async (req, res) => {
             continue;
           }
 
-          const useDefaultPricing = varHeaders.includes('Use Default Pricing')
-            ? parseBoolValue(getVarValue(rowData, 'Use Default Pricing'))
-            : true;
+          // A blank "Use Default Pricing" cell means the variant inherits the product price.
+          const rawUseDefault = getVarValue(rowData, 'Use Default Pricing');
+          const useDefaultPricing = (rawUseDefault === undefined || rawUseDefault === null || rawUseDefault.toString().trim() === '')
+            ? true
+            : parseBoolValue(rawUseDefault);
 
           const variantMrp = useDefaultPricing ? undefined : cleanNumber(getVarValue(rowData, 'MRP'));
           const variantSellingPrice = useDefaultPricing ? undefined : cleanNumber(getVarValue(rowData, 'Selling Price'));
