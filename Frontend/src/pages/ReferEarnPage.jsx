@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import toast from '../utils/toast';
+import { buildReferralShareUrl } from '../utils/referral';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -61,7 +62,7 @@ export default function ReferEarnPage() {
 
   const referralCode = referralData?.referralCode || '...';
   const shareText = `Hey! Join Aramish using my referral code ${referralCode}! 🎉`;
-  const shareUrl = `${window.location.origin}/login?ref=${referralCode}`;
+  const shareUrl = buildReferralShareUrl(referralCode);
   const fullShareText = `${shareText}\n\n${shareUrl}`;
 
   const handleCopy = () => {

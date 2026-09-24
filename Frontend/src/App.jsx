@@ -59,6 +59,7 @@ const SettingsPage       = lazyRetry(() => import('./pages/SettingsPage'));
 const WalletPage         = lazyRetry(() => import('./pages/WalletPage'));
 const CouponsPage        = lazyRetry(() => import('./pages/CouponsPage'));
 const ReferEarnPage      = lazyRetry(() => import('./pages/ReferEarnPage'));
+const ReferralLandingPage = lazyRetry(() => import('./pages/ReferralLandingPage'));
 const SavedAddressesPage = lazyRetry(() => import('./pages/SavedAddressesPage'));
 const TrackOrderPage     = lazyRetry(() => import('./pages/TrackOrderPage'));
 const OrderDetailsPage   = lazyRetry(() => import('./pages/OrderDetailsPage'));
@@ -156,6 +157,7 @@ function AppContent() {
           <Route path="/wallet" element={<WalletPage />} />
           <Route path="/coupons" element={<CouponsPage />} />
           <Route path="/refer" element={<ReferEarnPage />} />
+          <Route path="/r/:code" element={<ReferralLandingPage />} />
           <Route path="/saved-addresses" element={<SavedAddressesPage />} />
           <Route path="/track-order/:orderId" element={<TrackOrderPage />} />
           <Route path="/order-details/:orderId" element={<OrderDetailsPage />} />

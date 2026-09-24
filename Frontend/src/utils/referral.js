@@ -50,3 +50,21 @@ export const captureReferralFromUrl = (search = window.location.search, hash = w
   }
   return code ? setPendingReferralCode(code) : '';
 };
+
+// ---- Referral invite links (/r/CODE) and app store redirects ----
+
+export const ANDROID_PACKAGE_ID = 'com.aramishshoes.app';
+// App Store listing, e.g. https://apps.apple.com/in/app/aramish/id1234567890 — unset until the iOS app is live
+export const IOS_APP_STORE_URL = import.meta.env.VITE_IOS_APP_STORE_URL || '';
+
+const SITE_URL = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/$/, '');
+
+// The link users share. Opens the app (App Links) when installed, otherwise ReferralLandingPage.
+export const buildReferralShareUrl = (code) => `${SITE_URL}/r/${encodeURIComponent(code)}`;
+
+// Play Store link carrying the code as an install referrer. After install, the Flutter app reads it
+// with the Play Install Referrer API and gets back "utm_source=referral&utm_medium=invite&ref=CODE".
+export const buildPlayStoreUrl = (code) => {
+  const referrer = `utm_source=referral&utm_medium=invite&ref=${code}`;
+  return `https://play.google.com/store/apps/details?id=${ANDROID_PACKAGE_ID}&referrer=${encodeURIComponent(referrer)}`;
+};
