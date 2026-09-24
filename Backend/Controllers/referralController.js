@@ -1,6 +1,7 @@
 const User = require('../Models/User');
 const Referral = require('../Models/Referral');
 const CoinTransaction = require('../Models/CoinTransaction');
+const Order = require('../Models/Order');
 
 // Helper: generate unique 8-char code from user's name/phone
 const generateReferralCode = (user) => {
@@ -99,11 +100,14 @@ const getMyReferral = async (req, res) => {
       }
     }
 
+    const hasOrdered = !!(await Order.exists({ userId: user._id }));
+
     res.status(200).json({
       success: true,
       referralCode: user.referralCode,
       referralCoins: user.referralCoins || 0,
       hasAppliedCode: !!user.referredBy,
+      hasOrdered,
       referredBy: referredByInfo,
       stats,
       referrals: referrals.map(r => ({
@@ -241,6 +245,12 @@ const applyReferralCode = async (req, res) => {
     // One-time assignment: once a referral relationship exists, it cannot be changed
     if (referee.referredBy) {
       return res.status(400).json({ success: false, message: 'You have already used a referral code' });
+    }
+
+    // Referral codes are only for new customers — once someone has placed an order, they can no longer apply one
+    const hasOrdered = await Order.exists({ userId: referee._id });
+    if (hasOrdered) {
+      return res.status(400).json({ success: false, message: 'Referral codes can only be applied before your first order' });
     }
 
     const { referrer, error } = await validateReferralCode(code, referee._id);

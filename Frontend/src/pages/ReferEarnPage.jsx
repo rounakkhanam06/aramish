@@ -231,7 +231,8 @@ export default function ReferEarnPage() {
             </div>
           </div>
 
-          {/* Apply Friend's Code */}
+          {/* Apply Friend's Code — hidden once the customer has already placed an order */}
+          {(referralData?.hasAppliedCode || !referralData?.hasOrdered) && (
           <div className="bg-surface rounded-xl shadow-sm border border-white/10 overflow-hidden">
             <button
               onClick={() => setShowApply(s => !s)}
@@ -297,6 +298,7 @@ export default function ReferEarnPage() {
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* Right Column (History & Guide) */}
