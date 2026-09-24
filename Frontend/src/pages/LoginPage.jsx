@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { ArrowLeft, Edit2, Loader2 } from 'lucide-react';
 import toast from '../utils/toast';
 import analytics from '../utils/analytics';
+import { captureReferralFromUrl, getPendingReferralCode, setPendingReferralCode, clearPendingReferralCode } from '../utils/referral';
 
 
 const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/auth`;
@@ -13,27 +14,9 @@ export default function LoginPage() {
   const { setUser } = useApp();
   const [searchParams] = useSearchParams();
 
-  // Robustly extract referral code from query param, hash param (legacy links), or storage
-  const getInitialRefCode = () => {
-    const fromQuery = searchParams.get('ref');
-    if (fromQuery) {
-      const clean = fromQuery.trim().toUpperCase();
-      sessionStorage.setItem('pendingReferralCode', clean);
-      return clean;
-    }
-    if (typeof window !== 'undefined' && window.location.hash && window.location.hash.includes('ref=')) {
-      const hashPart = window.location.hash.split('?')[1];
-      if (hashPart) {
-        const p = new URLSearchParams(hashPart).get('ref');
-        if (p) {
-          const clean = p.trim().toUpperCase();
-          sessionStorage.setItem('pendingReferralCode', clean);
-          return clean;
-        }
-      }
-    }
-    return sessionStorage.getItem('pendingReferralCode') || '';
-  };
+  // Referral code from the shared link (?ref=CODE), or one captured earlier on any page
+  const getInitialRefCode = () =>
+    captureReferralFromUrl(`?${searchParams.toString()}`) || getPendingReferralCode();
 
   // Phone + OTP states
   const [phoneNumber, setPhoneNumber] = useState(() => {
@@ -228,7 +211,10 @@ export default function LoginPage() {
       localStorage.setItem('userInfo', JSON.stringify(data.user));
       localStorage.setItem('isLoggedIn', 'true');
       sessionStorage.removeItem('tempLoginPhone');
-      sessionStorage.removeItem('pendingReferralCode');
+      clearPendingReferralCode();
+      if (data.referralError) {
+        toast.info('Referral code could not be applied, but your account is ready.');
+      }
 
       // Track analytics signup/login
       if (data.isNewUser) {
@@ -500,8 +486,7 @@ export default function LoginPage() {
                     onChange={(e) => {
                       const code = e.target.value.toUpperCase();
                       setReferralCode(code);
-                      if (code) sessionStorage.setItem('pendingReferralCode', code);
-                      else sessionStorage.removeItem('pendingReferralCode');
+                      setPendingReferralCode(code);
                     }}
                     maxLength={12}
                     className="w-full px-3 py-2.5 border-b-2 border-white/10 focus:border-[#0B132B] outline-none bg-transparent text-[13px] font-bold text-[#02006c] tracking-widest uppercase transition-colors"

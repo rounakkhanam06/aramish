@@ -5,6 +5,7 @@ import { AppProvider, useApp } from './context/AppContext';
 import Layout from './components/layout/Layout';
 import MaintenanceGate from './components/MaintenanceGate';
 import ErrorBoundary from './components/ErrorBoundary';
+import { captureReferralFromUrl } from './utils/referral';
 
 // Global Vite Dynamic Import Error Listener (Auto-reloads on deployment/cache mismatch)
 window.addEventListener('vite:preloadError', (event) => {
@@ -105,6 +106,11 @@ function AppContent() {
       search: location.search
     });
   }, [location.pathname, location.search]);
+
+  // Remember a referral code from any shared link (?ref=CODE) so it is auto-applied at signup
+  useEffect(() => {
+    if (!user) captureReferralFromUrl(location.search, location.hash);
+  }, [user, location.search, location.hash]);
 
   useEffect(() => {
     const protectedRoutes = ['/cart', '/wishlist', '/orders', '/games', '/refer', '/saved-addresses', '/wallet'];

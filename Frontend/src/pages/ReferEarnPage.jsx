@@ -83,8 +83,20 @@ export default function ReferEarnPage() {
         text: fullShareText
       });
     } else if (navigator.share) {
+      const shareData = { title: 'Join Aramish!', text: shareText, url: shareUrl };
+      // Attach the logo so the share sheet previews the Aramish brand instead of a generic letter tile
       try {
-        await navigator.share({ title: 'Join Aramish!', text: shareText, url: shareUrl });
+        const blob = await fetch('/icons/icon-192.png').then((res) => res.blob());
+        const logoFile = new File([blob], 'aramish-logo.png', { type: 'image/png' });
+        if (navigator.canShare?.({ files: [logoFile] })) {
+          shareData.files = [logoFile];
+          // Some targets drop `url` when files are attached, so put the link in the text instead
+          shareData.text = fullShareText;
+          delete shareData.url;
+        }
+      } catch { /* logo unavailable, share without it */ }
+      try {
+        await navigator.share(shareData);
       } catch (err) { /* canceled */ }
     } else {
       navigator.clipboard.writeText(fullShareText);

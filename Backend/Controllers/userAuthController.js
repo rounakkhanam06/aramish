@@ -191,16 +191,16 @@ const verifyOtp = async (req, res) => {
     // Mark verified, clear OTP
     const isNewUser = !user.isVerified;
 
-    // Referral code is optional, but if provided it must pass validation (exists, active
-    // referrer, not self) before we link the referral.
+    // Referral code is optional. If it fails validation (unknown, inactive referrer, self),
+    // signup still completes — the referral just isn't linked.
     let referrer = null;
+    let referralError = null;
     if ((isNewUser || !user.referredBy) && referralCode && referralCode.trim()) {
       const { validateReferralCode } = require('./referralController');
       const result = await validateReferralCode(referralCode, user._id);
       if (result.error) {
-        if (isNewUser) {
-          return res.status(400).json({ success: false, message: result.error });
-        }
+        referralError = result.error;
+        console.log(`⚠️ Referral code "${referralCode}" not applied for ${phone}: ${result.error}`);
       } else {
         referrer = result.referrer;
       }
@@ -270,6 +270,7 @@ const verifyOtp = async (req, res) => {
       success: true,
       message: isNewUser ? 'Account created & logged in!' : 'Login successful!',
       isNewUser,
+      ...(referralError && { referralError }),
       token,
       user: {
         id: user._id,
