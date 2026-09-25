@@ -299,10 +299,10 @@ export default function LoginPage() {
 
 
   return (
-    <div className="h-[100dvh] w-full md:max-w-md md:mx-auto flex flex-col justify-between overflow-hidden relative bg-[#F8F9FD] md:shadow-2xl md:border-x md:border-white/10">
+    <div className="min-h-[100dvh] w-full md:max-w-md md:mx-auto flex flex-col relative bg-[#F8F9FD] md:shadow-2xl md:border-x md:border-white/10">
 
       {/* Curved Orange top banner */}
-      <div className="relative h-[28%] bg-gradient-to-br from-orange-300 via-orange-400 to-[#1A2542] flex flex-col items-center justify-center pt-4">
+      <div className="relative h-52 shrink-0 bg-gradient-to-br from-orange-300 via-orange-400 to-[#1A2542] flex flex-col items-center justify-center pt-4">
         {renderLeafOverlay()}
 
         {/* Back to Home or Back to Phone Input */}
@@ -462,7 +462,7 @@ export default function LoginPage() {
                     }}
                     required
                     maxLength={50}
-                    className="w-full px-3 py-2 border-b-2 border-white/10 focus:border-[#0B132B] outline-none bg-transparent text-[14px] font-bold text-[#02006c] transition-colors placeholder:font-normal placeholder:text-slate-400"
+                    className="w-full px-3 py-2 border-b-2 border-white/10 focus:border-[#0B132B] outline-none bg-transparent text-base font-bold text-[#02006c] transition-colors placeholder:font-normal placeholder:text-slate-400"
                   />
                 </div>
               )}
@@ -489,7 +489,7 @@ export default function LoginPage() {
                       setPendingReferralCode(code);
                     }}
                     maxLength={12}
-                    className="w-full px-3 py-2.5 border-b-2 border-white/10 focus:border-[#0B132B] outline-none bg-transparent text-[13px] font-bold text-[#02006c] tracking-widest uppercase transition-colors"
+                    className="w-full px-3 py-2.5 border-b-2 border-white/10 focus:border-[#0B132B] outline-none bg-transparent text-base font-bold text-[#02006c] tracking-widest uppercase transition-colors"
                   />
                 </div>
               )}
