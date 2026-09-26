@@ -42,6 +42,43 @@ export default function Layout({ children }) {
     };
   }, []);
 
+  // iOS keyboard handling: 100dvh does NOT shrink when the iOS keyboard opens, so iOS pans the
+  // whole window to reveal the focused input and then loses its place on re-render (blank gap,
+  // screen "drops"). Instead, size the app shell to the visible area above the keyboard
+  // (--app-height) and keep the window pinned at the top; <main> does all the scrolling.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const syncViewport = () => {
+      document.documentElement.style.setProperty('--app-height', `${vv.height}px`);
+      if (window.scrollY !== 0 || vv.offsetTop !== 0) window.scrollTo(0, 0);
+    };
+
+    // After the keyboard finishes opening, make sure the focused field is actually visible
+    const handleFocusIn = (e) => {
+      const el = e.target;
+      if (!el?.matches?.('input, textarea, select, [contenteditable="true"]')) return;
+      setTimeout(() => {
+        syncViewport();
+        const rect = el.getBoundingClientRect();
+        if (rect.bottom > vv.height || rect.top < 0) {
+          el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+      }, 300);
+    };
+
+    syncViewport();
+    vv.addEventListener('resize', syncViewport);
+    vv.addEventListener('scroll', syncViewport);
+    document.addEventListener('focusin', handleFocusIn);
+    return () => {
+      vv.removeEventListener('resize', syncViewport);
+      vv.removeEventListener('scroll', syncViewport);
+      document.removeEventListener('focusin', handleFocusIn);
+    };
+  }, []);
+
   // Disable browser native scroll restoration so back/forward never restores old position
   useEffect(() => {
     if ('scrollRestoration' in history) {
@@ -210,7 +247,7 @@ export default function Layout({ children }) {
 
   return (
     <div className="min-h-screen md:h-auto bg-surface text-slate-800 antialiased font-sans overflow-x-clip">
-      <div className={`w-full ${isFixedLayoutPage ? 'h-[100dvh] md:h-[100dvh]' : 'h-[100dvh] md:h-auto md:min-h-screen'} bg-surface md:bg-transparent flex flex-col relative ${(hideMobileNav || isKeyboardOpen) ? 'pb-0' : 'pb-24 md:pb-0'}`}>
+      <div className={`w-full ${isFixedLayoutPage ? 'h-[var(--app-height,100dvh)]' : 'h-[var(--app-height,100dvh)] md:h-auto md:min-h-screen'} bg-surface md:bg-transparent flex flex-col relative ${(hideMobileNav || isKeyboardOpen) ? 'pb-0' : 'pb-24 md:pb-0'}`}>
         <main 
           key={location.pathname}
           id="main-scroll-container" 
