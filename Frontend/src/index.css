@@ -59,10 +59,12 @@ body {
   }
 }
 
-/* Re-enable text selection for form inputs */
-input, textarea, select {
-  -webkit-user-select: auto;
-  user-select: auto;
+/* Re-enable text selection for form inputs. Must be `text`, not `auto`: inside a
+   user-select:none body, iOS WebKit can treat `auto` as none and drop input focus. */
+input, textarea, select, [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }
 
 .nunito-heading {
@@ -143,4 +145,4 @@ input::-ms-clear {
 .marquee-container:hover .animate-marquee {
   animation-play-state: paused;
 }
-
+
