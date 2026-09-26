@@ -28,12 +28,11 @@ export default function LoginPage() {
   const [isNewUser, setIsNewUser] = useState(false);
   const [referralCode, setReferralCode] = useState(getInitialRefCode);
 
-  // 6-digit OTP state
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const otpRefs = [
-    useRef(null), useRef(null), useRef(null),
-    useRef(null), useRef(null), useRef(null)
-  ];
+  // 6-digit OTP state. A single real input sits on top of the 6 visual boxes so focus
+  // never has to jump between inputs — on iOS PWAs that jump dismisses the keyboard.
+  const [otp, setOtp] = useState('');
+  const [otpFocused, setOtpFocused] = useState(false);
+  const otpInputRef = useRef(null);
 
   const [signInError, setSignInError] = useState('');
   const [signInSuccess, setSignInSuccess] = useState('');
@@ -45,7 +44,7 @@ export default function LoginPage() {
   React.useEffect(() => {
     if (otpSent) {
       setTimeout(() => {
-        otpRefs[0].current?.focus();
+        otpInputRef.current?.focus();
       }, 100);
     }
   }, [otpSent]);
@@ -105,70 +104,15 @@ export default function LoginPage() {
     }
   };
 
-  const handleOtpPaste = (e) => {
-    e.preventDefault();
-    const pastedData = e.clipboardData ? e.clipboardData.getData('text') : '';
-    const digits = pastedData.replace(/\D/g, '').slice(0, 6);
-    if (!digits) return;
-
-    const newOtp = ['', '', '', '', '', ''];
-    for (let i = 0; i < digits.length; i++) {
-      newOtp[i] = digits[i];
-    }
-    setOtp(newOtp);
+  const handleOtpChange = (value) => {
+    setOtp(value.replace(/\D/g, '').slice(0, 6));
     setSignInError('');
-
-    // Focus the box after the last pasted digit or the last box
-    const focusIndex = Math.min(digits.length - 1, 5);
-    if (otpRefs[focusIndex]?.current) {
-      otpRefs[focusIndex].current.focus();
-    }
-  };
-
-  const handleOtpChange = (index, value) => {
-    // If multiple digits were pasted/autofilled directly into onChange
-    const cleanDigits = value.replace(/\D/g, '');
-    if (cleanDigits.length > 1) {
-      const newOtp = [...otp];
-      const digits = cleanDigits.slice(0, 6);
-      for (let i = 0; i < digits.length; i++) {
-        if (index + i < 6) {
-          newOtp[index + i] = digits[i];
-        }
-      }
-      setOtp(newOtp);
-      setSignInError('');
-      const nextFocus = Math.min(index + digits.length - 1, 5);
-      if (otpRefs[nextFocus]?.current) {
-        otpRefs[nextFocus].current.focus();
-      }
-      return;
-    }
-
-    if (value && isNaN(value)) return;
-
-    const newOtp = [...otp];
-    newOtp[index] = cleanDigits;
-    setOtp(newOtp);
-    setSignInError('');
-
-    // Move to next input if value is entered
-    if (cleanDigits !== '' && index < 5) {
-      otpRefs[index + 1]?.current?.focus();
-    }
-  };
-
-  const handleOtpKeyDown = (index, e) => {
-    // Move to previous input on backspace if current is empty
-    if (e.key === 'Backspace' && otp[index] === '' && index > 0) {
-      otpRefs[index - 1]?.current?.focus();
-    }
   };
 
   const handleVerifyOtpAndLogin = async (e) => {
     e.preventDefault();
     if (loading) return;
-    const fullOtp = otp.join('');
+    const fullOtp = otp;
 
     if (fullOtp.length < 6) {
       setSignInError('Please enter the complete 6-digit OTP');
@@ -250,7 +194,7 @@ export default function LoginPage() {
 
   const handleResendOtp = async () => {
     if (resendCooldown > 0 || loading) return;
-    setOtp(['', '', '', '', '', '']);
+    setOtp('');
     setSignInError('');
     setSignInSuccess('');
     setLoading(true);
@@ -280,7 +224,7 @@ export default function LoginPage() {
       setSignInError('Server error. Try again.');
     } finally {
       setLoading(false);
-      otpRefs[0].current?.focus();
+      otpInputRef.current?.focus();
     }
   };
 
@@ -310,7 +254,7 @@ export default function LoginPage() {
           onClick={() => {
             if (otpSent) {
               setOtpSent(false);
-              setOtp(['', '', '', '', '', '']);
+              setOtp('');
               setSignInError('');
               setSignInSuccess('');
             } else {
@@ -408,7 +352,7 @@ export default function LoginPage() {
                 <button
                   onClick={() => {
                     setOtpSent(false);
-                    setOtp(['', '', '', '', '', '']);
+                    setOtp('');
                     setSignInError('');
                   }}
                   className="p-1 rounded-full bg-surface hover:bg-surface transition-colors text-slate-500"
@@ -425,25 +369,38 @@ export default function LoginPage() {
                   Enter 6-Digit OTP
                 </label>
 
-                {/* 6 Box OTP Input */}
-                <div className="flex justify-center gap-2" onPaste={handleOtpPaste}>
-                  {otp.map((digit, index) => (
-                    <input
-                      key={index}
-                      ref={otpRefs[index]}
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      maxLength={6}
-                      value={digit}
-                      onChange={(e) => handleOtpChange(index, e.target.value)}
-                      onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                      onPaste={handleOtpPaste}
-                      onFocus={(e) => e.target.select()}
-                      className="w-10 h-13 rounded-xl border-2 border-white/10 bg-surface text-center text-xl font-black text-[#02006c] focus:border-[#0B132B] focus:ring-2 focus:ring-orange-100 outline-none transition-all shadow-sm"
-                      style={{ height: '52px' }}
-                    />
-                  ))}
+                {/* 6 Box OTP Input — one transparent input overlays the boxes */}
+                <div className="relative flex justify-center gap-2">
+                  {Array.from({ length: 6 }).map((_, index) => {
+                    const isActive = otpFocused && index === Math.min(otp.length, 5);
+                    return (
+                      <div
+                        key={index}
+                        className={`w-10 rounded-xl border-2 bg-surface flex items-center justify-center text-xl font-black text-[#02006c] transition-all shadow-sm ${isActive ? 'border-[#0B132B] ring-2 ring-orange-100' : 'border-white/10'}`}
+                        style={{ height: '52px' }}
+                      >
+                        {otp[index] || ''}
+                      </div>
+                    );
+                  })}
+                  <input
+                    ref={otpInputRef}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    aria-label="Enter 6-digit OTP"
+                    value={otp}
+                    onChange={(e) => handleOtpChange(e.target.value)}
+                    onFocus={() => setOtpFocused(true)}
+                    onBlur={() => setOtpFocused(false)}
+                    className="absolute inset-0 w-full h-full bg-transparent text-transparent caret-transparent outline-none border-0 selection:bg-transparent"
+                    style={{ fontSize: '16px' }}
+                  />
                 </div>
               </div>
 
