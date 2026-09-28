@@ -13,14 +13,10 @@ const app = express();
 
 // Allowed Origins for CORS
 const ALLOWED_ORIGINS = [
-  'https://aramish.com',
-  'https://admin.aramish.com',
-  'https://aramishworld.com',
-  'https://admin.aramishworld.com',
-  'http://localhost:5173',
-  'http://localhost:5174',
+  "https://www.aramishshoes.com",
+  "https://admin.aramishshoes.com",
+  "https://www.admin.aramishshoes.com",
   "https://aramishshoes.com",
-  "https://admin.aramishshoes.com"
 ];
 
 // Add dynamic origins from environment variables if they exist
