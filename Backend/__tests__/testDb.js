@@ -21,13 +21,15 @@ const startTestDb = async () => {
     require('../Models/Coupon'),
     require('../Models/CouponUsage'),
     require('../Models/WalletTransaction'),
-    require('../Models/CoinTransaction'),
     require('../Models/SystemConfig'),
     require('../Models/Referral'),
     require('../Models/ReturnRequest')
   ];
   for (const model of models) {
     await model.createCollection();
+    // Build indexes up front too (e.g. the unique wallet idempotencyKey), so the tests
+    // exercise the same database-level duplicate protection as production.
+    await model.syncIndexes();
   }
 };
 

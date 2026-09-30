@@ -62,7 +62,16 @@ const ensureAdmin = async () => {
 // Connect to MongoDB then start server
 connectDB().then(async () => {
   await ensureAdmin();
-  
+
+  // Single combined wallet: fold any legacy separate referral-coin balances into
+  // walletBalance (idempotent — a no-op once every user has been migrated).
+  try {
+    const { migrateLegacyWalletBalances } = require('./utils/walletService');
+    await migrateLegacyWalletBalances();
+  } catch (migrationErr) {
+    console.error('Legacy wallet balance migration failed (will retry on next start):', migrationErr.message);
+  }
+
   const server = http.createServer(app);
   const io = socketIo(server, {
     cors: {

@@ -142,9 +142,9 @@ const getOverview = async (req, res) => {
     // 4.5 Total Coins Earned (Gamification Stat)
     let totalCoinsEarned = 0;
     try {
-      const CoinTransaction = require('../Models/CoinTransaction');
-      const coinStats = await CoinTransaction.aggregate([
-        { $match: { type: 'earned' } },
+      const WalletTransaction = require('../Models/WalletTransaction');
+      const coinStats = await WalletTransaction.aggregate([
+        { $match: { type: { $in: ['Welcome Bonus', 'ORDER_REWARD', 'REFERRAL_REWARD', 'GAME_REWARD'] } } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]);
       totalCoinsEarned = coinStats.length > 0 ? coinStats[0].total : 0;
@@ -883,7 +883,7 @@ const getEarnings = async (req, res) => {
     const { range } = req.query;
     let matchQuery = { paymentStatus: 'Paid', status: { $nin: ['Cancelled', 'Refunded', 'Returned'] } };
     let matchQueryGmv = { status: { $ne: 'Cancelled' } };
-    let matchQueryCoins = { type: 'spent', title: 'Redeemed to Wallet Cash' };
+    let matchQueryCoins = { type: 'ORDER_REDEMPTION' };
 
     if (range && range !== 'all') {
       const now = new Date();
@@ -935,11 +935,11 @@ const getEarnings = async (req, res) => {
     ]);
     const gmv = gmvStats.length > 0 ? gmvStats[0].total : 0;
 
-    // 3. Coins Redeemed (spent type transactions)
-    const CoinTransaction = require('../Models/CoinTransaction');
-    const spentStats = await CoinTransaction.aggregate([
+    // 3. Coins Redeemed at checkout (legacy records are positive, new ones negative)
+    const WalletTransaction = require('../Models/WalletTransaction');
+    const spentStats = await WalletTransaction.aggregate([
       { $match: matchQueryCoins },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
+      { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } }
     ]);
     const coinsRedeemed = spentStats.length > 0 ? spentStats[0].total : 0;
 

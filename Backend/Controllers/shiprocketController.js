@@ -2,7 +2,24 @@ const shiprocketService = require('../Router/shiprocketService');
 const Order = require('../Models/Order');
 const mongoose = require('mongoose');
 const crypto = require('crypto');
-const { handleOrderCancellationRefunds, checkAndTriggerReferral } = require('../utils/orderHelper');
+const { handleOrderCancellationRefunds } = require('../utils/orderHelper');
+const { processDeliveredOrderRewards } = require('../utils/walletService');
+
+// Forward-shipping updates (Processing/Shipped/Out for Delivery/Delivered) must never pull an
+// order back out of a cancelled or post-delivery state — e.g. a late or duplicate DELIVERED
+// webhook for a Cancelled/Refunded/Return Requested order, which would otherwise re-open it
+// and make it eligible for reward coins again.
+const FINAL_OR_POST_DELIVERY_STATUSES = [
+    'Cancelled', 'Refunded', 'Partially Refunded', 'Return Requested',
+    'Exchange Requested', 'Exchange Approved', 'Pickup Scheduled', 'Old Item Picked Up',
+    'Replacement Dispatched', 'Exchange Completed', 'Exchange Rejected', 'Exchange Cancelled',
+    'Exchange Failed', 'Manual Review'
+];
+const FORWARD_SHIPPING_STATUSES = ['Processing', 'Shipped', 'Out for Delivery', 'Delivered'];
+const keepFinalStatus = (currentStatus, mappedStatus) =>
+    (FINAL_OR_POST_DELIVERY_STATUSES.includes(currentStatus) && FORWARD_SHIPPING_STATUSES.includes(mappedStatus))
+        ? currentStatus
+        : mappedStatus;
 
 exports.checkServiceability = async (req, res) => {
     try {
@@ -305,8 +322,8 @@ exports.cancelShiprocketOrder = async (req, res) => {
             }
         }
 
-        // Restore stock & coupon usage, refund wallet/coins, claw back reward, process
-        // online payment refund — all atomically together.
+        // Restore stock & coupon usage, claw back any reward, process the online payment
+        // refund. Redeemed coins are non-returnable and are not restored.
         await handleOrderCancellationRefunds(order);
 
         // Update order status
@@ -362,11 +379,12 @@ exports.syncOrderStatus = async (req, res) => {
                     mappedStatus = 'Out for Delivery';
                 } else if (srStatus === 'DELIVERED') {
                     mappedStatus = 'Delivered';
-                    if (order.paymentMethod === 'COD') {
-                        order.paymentStatus = 'Paid';
-                    }
                 } else if (['CANCELLED', 'RTO INITIATED', 'RTO DELIVERED'].includes(srStatus)) {
                     mappedStatus = 'Cancelled';
+                }
+                mappedStatus = keepFinalStatus(order.status, mappedStatus);
+                if (mappedStatus === 'Delivered' && order.paymentMethod === 'COD') {
+                    order.paymentStatus = 'Paid';
                 }
 
                 const wasAlreadyCancelled = order.status === 'Cancelled';
@@ -410,14 +428,13 @@ exports.syncOrderStatus = async (req, res) => {
                 order.shiprocketResponses.push({ type: 'SYNC_STATUS', data: trackingData });
                 await order.save();
 
-                if (mappedStatus === 'Delivered') {
-                    const { creditOrderReward } = require('../utils/rewardService');
-                    creditOrderReward(order._id).catch(err => console.error('Error in creditOrderReward async trigger:', err));
+                // Shiprocket fulfilment path: identical, idempotent reward crediting to the manual
+                // admin status update (order reward + per-order referral reward).
+                if (order.status === 'Delivered') {
+                    await processDeliveredOrderRewards(order._id);
                 }
-                // Reward clawback for a Cancelled/RTO'd order (if a reward had been credited) is
-                // now handled inside handleOrderCancellationRefunds above — no separate call needed.
-
-                await checkAndTriggerReferral(order);
+                // Reward clawback for a Cancelled/RTO'd order is handled inside
+                // handleOrderCancellationRefunds above.
             }
         }
 
@@ -495,14 +512,10 @@ exports.webhookReceiver = async (req, res) => {
                 mappedStatus = 'Out for Delivery';
             } else if (srStatus === 'DELIVERED') {
                 mappedStatus = 'Delivered';
-                // Mark COD payment as Paid on delivery
-                if (order.paymentMethod === 'COD') {
-                    order.paymentStatus = 'Paid';
-                }
             } else if (['CANCELLED', 'RTO INITIATED', 'RTO DELIVERED', 'RTO_INITIATED', 'RTO_DELIVERED', 'CANCELED'].includes(srStatus)) {
                 if (order.status !== 'Cancelled') {
-                    // Stock/coupon restore, wallet/coin refund, and reward clawback all happen
-                    // atomically together. If this throws, it propagates to the outer webhook
+                    // Stock/coupon restore and reward clawback happen atomically together
+                    // (redeemed coins are not restored). If this throws, it propagates to the outer webhook
                     // try/catch (no local swallow here), so order.save() below is never
                     // reached and order.status is never persisted as Cancelled without the
                     // refund having actually succeeded — Shiprocket's webhook retry will then
@@ -512,6 +525,11 @@ exports.webhookReceiver = async (req, res) => {
                 mappedStatus = 'Cancelled';
             } else if (['NEW', 'PICKUP SCHEDULED', 'AWB ASSIGNED', 'PICKUP GENERATED', 'OUT FOR PICKUP', 'PICKED UP', 'READY TO SHIP', 'AWB_ASSIGNED', 'PICKUP_SCHEDULED', 'PICKUP_GENERATED', 'OUT_FOR_PICKUP', 'PICKED_UP', 'READY_TO_SHIP'].includes(srStatus)) {
                 mappedStatus = 'Processing';
+            }
+            mappedStatus = keepFinalStatus(order.status, mappedStatus);
+            // Mark COD payment as Paid on delivery
+            if (mappedStatus === 'Delivered' && order.paymentMethod === 'COD') {
+                order.paymentStatus = 'Paid';
             }
 
             // Update order details
@@ -531,14 +549,14 @@ exports.webhookReceiver = async (req, res) => {
 
             await order.save();
 
-            if (mappedStatus === 'Delivered') {
-                const { creditOrderReward } = require('../utils/rewardService');
-                creditOrderReward(order._id).catch(err => console.error('Error in creditOrderReward async trigger:', err));
+            // Shiprocket fulfilment path: identical, idempotent reward crediting to the manual
+            // admin status update. Duplicate DELIVERED webhooks are no-ops.
+            if (order.status === 'Delivered') {
+                await processDeliveredOrderRewards(order._id);
             }
-            // Reward clawback for a Cancelled/RTO'd order (if a reward had been credited) is
-            // now handled inside handleOrderCancellationRefunds above — no separate call needed.
+            // Reward clawback for a Cancelled/RTO'd order is handled inside
+            // handleOrderCancellationRefunds above.
 
-            await checkAndTriggerReferral(order);
             await order.populate('userId');
 
             // Send SMS via SMS India Hub

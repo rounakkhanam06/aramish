@@ -39,19 +39,10 @@ export default function ReviewOrderPage() {
   const [availableCoupons, setAvailableCoupons] = useState([]);
   const [feeInfoModal, setFeeInfoModal] = useState(null);
   
-  // Coins states
-  const [userCoins, setUserCoins] = useState(0);
+  // Single combined wallet — redemption limit and reward estimate come from the backend
   const [redeemWallet, setRedeemWallet] = useState(false);
-  const [redeemReferralCoins, setRedeemReferralCoins] = useState(false);
-  const [walletBalance, setWalletBalance] = useState(0);
-  const [availableWalletBalance, setAvailableWalletBalance] = useState(0);
-  const [lockedRewardCoins, setLockedRewardCoins] = useState(0);
-  const [welcomeBonusRemaining, setWelcomeBonusRemaining] = useState(0);
-  const [referralWalletMaxUsagePercentage, setReferralWalletMaxUsagePercentage] = useState(25);
-  const [coinsConfig, setCoinsConfig] = useState({
-    coinsPerRupee: 100,
-    maximumRedeemPerOrder: 10000
-  });
+  const [redeemRefundWallet, setRedeemRefundWallet] = useState(false);
+  const [walletPreview, setWalletPreview] = useState(null);
   
   // Payment states
   const [paymentMethod, setPaymentMethod] = useState('COD'); // 'COD' | 'ONLINE'
@@ -110,48 +101,31 @@ export default function ReviewOrderPage() {
     fetchAddresses();
   }, [user]);
 
-  // Fetch user coins and wallet balance
+  // Wallet redemption preview for the current cart (backend is the single source of truth)
+  const walletPreviewKey = cart.map(item => `${item.id}:${item.variationSku || ''}:${item.quantity}`).join('|');
   useEffect(() => {
-    const fetchUserCoins = async () => {
-      if (user && user.id) {
-        try {
-          const token = localStorage.getItem('userToken');
-          if (!token) return;
-          const res = await fetch(`${API_BASE}/auth/wallet`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          const data = await res.json();
-          if (data.success) {
-            setUserCoins(data.coins || 0);
-            setWalletBalance(data.walletBalance || 0);
-            setAvailableWalletBalance(data.availableWalletBalance !== undefined ? data.availableWalletBalance : (data.walletBalance || 0));
-            setLockedRewardCoins(data.lockedRewardCoins || 0);
-            setWelcomeBonusRemaining(data.welcomeBonusRemaining || 0);
-            if (data.referralWalletMaxUsagePercentage !== undefined) {
-              setReferralWalletMaxUsagePercentage(data.referralWalletMaxUsagePercentage);
-            }
-          }
-        } catch (err) {
-          console.error("Error fetching user coins:", err);
-        }
+    const fetchWalletPreview = async () => {
+      const token = localStorage.getItem('userToken');
+      if (!user || !user.id || !token || cart.length === 0) {
+        setWalletPreview(null);
+        return;
       }
-    };
-
-    const fetchCoinsConfig = async () => {
       try {
-        const res = await fetch(`${API_BASE}/admin/settings`);
+        const res = await fetch(`${API_BASE}/orders/wallet-preview`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({
+            items: cart.map(item => ({ productId: item.id, variationSku: item.variationSku || null, quantity: item.quantity }))
+          })
+        });
         const data = await res.json();
-        if (data.success && data.settings) {
-          setCoinsConfig(data.settings);
-        }
+        if (data.success) setWalletPreview(data);
       } catch (err) {
-        console.error("Error fetching coins settings:", err);
+        console.error("Error fetching wallet preview:", err);
       }
     };
-
-    fetchUserCoins();
-    fetchCoinsConfig();
-  }, [user, API_BASE]);
+    fetchWalletPreview();
+  }, [user, API_BASE, walletPreviewKey]);
 
   useEffect(() => {
     if (cart && cart.length > 0) {
@@ -459,7 +433,7 @@ export default function ReviewOrderPage() {
           deliveryCharge: deliveryCharge,
           etd: etd,
           redeemWallet: redeemWallet,
-          redeemReferralCoins: redeemReferralCoins
+          redeemRefundWallet: redeemRefundWallet
         })
       });
       
@@ -526,19 +500,21 @@ export default function ReviewOrderPage() {
 
   const grandTotalBeforeCoins = Math.max(0, totalCartPrice - discountAmount + gstAmount + platformCommission + deliveryCharge + codCharge - prepaidDiscount);
   
-  const welcomeBonusCoins = systemSettings?.welcomeBonusCoins ?? 1000;
-  const limitPerOrder = welcomeBonusCoins / 4;
-  const maxWelcomeCoinsToUse = Math.min(limitPerOrder, welcomeBonusRemaining || 0);
-  const spendableBalance = availableWalletBalance !== undefined ? availableWalletBalance : Math.max(0, walletBalance - lockedRewardCoins);
-  const otherBalanceToUse = Math.max(0, spendableBalance - (welcomeBonusRemaining || 0));
-  const totalUsableWallet = maxWelcomeCoinsToUse + otherBalanceToUse;
-  const walletUsedAmount = redeemWallet ? Math.min(totalUsableWallet, grandTotalBeforeCoins) : 0;
-  
-  const grandTotalBeforeReferralCoins = Math.max(0, grandTotalBeforeCoins - walletUsedAmount);
-  const maxUsableReferralCoins = Math.min((userCoins * referralWalletMaxUsagePercentage) / 100, grandTotalBeforeReferralCoins);
-  const referralCoinsUsedAmount = redeemReferralCoins ? Math.min(maxUsableReferralCoins, grandTotalBeforeReferralCoins) : 0;
-  
-  const grandTotal = Math.max(0, grandTotalBeforeReferralCoins - referralCoinsUsedAmount);
+  // Wallet figures are backend-calculated (min(available balance, redemption% of product value)).
+  // The order total can only cap it further; the backend applies the same cap when placing the order.
+  const walletBalance = walletPreview?.walletBalance ?? 0;
+  const availableWalletBalance = walletPreview?.availableBalance ?? 0;
+  const lockedRewardCoins = walletPreview?.lockedBalance ?? 0;
+  const walletUsedAmount = redeemWallet ? Math.min(walletPreview?.maxRedeemable ?? 0, grandTotalBeforeCoins) : 0;
+
+  // Refund Wallet (actual money, separate from coins): no % limit — the backend applies it
+  // after the coins, up to whatever is still payable.
+  const refundWalletBalance = walletPreview?.refundWalletBalance ?? 0;
+  const refundWalletUsedAmount = redeemRefundWallet
+    ? Math.min(refundWalletBalance, Math.max(0, grandTotalBeforeCoins - walletUsedAmount))
+    : 0;
+
+  const grandTotal = Math.max(0, grandTotalBeforeCoins - walletUsedAmount - refundWalletUsedAmount);
 
   const firstItem = cart && cart.length > 0 ? cart[0] : null;
 
@@ -734,18 +710,23 @@ export default function ReviewOrderPage() {
           </div>
 
           {/* Aramish Wallet Cash Redemption */}
-          {walletBalance > 0 && systemSettings?.walletEnabled !== false && (
+          {walletBalance > 0 && walletPreview?.walletEnabled !== false && (
             <div>
               <div className="flex items-center gap-2 mb-2 px-1 text-[#02006c]">
                 <Landmark className="w-4 h-4 text-emerald-500" />
-                <h2 className="text-xs font-black uppercase tracking-wide">Aramish Wallet Cash</h2>
+                <h2 className="text-xs font-black uppercase tracking-wide">Main Wallet / Coins</h2>
               </div>
               <div className="bg-surface rounded-2xl p-4 shadow-3xs border border-white/10 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-slate-800">Use Wallet Balance</span>
+                    <span className="text-xs font-bold text-slate-800">
+                      Use Wallet Balance (Max {walletPreview?.walletRedemptionPercentage ?? 0}% of product value)
+                    </span>
                     <span className="text-[10px] text-slate-500 font-medium mt-0.5">
-                      Available Balance: <span className="font-bold text-slate-700">₹{walletBalance.toFixed(2)}</span>
+                      Available Balance: <span className="font-bold text-slate-700">₹{Number(availableWalletBalance).toFixed(2)}</span>
+                      {lockedRewardCoins > 0 && (
+                        <span className="text-amber-600"> · 🔒 ₹{Number(lockedRewardCoins).toFixed(2)} locked</span>
+                      )}
                     </span>
                   </div>
                   <button
@@ -769,7 +750,7 @@ export default function ReviewOrderPage() {
                       <p>Coins to use: <span className="text-emerald-600">₹{walletUsedAmount.toFixed(2)}</span></p>
                     </div>
                     <div>
-                      <p>Remaining Wallet: <span className="text-slate-700">₹{(walletBalance - walletUsedAmount).toFixed(2)}</span></p>
+                      <p>Remaining Wallet: <span className="text-slate-700">₹{Math.max(0, walletBalance - walletUsedAmount).toFixed(2)}</span></p>
                     </div>
                   </div>
                 )}
@@ -777,43 +758,43 @@ export default function ReviewOrderPage() {
             </div>
           )}
 
-          {/* Referral Coins Redemption */}
-          {userCoins > 0 && systemSettings?.referralEnabled !== false && (
+          {/* Refund Wallet — actual refunded money, separate from coins, no % limit */}
+          {refundWalletBalance > 0 && (
             <div>
-              <div className="flex items-center gap-2 mb-2 px-1 text-[#02006c] mt-4">
-                <Coins className="w-4 h-4 text-amber-500" />
-                <h2 className="text-xs font-black uppercase tracking-wide">Referral Coins</h2>
+              <div className="flex items-center gap-2 mb-2 px-1 text-[#02006c]">
+                <Banknote className="w-4 h-4 text-sky-600" />
+                <h2 className="text-xs font-black uppercase tracking-wide">Refund Wallet</h2>
               </div>
               <div className="bg-surface rounded-2xl p-4 shadow-3xs border border-white/10 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-slate-800">Use Referral Coins (Max {referralWalletMaxUsagePercentage}%)</span>
+                    <span className="text-xs font-bold text-slate-800">Use Refund Wallet (up to 100% of the order)</span>
                     <span className="text-[10px] text-slate-500 font-medium mt-0.5">
-                      Available Balance: <span className="font-bold text-slate-700">₹{userCoins.toFixed(2)}</span>
+                      Balance: <span className="font-bold text-slate-700">₹{Number(refundWalletBalance).toFixed(2)}</span>
                     </span>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setRedeemReferralCoins(!redeemReferralCoins)}
+                    onClick={() => setRedeemRefundWallet(!redeemRefundWallet)}
                     className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                      redeemReferralCoins ? 'bg-amber-500' : 'bg-slate-200'
+                      redeemRefundWallet ? 'bg-sky-600' : 'bg-slate-200'
                     }`}
                   >
                     <span
                       className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out ${
-                        redeemReferralCoins ? 'translate-x-5' : 'translate-x-0'
+                        redeemRefundWallet ? 'translate-x-5' : 'translate-x-0'
                       }`}
                     />
                   </button>
                 </div>
-                
-                {redeemReferralCoins && (
+
+                {redeemRefundWallet && (
                   <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-600">
                     <div>
-                      <p>Coins to use: <span className="text-amber-600">₹{referralCoinsUsedAmount.toFixed(2)}</span></p>
+                      <p>Amount to use: <span className="text-sky-700">₹{refundWalletUsedAmount.toFixed(2)}</span></p>
                     </div>
                     <div>
-                      <p>Remaining: <span className="text-slate-700">₹{(userCoins - referralCoinsUsedAmount).toFixed(2)}</span></p>
+                      <p>Remaining: <span className="text-slate-700">₹{Math.max(0, refundWalletBalance - refundWalletUsedAmount).toFixed(2)}</span></p>
                     </div>
                   </div>
                 )}
@@ -954,14 +935,14 @@ export default function ReviewOrderPage() {
             </div>
             {redeemWallet && walletUsedAmount > 0 && (
               <div className="flex justify-between items-center text-xs font-bold text-emerald-600">
-                <span>Wallet Deduction</span>
+                <span>Coins (Main Wallet)</span>
                 <span>- ₹{Number(walletUsedAmount).toFixed(2)}</span>
               </div>
             )}
-            {redeemReferralCoins && referralCoinsUsedAmount > 0 && (
-              <div className="flex justify-between items-center text-xs font-bold text-emerald-600">
-                <span>Referral Coins Deduction</span>
-                <span>- ₹{Number(referralCoinsUsedAmount).toFixed(2)}</span>
+            {redeemRefundWallet && refundWalletUsedAmount > 0 && (
+              <div className="flex justify-between items-center text-xs font-bold text-sky-700">
+                <span>Refund Wallet</span>
+                <span>- ₹{Number(refundWalletUsedAmount).toFixed(2)}</span>
               </div>
             )}
             <div className="border-t border-white/10 pt-3.5 flex justify-between items-center text-base font-black text-[#02006c]">
@@ -970,7 +951,7 @@ export default function ReviewOrderPage() {
             </div>
 
             {/* Order Reward Coins Info Badge */}
-            {systemSettings?.rewardCoinsEnabled !== false && (systemSettings?.rewardCoinsPerDeliveredOrder ?? 100) > 0 && (
+            {walletPreview?.rewardCoinsEnabled && walletPreview.estimatedRewardCoins > 0 && (
               <div className="bg-gradient-to-r from-amber-500/10 via-amber-400/10 to-amber-500/10 border border-amber-200/60 rounded-xl p-3 flex items-center gap-2.5 text-amber-900 shadow-3xs">
                 <div className="w-7 h-7 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
                   <Coins className="w-4 h-4 text-amber-600 animate-pulse" />
@@ -978,7 +959,7 @@ export default function ReviewOrderPage() {
                 <div className="text-[11px] leading-tight font-semibold">
                   <p className="font-black text-amber-800">Earn Reward Coins 🎉</p>
                   <p className="text-amber-700/90 text-[10px] mt-0.5 font-bold">
-                    You will get <span className="text-amber-900 font-extrabold">{systemSettings?.rewardCoinsPerDeliveredOrder ?? 100} Coins</span> when this order is delivered.
+                    You will get <span className="text-amber-900 font-extrabold">{walletPreview.estimatedRewardCoins} Coins</span> when this order is delivered (usable after the return window).
                   </p>
                 </div>
               </div>

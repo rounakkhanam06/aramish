@@ -525,8 +525,15 @@ const OrderDetail = () => {
 
                       {!!order.walletUsed && order.walletUsed > 0 && (
                          <div className="flex justify-between text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200/60">
-                            <span>Wallet / Coins Deducted</span>
+                            <span>Coins Deducted (Main Wallet)</span>
                             <span>- ₹{Number(order.walletUsed).toLocaleString()}</span>
+                         </div>
+                      )}
+
+                      {!!order.refundWalletUsed && order.refundWalletUsed > 0 && (
+                         <div className="flex justify-between text-xs font-black text-sky-700 bg-sky-50 px-3 py-1.5 rounded-lg border border-sky-200/60">
+                            <span>Refund Wallet Used{order.refundWalletRestored > 0 ? ` (₹${Number(order.refundWalletRestored).toLocaleString()} credited back)` : ''}</span>
+                            <span>- ₹{Number(order.refundWalletUsed).toLocaleString()}</span>
                          </div>
                       )}
 

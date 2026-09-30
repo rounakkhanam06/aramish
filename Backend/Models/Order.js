@@ -71,6 +71,16 @@ const orderSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // Refund Wallet money used on this order, and how much of it has already been credited
+  // back by cancellations/returns (so repeated partial returns can never over-restore).
+  refundWalletUsed: {
+    type: Number,
+    default: 0
+  },
+  refundWalletRestored: {
+    type: Number,
+    default: 0
+  },
   welcomeCoinsUsed: {
     type: Number,
     default: 0
@@ -142,6 +152,42 @@ const orderSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // Snapshot at checkout: product selling value (excl. GST/delivery/fees) used for the
+  // reward % and the wallet redemption limit, and the reward coins that value earns.
+  eligibleProductValue: {
+    type: Number,
+    default: null
+  },
+  rewardCoinsExpected: {
+    type: Number,
+    default: null
+  },
+  // Referral reward paid to the referrer for this order (one per successful order)
+  referrerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  referralRewardCredited: {
+    type: Boolean,
+    default: false
+  },
+  referralRewardCreditedAt: {
+    type: Date,
+    default: null
+  },
+  referralRewardAmount: {
+    type: Number,
+    default: 0
+  },
+  referralRewardReversed: {
+    type: Boolean,
+    default: false
+  },
+  referralRewardReversedAt: {
+    type: Date,
+    default: null
+  },
   refundProcessed: {
     type: Boolean,
     default: false
@@ -181,6 +227,7 @@ orderSchema.index({ status: 1, createdAt: -1 });  // Admin status filter
 orderSchema.index({ paymentStatus: 1 });           // Payment reconciliation
 orderSchema.index({ shiprocketOrderId: 1 }, { sparse: true }); // Webhook lookup
 orderSchema.index({ couponCode: 1 }, { sparse: true }); // Coupon usage
+orderSchema.index({ referrerId: 1 }, { sparse: true }); // Referrer locked-reward lookup
 
 orderSchema.index({ paymentId: 1 }, { sparse: true, unique: true });
 

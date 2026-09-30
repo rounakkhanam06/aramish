@@ -7,7 +7,23 @@ const shiprocketService = require('../Router/shiprocketService');
 const axios = require('axios');
 const mongoose = require('mongoose');
 const CouponUsage = require('../Models/CouponUsage');
-const { handleOrderCancellationStockAndCoupon, handleOrderCancellationRefunds, checkAndTriggerReferral } = require('../utils/orderHelper');
+const { handleOrderCancellationStockAndCoupon, handleOrderCancellationRefunds } = require('../utils/orderHelper');
+const walletService = require('../utils/walletService');
+
+// Resolves the price the customer actually pays for a line (admin selling price, or the
+// variation's own selling price) — never the MRP.
+const resolveLinePricing = (product, variationSku) => {
+  if (!variationSku) {
+    return { price: product.sellingPrice, mrp: product.mrp, stock: product.stock };
+  }
+  const variant = (product.variations || []).find(v => v.sku === variationSku);
+  if (!variant) return null;
+  return {
+    price: (!variant.useDefaultPricing && variant.sellingPrice !== undefined) ? variant.sellingPrice : product.sellingPrice,
+    mrp: (!variant.useDefaultPricing && variant.mrp !== undefined) ? variant.mrp : product.mrp,
+    stock: variant.stock
+  };
+};
 // @desc    Create a new order
 // @route   POST /api/orders
 // @access  Private
@@ -18,11 +34,11 @@ exports.createOrder = async (req, res) => {
   
   const session = await mongoose.startSession();
   let transactionActive = false;
-  let walletDeducted = false;
-  let walletUsedAmount = 0;
+  // Compensation steps registered by walletService, replayed only on the non-transactional path
+  const walletUndo = [];
 
   try {
-    const { items, total, deliveryAddress, paymentMethod, paymentStatus, paymentId, couponCode, deliveryCharge, etd, redeemWallet, redeemReferralCoins } = req.body;
+    const { items, total, deliveryAddress, paymentMethod, paymentStatus, paymentId, couponCode, deliveryCharge, etd, redeemWallet, redeemReferralCoins, redeemRefundWallet } = req.body;
 
     if (!items || items.length === 0 || !total || !deliveryAddress || !paymentMethod) {
       return res.status(400).json({ success: false, message: 'Please provide all required fields' });
@@ -57,19 +73,12 @@ exports.createOrder = async (req, res) => {
       }
       const qty = item.quantity || 1;
 
-      let itemPrice = product.sellingPrice;
-      let itemMrp = product.mrp;
-      let availableStock = product.stock;
-
-      if (item.variationSku) {
-        const variant = (product.variations || []).find(v => v.sku === item.variationSku);
-        if (!variant) {
-          throw new Error(`Variation "${item.variationSku}" of "${product.name}" not found.`);
-        }
-        itemPrice = (!variant.useDefaultPricing && variant.sellingPrice !== undefined) ? variant.sellingPrice : product.sellingPrice;
-        itemMrp = (!variant.useDefaultPricing && variant.mrp !== undefined) ? variant.mrp : product.mrp;
-        availableStock = variant.stock;
+      const pricing = resolveLinePricing(product, item.variationSku);
+      if (!pricing) {
+        throw new Error(`Variation "${item.variationSku}" of "${product.name}" not found.`);
       }
+      const itemPrice = pricing.price;
+      const itemMrp = pricing.mrp;
 
       calculatedSubtotal += itemPrice * qty;
       const productWeight = (product.shippingSpecs && product.shippingSpecs.weight) ? product.shippingSpecs.weight : 0.5;
@@ -238,87 +247,41 @@ exports.createOrder = async (req, res) => {
 
     const finalCalculatedTotal = Math.max(0, calculatedSubtotal - discountAmount + gstAmount + platformCommission + calculatedDeliveryCharge + codCharge - prepaidDiscount);
 
-    // Wallet Cash Redemption (Capped welcome bonus + other balance)
-    walletDeducted = false;
-    walletUsedAmount = 0;
-    let welcomeCoinsUsed = 0;
-
-    const mongoose = require('mongoose');
     const newOrderId = new mongoose.Types.ObjectId();
 
-    const welcomeBonusCoins = systemConfig && systemConfig.welcomeBonusCoins !== undefined ? systemConfig.welcomeBonusCoins : 1000;
-    const limitPerOrder = welcomeBonusCoins / 4;
+    // Reward/redemption basis: the product selling value only (selling price x qty) —
+    // excludes GST, delivery, platform fee and COD charges. Calculated in integer paise.
+    const walletConfig = await walletService.getWalletConfig(sessionOpt);
+    const eligibleProductValue = walletService.calculateEligibleProductValue(validatedItems);
+    const rewardCoinsExpected = walletService.calculateOrderRewardCoins(eligibleProductValue, walletConfig);
 
-    if (redeemWallet) {
-      const user = await User.findById(req.user._id, null, sessionOpt);
-      if (user && user.walletBalance > 0) {
-        // Calculate locked reward coins from active return windows
-        const { getUserLockedRewardCoins } = require('../utils/rewardService');
-        const lockedRewardCoins = await getUserLockedRewardCoins(user._id);
-
-        // Usable balance excludes locked reward coins
-        const availableBalance = Math.max(0, user.walletBalance - lockedRewardCoins);
-
-        // Welcome bonus cap of W / 4
-        const maxWelcomeCoinsToUse = Math.min(limitPerOrder, user.welcomeBonusRemaining || 0);
-        // The rest of the balance can be fully used
-        const otherBalanceToUse = Math.max(0, availableBalance - (user.welcomeBonusRemaining || 0));
-        const totalUsableWallet = maxWelcomeCoinsToUse + otherBalanceToUse;
-        
-        walletUsedAmount = Math.min(totalUsableWallet, finalCalculatedTotal);
-        walletUsedAmount = Number(walletUsedAmount.toFixed(2));
-        
-        if (walletUsedAmount > 0) {
-          // Determine how much of the used amount came from the welcome bonus
-          welcomeCoinsUsed = Math.min(walletUsedAmount, maxWelcomeCoinsToUse);
-          
-          user.walletBalance -= walletUsedAmount;
-          user.walletBalance = Number(user.walletBalance.toFixed(2));
-          
-          user.welcomeBonusRemaining = (user.welcomeBonusRemaining || 0) - welcomeCoinsUsed;
-          user.welcomeBonusRemaining = Number(user.welcomeBonusRemaining.toFixed(2));
-          
-          await user.save(sessionOpt);
-          walletDeducted = true;
-
-          const WalletTransaction = require('../Models/WalletTransaction');
-          await WalletTransaction.create([{
-            userId: req.user._id,
-            orderId: newOrderId,
-            type: 'ORDER_REDEMPTION',
-            amount: walletUsedAmount,
-            description: `Used for Order Checkout (Welcome points: ${welcomeCoinsUsed}, Other: ${(walletUsedAmount - welcomeCoinsUsed).toFixed(2)})`
-          }], sessionOpt);
-        }
-      }
+    // Single combined wallet: redeem up to walletRedemptionPercentage% of the eligible
+    // product value (and never more than the spendable, unlocked balance). `redeemReferralCoins`
+    // is accepted from older app builds as an alias for the same single wallet.
+    let walletUsedAmount = 0;
+    if (redeemWallet || redeemReferralCoins) {
+      const redemption = await walletService.redeemForOrder({
+        userId: req.user._id,
+        orderId: newOrderId,
+        eligibleProductValue,
+        payableTotal: finalCalculatedTotal
+      }, { sessionOpt, session: transactionActive ? session : null, undo: walletUndo });
+      walletUsedAmount = redemption.amount;
     }
 
-    let referralCoinsUsedAmount = 0;
-    if (redeemReferralCoins) {
-      const user = await User.findById(req.user._id, null, sessionOpt);
-      if (user && (user.referralCoins || 0) > 0) {
-        const referralWalletMaxUsagePercentage = systemConfig && systemConfig.referralWalletMaxUsagePercentage !== undefined ? systemConfig.referralWalletMaxUsagePercentage : 25;
-        const maxUsableReferralCoins = Math.min((user.referralCoins * referralWalletMaxUsagePercentage) / 100, finalCalculatedTotal - walletUsedAmount);
-        
-        referralCoinsUsedAmount = Number(maxUsableReferralCoins.toFixed(2));
-        
-        if (referralCoinsUsedAmount > 0) {
-          user.referralCoins -= referralCoinsUsedAmount;
-          user.referralCoins = Number(user.referralCoins.toFixed(2));
-          await user.save(sessionOpt);
-          
-          const CoinTransaction = require('../Models/CoinTransaction');
-          await CoinTransaction.create([{
-            userId: req.user._id,
-            type: 'spent',
-            title: `Used Referral Coins for Order Checkout`,
-            amount: referralCoinsUsedAmount
-          }], sessionOpt);
-        }
-      }
+    // Refund Wallet (actual money, separate from coins): no % limit — up to 100% of the
+    // balance, capped only by what is still payable after the coins.
+    let refundWalletUsedAmount = 0;
+    if (redeemRefundWallet) {
+      const refundUse = await walletService.useRefundWalletForOrder({
+        userId: req.user._id,
+        orderId: newOrderId,
+        payableTotal: walletService.roundMoney(Math.max(0, finalCalculatedTotal - walletUsedAmount))
+      }, { sessionOpt, session: transactionActive ? session : null, undo: walletUndo });
+      refundWalletUsedAmount = refundUse.amount;
     }
 
-    const finalPayableTotal = Math.max(0, finalCalculatedTotal - walletUsedAmount - referralCoinsUsedAmount);
+    const finalPayableTotal = walletService.roundMoney(Math.max(0, finalCalculatedTotal - walletUsedAmount - refundWalletUsedAmount));
 
     // 6. Verify Razorpay payment if paymentMethod is Online
     if (paymentMethod === 'Online') {
@@ -376,8 +339,9 @@ exports.createOrder = async (req, res) => {
       platformCommission,
       total: finalPayableTotal,
       walletUsed: walletUsedAmount,
-      welcomeCoinsUsed,
-      referralCoinsUsed: referralCoinsUsedAmount,
+      refundWalletUsed: refundWalletUsedAmount,
+      eligibleProductValue,
+      rewardCoinsExpected,
       deliveryAddress,
       paymentMethod,
       paymentStatus: paymentMethod === 'Online' ? 'Paid' : 'Pending',
@@ -547,23 +511,48 @@ exports.createOrder = async (req, res) => {
           );
         }
       }
-      if (walletDeducted && walletUsedAmount > 0) {
-        await User.findByIdAndUpdate(req.user._id, {
-          $inc: { 
-            walletBalance: walletUsedAmount,
-            welcomeBonusRemaining: welcomeCoinsUsed || 0
-          }
-        });
-        const WalletTransaction = require('../Models/WalletTransaction');
-        await WalletTransaction.create({
-          userId: req.user._id,
-          type: 'Refund',
-          amount: walletUsedAmount,
-          description: 'Refund: Checkout Failure Rollback'
-        });
+      // Undo the wallet redemption (balance + its ledger entry) for this failed checkout
+      for (const undoStep of [...walletUndo].reverse()) {
+        try {
+          await undoStep();
+        } catch (undoErr) {
+          console.error('CRITICAL: failed to roll back wallet redemption after checkout failure. Manual reconciliation required.', undoErr);
+        }
       }
     }
 
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Wallet redemption + reward preview for the checkout screen (backend-calculated)
+// @route   POST /api/orders/wallet-preview   body: { items: [{ productId, variationSku, quantity }], payableTotal? }
+// @access  Private
+exports.getWalletPreview = async (req, res) => {
+  try {
+    const { items, payableTotal } = req.body || {}; // payableTotal: order total before any wallet use
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'items are required' });
+    }
+
+    const products = await Product.find({ _id: { $in: items.map(i => i.productId) } }, 'sellingPrice mrp stock variations').lean();
+    const productMap = new Map(products.map(p => [p._id.toString(), p]));
+
+    const pricedItems = [];
+    for (const item of items) {
+      const product = productMap.get(String(item.productId));
+      const pricing = product && resolveLinePricing(product, item.variationSku);
+      if (!pricing) continue;
+      pricedItems.push({ price: pricing.price, quantity: Math.max(1, Math.floor(Number(item.quantity) || 1)) });
+    }
+
+    const eligibleProductValue = walletService.calculateEligibleProductValue(pricedItems);
+    const payable = payableTotal !== undefined && payableTotal !== null && Number.isFinite(Number(payableTotal)) ? Number(payableTotal) : null;
+    const preview = await walletService.getRedemptionPreview(req.user._id, { eligibleProductValue, payableTotal: payable });
+
+    res.status(200).json({ success: true, ...preview });
+  } catch (error) {
+    console.error('Wallet preview error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -714,14 +703,14 @@ exports.updateOrderStatus = async (req, res) => {
     }
 
     if (status === 'Cancelled' && order.status !== 'Cancelled') {
-      // Stock/coupon restore, wallet/welcome-bonus/referral coin refund, and reward clawback
-      // all happen atomically together inside handleOrderCancellationRefunds.
+      // Stock/coupon restore and reward clawback happen atomically together inside
+      // handleOrderCancellationRefunds. Redeemed coins are non-returnable and not restored.
       await handleOrderCancellationRefunds(order);
     }
 
     // A full refund set directly through this generic endpoint (bypassing the dedicated
-    // returns flow) must still restore wallet/welcome-bonus/referral coins and claw back any
-    // order reward — otherwise those balances are silently never refunded. We deliberately do
+    // returns flow) must still claw back the order's locked reward coins and process the
+    // payment refund. We deliberately do
     // NOT do this for 'Partially Refunded' here: that status has no tracked partial amount at
     // this endpoint (unlike the dedicated return flow, which tracks per-item quantities and an
     // explicit refundAmount), so applying the full-order refund logic would over-refund. We
@@ -775,13 +764,13 @@ exports.updateOrderStatus = async (req, res) => {
     }
 
     await order.save();
-    
+
+    // Manual fulfilment path: same idempotent reward crediting as the Shiprocket webhook/sync
+    // (customer's locked order reward + referrer's per-order referral reward).
     if (order.status === 'Delivered') {
-      const { creditOrderReward } = require('../utils/rewardService');
-      creditOrderReward(order._id).catch(err => console.error('Error in creditOrderReward async trigger:', err));
+      await walletService.processDeliveredOrderRewards(order._id);
     }
 
-    await checkAndTriggerReferral(order);
     res.status(200).json({ success: true, message: 'Order status updated successfully', order });
   } catch (error) {
     console.error("Error updating order status:", error);
@@ -1001,8 +990,8 @@ exports.cancelOrder = async (req, res) => {
       });
     }
 
-    // Restore stock & coupon usage, refund wallet/welcome-bonus/referral coins, claw back
-    // any order reward, and process the online payment refund — all atomically together.
+    // Restore stock & coupon usage and process the online payment refund. Coins redeemed on
+    // the order are non-returnable and are not restored.
     await handleOrderCancellationRefunds(order);
 
     // Try to cancel on Shiprocket if shiprocketOrderId exists

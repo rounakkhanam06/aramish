@@ -191,6 +191,7 @@ export default function OrderDetailsPage() {
     deliveryCharge: orderData.deliveryCharge,
     etd: orderData.etd,
     walletUsed: orderData.walletUsed,
+    refundWalletUsed: orderData.refundWalletUsed || 0,
     coinsRedeemed: orderData.coinsRedeemed,
     couponCode: orderData.couponCode,
     createdAt: orderData.createdAt,
@@ -200,8 +201,16 @@ export default function OrderDetailsPage() {
     gstAmount: orderData.gstAmount,
     platformCommission: orderData.platformCommission,
     discountAmount: orderData.discountAmount,
-    referralCoinsUsed: orderData.referralCoinsUsed
+    referralCoinsUsed: orderData.referralCoinsUsed,
+    rewardCredited: orderData.rewardCredited,
+    rewardDeducted: orderData.rewardDeducted,
+    rewardCoinsAmount: orderData.rewardCoinsAmount,
+    rewardCoinsExpected: orderData.rewardCoinsExpected
   } : null;
+  // Backend-calculated reward for this order (credited amount, or the checkout estimate before delivery)
+  const orderRewardCoins = globalOrder
+    ? (globalOrder.rewardCredited ? globalOrder.rewardCoinsAmount : globalOrder.rewardCoinsExpected) || 0
+    : 0;
 
   const isDelivered = globalOrder ? ['Delivered', 'Return Requested', 'Refunded', 'Partially Refunded'].includes(globalOrder.status) : id !== 'ORD-8X92-K1';
 
@@ -870,6 +879,7 @@ export default function OrderDetailsPage() {
   const prepaidDiscount = globalOrder?.prepaidDiscount || 0;
   const coinsRedeemed = globalOrder?.coinsRedeemed || 0;
   const walletUsed = globalOrder?.walletUsed || 0;
+  const refundWalletUsed = globalOrder?.refundWalletUsed || 0;
   const referralCoinsUsed = globalOrder?.referralCoinsUsed || 0;
   const deducedDiscount = globalOrder?.discountAmount || 0;
 
@@ -1016,8 +1026,14 @@ export default function OrderDetailsPage() {
           ` : ''}
           ${walletUsed > 0 ? `
             <tr style="color: #16a34a;">
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600;">Wallet Used:</td>
+              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600;">Coins Used (Main Wallet):</td>
               <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; text-align: right;">-₹${walletUsed}</td>
+            </tr>
+          ` : ''}
+          ${refundWalletUsed > 0 ? `
+            <tr style="color: #0369a1;">
+              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600;">Refund Wallet Used:</td>
+              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; text-align: right;">-₹${refundWalletUsed}</td>
             </tr>
           ` : ''}
           ${referralCoinsUsed > 0 ? `
@@ -1252,18 +1268,20 @@ export default function OrderDetailsPage() {
                  </div>
 
                  {/* Coins Earned & Usage Condition Banner */}
-                 {systemSettings?.rewardCoinsEnabled !== false && !['Cancelled', 'Refunded'].includes(globalOrder?.status) && (
+                 {systemSettings?.rewardCoinsEnabled !== false && orderRewardCoins > 0 && !globalOrder?.rewardDeducted && !['Cancelled', 'Refunded'].includes(globalOrder?.status) && (
                    <div className="mt-1 pt-2.5 border-t border-slate-100 flex items-start gap-2.5 bg-amber-50/50 -mx-4 -mb-4 p-3 rounded-b-2xl border-t border-amber-100/70">
                      <div className="w-6 h-6 rounded-full bg-amber-100 border border-amber-300/80 flex items-center justify-center shrink-0 text-xs shadow-2xs">
                        🪙
                      </div>
                      <div className="flex flex-col text-xs">
                        <span className="font-bold text-amber-950 text-[12px] flex items-center gap-1">
-                         +{globalOrder?.rewardCoinsAmount || systemSettings?.rewardCoinsPerDeliveredOrder || 100} Coins Earned
+                         +{orderRewardCoins} Coins {globalOrder?.rewardCredited ? 'Earned' : 'on Delivery'}
                        </span>
                        <span className="text-[11px] text-amber-900/80 mt-0.5 leading-snug">
                          {isDelivered ? (
-                           returnWindowExpiry?.expired ? (
+                           globalOrder?.status === 'Return Requested' ? (
+                             '🔒 Coins stay locked while your return request is being processed.'
+                           ) : returnWindowExpiry?.expired ? (
                              '🎉 Coins unlocked & ready to use on your next order!'
                            ) : (
                              `✨ You can use these coins after the return window closes of this product (${returnWindowExpiry?.dateText || 'return expiry'}).`
@@ -1597,8 +1615,15 @@ export default function OrderDetailsPage() {
 
                  {walletUsed > 0 && (
                    <div className="flex justify-between items-center text-xs font-semibold text-green-600">
-                     <span>Wallet Used</span>
+                     <span>Coins Used (Main Wallet)</span>
                      <span>-₹{walletUsed}</span>
+                   </div>
+                 )}
+
+                 {refundWalletUsed > 0 && (
+                   <div className="flex justify-between items-center text-xs font-semibold text-sky-700">
+                     <span>Refund Wallet Used</span>
+                     <span>-₹{refundWalletUsed}</span>
                    </div>
                  )}
 

@@ -66,6 +66,9 @@ const returnRequestSchema = new mongoose.Schema({
   awbCode: { type: String, default: null },
   courierName: { type: String, default: null },
   walletRefundProcessed: { type: Boolean, default: false },
+  // How the processed refund was paid out (for history/audit)
+  refundWalletRestoredAmount: { type: Number, default: 0 }, // back to Refund Wallet (order was paid with it)
+  refundWalletCreditedAmount: { type: Number, default: 0 }, // refund sent to Refund Wallet (Wallet method / Razorpay failure)
   pickupScheduled: { type: Boolean, default: false },
 
   // Refund idempotency claims (guard the 'Refunded' branch against double stock

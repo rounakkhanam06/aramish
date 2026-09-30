@@ -203,10 +203,13 @@ exports.createReturnRequest = async (req, res) => {
 
     const finalRefundMethod = req.body.refundMethod || (parsedBankDetails ? 'Bank' : 'Original');
 
-    // Cap the refund amount based on user selection (Wallet gets full fees back, Bank/UPI only gets item price)
+    // Cap the refund amount based on user selection (Wallet gets full fees back, Bank/UPI only gets item price).
+    // Refundable money = what the customer actually paid: cash/online (order.total) plus
+    // Refund Wallet money. Coins redeemed on the order are non-returnable and excluded.
+    const moneyPaid = (order.total || 0) + (order.refundWalletUsed || 0);
     let refundAmount = 0;
     if (finalRefundMethod === 'Bank' || finalRefundMethod === 'UPI') {
-      refundAmount = Math.min(calculatedRefundAmount, order.total);
+      refundAmount = Math.min(calculatedRefundAmount, moneyPaid);
     } else if (finalRefundMethod === 'Wallet') {
       const isFullReturn = order.items.every(orderItem => {
         const rItem = validatedReturnItems.find(r => r.productId.toString() === orderItem.productId.toString());
@@ -220,9 +223,9 @@ exports.createReturnRequest = async (req, res) => {
         walletRefund += (order.deliveryCharge || 0) + (order.platformCommission || 0);
       }
       
-      refundAmount = Math.min(walletRefund, order.total);
+      refundAmount = Math.min(walletRefund, moneyPaid);
     } else {
-      refundAmount = Math.min(calculatedRefundAmount, order.total);
+      refundAmount = Math.min(calculatedRefundAmount, moneyPaid);
     }
     
     refundAmount = Math.round(refundAmount * 100) / 100;
@@ -547,10 +550,9 @@ exports.updateReturnStatus = async (req, res) => {
         throw new Error('Cannot process refund for unpaid online order');
       }
 
-      // 1-3. Stock restoration + wallet/referral coin restore + cash refund (Razorpay/wallet
-      // store-credit) all happen atomically/idempotently together inside handleReturnRefund,
-      // guarded by their own claims so a retry after a partial failure can never double-restore
-      // stock or double-refund cash.
+      // 1-3. Stock restoration + clawback of the order's (still locked) reward coins + cash
+      // refund (Razorpay/wallet store-credit) happen atomically/idempotently inside
+      // handleReturnRefund, guarded by their own claims. Redeemed coins are non-returnable.
       await handleReturnRefund(returnRequest, order);
 
       // 4. Update order status
@@ -565,10 +567,6 @@ exports.updateReturnStatus = async (req, res) => {
           order.paymentStatus = 'Partially Refunded';
         }
         await order.save();
-
-        // Deduct Order Reward Coins on return refund
-        const { deductOrderReward } = require('../utils/rewardService');
-        deductOrderReward(order._id).catch(err => console.error('Error in deductOrderReward async trigger:', err));
       }
     }
 

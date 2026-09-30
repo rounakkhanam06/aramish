@@ -606,7 +606,8 @@ const getUserDetails = async (req, res) => {
     const Order = require('../Models/Order');
     const Address = require('../Models/Address');
     const Wishlist = require('../Models/Wishlist');
-    const CoinTransaction = require('../Models/CoinTransaction');
+    const WalletTransaction = require('../Models/WalletTransaction');
+    const walletService = require('../utils/walletService');
 
     const userId = req.params.id;
 
@@ -634,11 +635,12 @@ const getUserDetails = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // 5. Fetch Wallet/Coin Transactions & calculate balance
-    const coinTransactions = await CoinTransaction.find({ userId }).sort({ createdAt: -1 }).lean();
-    const totalEarned = coinTransactions.filter(t => t.type === 'earned').reduce((sum, t) => sum + t.amount, 0);
-    const totalSpent = coinTransactions.filter(t => t.type === 'spent').reduce((sum, t) => sum + t.amount, 0);
-    const coinsBalance = totalEarned - totalSpent;
+    // 5. Single combined wallet: balance/locked split from walletService, history from the ledger
+    const walletSummary = await walletService.getWalletSummary(userId);
+    const coinsBalance = walletSummary.walletBalance;
+    const walletTransactions = await WalletTransaction.find({ userId, wallet: { $ne: 'REFUND' } }).sort({ createdAt: -1 }).lean();
+    const refundWalletTransactions = await WalletTransaction.find({ userId, wallet: 'REFUND' }).sort({ createdAt: -1 }).lean();
+    const refundWalletBalance = await walletService.getRefundWalletBalance(userId);
 
     // 5.1. Fetch dynamic average rating and reviews from Reel model
     const Reel = require('../Models/Reel');
@@ -785,11 +787,27 @@ const getUserDetails = async (req, res) => {
       })),
       wallet: {
         balance: coinsBalance,
-        transactions: coinTransactions.map(t => ({
+        lockedBalance: walletSummary.lockedBalance,
+        availableBalance: walletSummary.availableBalance,
+        transactions: walletTransactions.map(t => ({
           id: t._id,
-          title: t.title,
-          amount: t.amount,
-          type: t.type,
+          title: t.description || t.type,
+          amount: Math.abs(t.amount),
+          type: walletService.getTransactionDirection(t) === 'credit' ? 'earned' : 'spent',
+          source: walletService.getTransactionSource(t),
+          orderId: t.orderId,
+          date: new Date(t.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+        }))
+      },
+      refundWallet: {
+        balance: refundWalletBalance,
+        transactions: refundWalletTransactions.map(t => ({
+          id: t._id,
+          title: t.description || t.type,
+          amount: Math.abs(t.amount),
+          type: walletService.getTransactionDirection(t) === 'credit' ? 'credited' : 'used',
+          kind: t.type,
+          orderId: t.orderId,
           date: new Date(t.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
         }))
       }

@@ -12,25 +12,21 @@ const systemConfigSchema = new mongoose.Schema({
   codChargeAmount: { type: Number, default: 150 },
   prepaidDiscountEnabled: { type: Boolean, default: true },
   prepaidDiscountAmount: { type: Number, default: 100 },
-  referralCoinsPerReferral: { type: Number, default: 100 },
-  referralCoinsReferrer: { type: Number, default: 100 },
-  referralCoinsReferee: { type: Number, default: 100 },
-  referralWalletMaxUsagePercentage: { type: Number, default: 25 },
-  // 'signup' = reward credited instantly when the referee registers with a code;
-  // 'first_order' = reward credited only after the referee's first delivered+paid order.
-  referralRewardTiming: { type: String, enum: ['signup', 'first_order'], default: 'first_order' },
   returnWindowDays: { type: Number, default: 2 },
+  // ---- Wallet / reward rules (read ONLY through utils/walletService.getWalletConfig) ----
   welcomeBonusEnabled: { type: Boolean, default: true },
-  welcomeBonusCoins: { type: Number, default: 1000 },
+  welcomeBonusCoins: { type: Number, default: 1000, min: 0 },
+  // Fixed coins credited to the referrer for EVERY successful (delivered) order of the referred customer
+  referralRewardPerOrder: { type: Number, default: 200, min: 0 },
   rewardCoinsEnabled: { type: Boolean, default: true },
-  rewardCoinsPerDeliveredOrder: { type: Number, default: 100 },
+  // Customer's own order reward: % of the product selling value, floored to whole coins, capped per order (0 = no cap)
+  orderRewardPercentage: { type: Number, default: 10, min: 0, max: 100 },
+  orderRewardMaxCap: { type: Number, default: 400, min: 0 },
+  // Max share of the eligible product value (excl. GST/delivery/fees) payable with wallet coins per order
+  walletRedemptionPercentage: { type: Number, default: 25, min: 0, max: 100 },
   marqueeEnabled: { type: Boolean, default: true },
   walletEnabled: { type: Boolean, default: true },
   referralEnabled: { type: Boolean, default: true },
-  coinConversionEnabled: { type: Boolean, default: true },
-  coinsPerRupee: { type: Number, default: 100 },
-  minimumRedeemCoins: { type: Number, default: 500 },
-  maximumRedeemPerOrder: { type: Number, default: 10000 },
   crazyDealsHeaderName: { type: String, default: 'Crazy Deals' },
   showCrazyDealsTimer: { type: Boolean, default: true },
   crazyDealsDuration: { type: Number, default: 9930 },

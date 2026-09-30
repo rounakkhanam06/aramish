@@ -218,8 +218,8 @@ const verifyOtp = async (req, res) => {
     if (referrer) {
       try {
         const { registerReferral } = require('./referralController');
-        const rewardTiming = await registerReferral(referrer, user);
-        if (rewardTiming) {
+        const linked = await registerReferral(referrer, user);
+        if (linked) {
           user.referredBy = referrer._id;
           console.log(`🔗 Referral successfully linked: ${referrer.phone} (${referrer.referralCode}) -> ${user.phone}`);
         }
@@ -228,41 +228,18 @@ const verifyOtp = async (req, res) => {
       }
     }
 
-    // Welcome Bonus Check (Only Once)
+    await user.save();
+
+    // Welcome Bonus (only once, admin-configurable amount) into the single combined wallet
     if (!user.welcomeBonusGiven) {
       try {
-        const SystemConfig = require('../Models/SystemConfig');
-        const WalletTransaction = require('../Models/WalletTransaction');
-        
-        const config = await SystemConfig.findOne({});
-        const isWelcomeBonusEnabled = config && config.welcomeBonusEnabled !== undefined ? config.welcomeBonusEnabled : true;
-        
-        if (isWelcomeBonusEnabled) {
-          const welcomeAmount = config && config.welcomeBonusCoins !== undefined ? config.welcomeBonusCoins : 1000;
-          
-          user.walletBalance = (user.walletBalance || 0) + welcomeAmount;
-          user.welcomeBonusRemaining = (user.welcomeBonusRemaining || 0) + welcomeAmount;
-          user.welcomeBonusGiven = true;
-          user.welcomeBonusDate = new Date();
-          
-          await WalletTransaction.create({
-            userId: user._id,
-            type: 'Welcome Bonus',
-            amount: welcomeAmount,
-            description: 'Welcome Bonus Credited'
-          });
-          
-          console.log(`🎁 Welcome bonus of ${welcomeAmount} credited to user ${user._id}`);
-        } else {
-          user.welcomeBonusGiven = true; // Mark as given so we don't check again
-          console.log(`ℹ️ Welcome bonus disabled in settings. Skipping for user ${user._id}`);
-        }
+        const { creditWelcomeBonus } = require('../utils/walletService');
+        const result = await creditWelcomeBonus(user._id);
+        if (result.success) console.log(`🎁 Welcome bonus of ${result.amount} credited to user ${user._id}`);
       } catch (wbErr) {
         console.error('❌ Error processing welcome bonus:', wbErr.message);
       }
     }
-
-    await user.save();
 
     const token = generateToken(user._id, user.phone, user.tokenVersion);
 
@@ -414,57 +391,98 @@ const changePassword = async (req, res) => {
   }
 };
 
+// @desc    Single combined wallet: balance, locked/available split, and full history.
+//          All numbers are calculated by walletService — the app only displays them.
 const getWallet = async (req, res) => {
   try {
-    const CoinTransaction = require('../Models/CoinTransaction');
     const WalletTransaction = require('../Models/WalletTransaction');
-    const User = require('../Models/User');
+    const Order = require('../Models/Order');
+    const walletService = require('../utils/walletService');
 
-    const user = await User.findById(req.user.id);
+    const user = await User.findById(req.user.id, '_id').lean();
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const coinTransactions = await CoinTransaction.find({ userId: req.user.id })
-      .sort({ createdAt: -1 });
+    const config = await walletService.getWalletConfig();
+    const summary = await walletService.getWalletSummary(req.user.id, { config });
 
-    const walletTransactions = await WalletTransaction.find({ userId: req.user.id })
-      .sort({ createdAt: -1 });
+    const [walletTransactions, refundWalletTxns, refundWalletBalance] = await Promise.all([
+      // Main wallet (coins). Legacy entries have no `wallet` field and belong here.
+      WalletTransaction.find({ userId: req.user.id, wallet: { $ne: 'REFUND' } }).sort({ createdAt: -1 }).lean(),
+      WalletTransaction.find({ userId: req.user.id, wallet: 'REFUND' }).sort({ createdAt: -1 }).lean(),
+      walletService.getRefundWalletBalance(req.user.id)
+    ]);
 
-    const { getUserLockedRewardCoins } = require('../utils/rewardService');
-    const lockedRewardCoins = await getUserLockedRewardCoins(req.user.id);
-    const availableWalletBalance = Math.max(0, (user.walletBalance || 0) - lockedRewardCoins);
+    // Per-entry lock state for reward credits (locked while the order's return window is
+    // open or a return is pending; withdrawn if the order was returned/refunded).
+    const rewardOrderIds = walletTransactions
+      .filter(w => ['ORDER_REWARD', 'REFERRAL_REWARD'].includes(w.type) && w.orderId)
+      .map(w => w.orderId);
+    const rewardOrders = rewardOrderIds.length
+      ? await Order.find({ _id: { $in: rewardOrderIds } }, 'status rewardCreditedAt rewardDeducted referralRewardCreditedAt referralRewardReversed').lean()
+      : [];
+    const orderMap = new Map(rewardOrders.map(o => [o._id.toString(), o]));
 
-    const SystemConfig = require('../Models/SystemConfig');
-    const config = await SystemConfig.findOne({});
-    const referralWalletMaxUsagePercentage = config && config.referralWalletMaxUsagePercentage !== undefined ? config.referralWalletMaxUsagePercentage : 25;
+    const rewardState = (w) => {
+      if (!['ORDER_REWARD', 'REFERRAL_REWARD'].includes(w.type)) return null;
+      const o = w.orderId && orderMap.get(w.orderId.toString());
+      if (!o) return 'UNLOCKED';
+      const isOwn = w.type === 'ORDER_REWARD';
+      if (isOwn ? o.rewardDeducted : o.referralRewardReversed) return 'WITHDRAWN';
+      const creditedAt = isOwn ? o.rewardCreditedAt : o.referralRewardCreditedAt;
+      return walletService.isRewardLocked(o, creditedAt || w.createdAt, config) ? 'LOCKED' : 'UNLOCKED';
+    };
+
+    // Earned totals per source (for display/reporting); the balance itself is one number.
+    const earnedBySource = { WELCOME_BONUS: 0, REFERRAL_REWARD: 0, ORDER_REWARD: 0, GAME_REWARD: 0, REFUND: 0 };
+    for (const w of walletTransactions) {
+      const source = walletService.getTransactionSource(w);
+      if (source in earnedBySource) {
+        earnedBySource[source] = walletService.roundMoney(earnedBySource[source] + (walletService.getTransactionDirection(w) === 'credit' ? Math.abs(w.amount) : -Math.abs(w.amount)));
+      }
+    }
 
     res.status(200).json({
       success: true,
-      coins: user.referralCoins || 0,
-      referralWalletMaxUsagePercentage,
-      walletBalance: user.walletBalance || 0,
-      lockedRewardCoins,
-      availableWalletBalance,
-      welcomeBonusRemaining: user.welcomeBonusRemaining || 0,
-      coinTransactions: coinTransactions.map(t => ({
-        id: t._id,
-        type: t.type,
-        title: t.title,
-        amount: t.amount,
-        createdAt: t.createdAt
-      })),
-      walletTransactions: walletTransactions.map(w => ({
+      walletEnabled: config.walletEnabled,
+      walletBalance: summary.walletBalance,
+      lockedRewardCoins: summary.lockedBalance,
+      availableWalletBalance: summary.availableBalance,
+      walletRedemptionPercentage: config.walletRedemptionPercentage,
+      earnedBySource,
+      // Refund Wallet: actual refunded money, fully usable (no % limit), separate from coins
+      refundWalletBalance,
+      refundWalletTransactions: refundWalletTxns.map(w => ({
         id: w._id,
+        wallet: 'REFUND',
         type: w.type,
-        amount: w.amount,
-        coinsUsed: w.coinsUsed,
-        status: w.status,
+        direction: walletService.getTransactionDirection(w),
+        amount: Math.abs(w.amount),
+        balanceAfter: w.balanceAfter,
         description: w.description,
         orderId: w.orderId,
-        unlocksAt: w.unlocksAt,
         createdAt: w.createdAt
-      }))
+      })),
+      walletTransactions: walletTransactions.map(w => {
+        const state = rewardState(w);
+        return {
+          id: w._id,
+          wallet: 'MAIN',
+          type: w.type,
+          source: walletService.getTransactionSource(w),
+          direction: walletService.getTransactionDirection(w),
+          amount: Math.abs(w.amount),
+          balanceAfter: w.balanceAfter,
+          status: w.status,
+          description: w.description,
+          orderId: w.orderId,
+          unlocksAt: w.unlocksAt,
+          rewardState: state,
+          isLocked: state === 'LOCKED',
+          createdAt: w.createdAt
+        };
+      })
     });
   } catch (error) {
     console.error('Get Wallet Error:', error);

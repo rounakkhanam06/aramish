@@ -15,16 +15,23 @@ const referralSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  // 'pending' = signed up but no order yet, 'completed' = first order placed, 'rewarded' = coins credited
+  // 'pending' = no successful order yet, 'rewarded' = at least one order has earned the referrer coins.
+  // ('completed' is kept only for legacy records.)
   status: {
     type: String,
     enum: ['pending', 'completed', 'rewarded'],
     default: 'pending'
   },
+  // Running total of coins the referrer has earned from this referee's successful orders
   referrerCoinsAwarded: {
     type: Number,
     default: 0
   },
+  successfulOrders: {
+    type: Number,
+    default: 0
+  },
+  // Legacy: the referee no longer receives referral coins (they get the welcome bonus instead)
   refereeCoinsAwarded: {
     type: Number,
     default: 0

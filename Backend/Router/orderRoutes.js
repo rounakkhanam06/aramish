@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { createOrder, getUserOrders, getAllOrders, updateOrderStatus, getUserOrderById, trackOrderById, getAdminOrderById, deleteOrder, cancelOrder } = require('../Controllers/orderController');
+const { createOrder, getUserOrders, getAllOrders, updateOrderStatus, getUserOrderById, trackOrderById, getAdminOrderById, deleteOrder, cancelOrder, getWalletPreview } = require('../Controllers/orderController');
 const { protectUser } = require('../Middlewares/userAuthMiddleware');
 const { protectAdmin } = require('../Middlewares/authMiddleware');
 
@@ -11,6 +11,8 @@ router.get('/track/:id', trackOrderById);
 router.route('/')
   .get(protectUser, getUserOrders)
   .post(protectUser, createOrder);
+
+router.post('/wallet-preview', protectUser, getWalletPreview);
 
 router.route('/:id')
   .get(protectUser, getUserOrderById);

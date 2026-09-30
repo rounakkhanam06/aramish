@@ -117,6 +117,28 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
 // Server-rendered Open Graph meta tags for social-media crawlers (WhatsApp, Facebook, etc.)
 app.use('/meta', require('./Router/shareMetaRoutes'));
 
+// Serve Android Digital Asset Links for App Links / Referral handling
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  const assetlinksPath = path.join(__dirname, '../Frontend/public/.well-known/assetlinks.json');
+  res.sendFile(assetlinksPath, (err) => {
+    if (err) {
+      res.json([
+        {
+          "relation": ["delegate_permission/common.handle_all_urls"],
+          "target": {
+            "namespace": "android_app",
+            "package_name": "com.aramishshoes.app",
+            "sha256_cert_fingerprints": [
+              "98:BC:C9:8B:7C:33:07:16:E8:3A:31:37:A1:AB:24:2C:79:DF:F1:A2:51:C8:79:D6:98:04:48:E8:20:8E:81:6B"
+            ]
+          }
+        }
+      ]);
+    }
+  });
+});
+
 // Routes
 app.use('/admin/auth', require('./Router/adminAuthRoutes'));
 app.use('/auth', require('./Router/userAuthRoutes'));

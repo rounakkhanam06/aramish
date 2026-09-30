@@ -187,9 +187,9 @@ export default function ReferEarnPage() {
               </div>
               <h2 className="text-2xl font-black mb-1 tracking-tight">Invite &amp; Earn!</h2>
               <p className="text-sm text-indigo-200 font-medium px-4 leading-snug">
-                Users will receive <span className="text-amber-300 font-black">₹{referralData?.stats?.coinsPerReferral || 100} referral coins</span> when someone installs the app using their referral code.
+                Earn <span className="text-amber-300 font-black">{referralData?.stats?.coinsPerOrder ?? referralData?.stats?.coinsPerReferral ?? 0} coins</span> for every successful order placed by a friend who joins with your code.
                 <br />
-                <span className="text-xs opacity-90 mt-2 block">Users can utilize up to {referralData?.stats?.maxUsagePercentage || 25}% of their referral wallet balance per order.</span>
+                <span className="text-xs opacity-90 mt-2 block">Coins go into your wallet and can pay for up to {referralData?.stats?.maxUsagePercentage ?? 0}% of the product value of an order.</span>
               </p>
             </div>
           </div>
@@ -257,7 +257,7 @@ export default function ReferEarnPage() {
                 </div>
                 <div className="text-left">
                   <p className="text-[13px] font-bold text-slate-800">Have a friend's code?</p>
-                  <p className="text-[11px] text-slate-400">Apply it to earn coins</p>
+                  <p className="text-[11px] text-slate-400">Apply it before your first order</p>
                 </div>
               </div>
               {!referralData?.hasAppliedCode && (
@@ -343,7 +343,9 @@ export default function ReferEarnPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         {ref.coinsEarned > 0 && (
-                          <span className="text-[11px] font-black text-amber-600">+{ref.coinsEarned} Coins</span>
+                          <span className="text-[11px] font-black text-amber-600">
+                            +{ref.coinsEarned} Coins{ref.successfulOrders > 0 ? ` · ${ref.successfulOrders} order${ref.successfulOrders > 1 ? 's' : ''}` : ''}
+                          </span>
                         )}
                         <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full ${s.bg} ${s.text}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
@@ -371,7 +373,7 @@ export default function ReferEarnPage() {
               {[
                 { n: 1, title: 'Share your code', desc: 'Send your unique referral code to friends.' },
                 { n: 2, title: 'Friend signs up', desc: 'They register using your referral code.' },
-                { n: 3, title: 'You both earn!', desc: 'Both get Aramish Coins after their first order.' },
+                { n: 3, title: 'You earn on every order', desc: `You get ${referralData?.stats?.coinsPerOrder ?? 0} coins for each order they complete (usable after its return window).` },
               ].map((step) => (
                 <div key={step.n} className="flex gap-4 relative z-10">
                   <div className="w-8 h-8 rounded-full bg-[#0B132B]/10 border border-[#0B132B]/30 flex items-center justify-center flex-shrink-0 text-[#0B132B] font-black text-sm">

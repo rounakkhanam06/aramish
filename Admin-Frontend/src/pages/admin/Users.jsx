@@ -93,8 +93,7 @@ const Users = () => {
           totalSpent: `₹${(u.totalSpent || 0).toLocaleString('en-IN')}`,
           orders: u.ordersCount || 0,
           status: u.derivedStatus || 'Active',
-          walletBalance: u.walletBalance || 0,
-          referralCoins: u.referralCoins || 0
+          walletBalance: u.walletBalance || 0
         }));
         setUsersList(formattedUsers);
         setTotalPages(data.pages || 1);
@@ -329,17 +328,16 @@ const Users = () => {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        const headers = ['ID', 'Name', 'Email', 'Phone', 'Joined', 'Spent Amount', 'Wallet Balance', 'Referral Coins', 'Orders', 'Status'];
+        const headers = ['ID', 'Name', 'Email', 'Phone', 'Joined', 'Spent Amount', 'Wallet Balance', 'Orders', 'Status'];
         const csvContent = [
           headers.join(','),
           ...data.users.map(u => {
             const joined = new Date(u.createdAt).toLocaleDateString('en-CA');
             const spent = u.totalSpent || 0;
             const walletBal = u.walletBalance || 0;
-            const refCoins = u.referralCoins || 0;
             const orders = u.ordersCount || 0;
             const status = u.derivedStatus || 'Active';
-            return `"${u._id}","${u.name || 'Anonymous'}","${u.email || 'N/A'}","${u.phone || 'N/A'}","${joined}",${spent},${walletBal},${refCoins},${orders},"${status}"`;
+            return `"${u._id}","${u.name || 'Anonymous'}","${u.email || 'N/A'}","${u.phone || 'N/A'}","${joined}",${spent},${walletBal},${orders},"${status}"`;
           })
         ].join('\n');
 
@@ -500,7 +498,6 @@ const Users = () => {
                 <th className="px-6 py-4">Customer Details</th>
                 <th className="px-6 py-4">Total Spent</th>
                 <th className="px-6 py-4">Wallet Balance</th>
-                <th className="px-6 py-4">Referral Coins</th>
                 <th className="px-6 py-4">Orders</th>
                 <th className="px-6 py-4">Member Since</th>
                 <th className="px-6 py-4">Status</th>
@@ -550,11 +547,6 @@ const Users = () => {
                   <td className="px-6 py-5">
                      <span className="px-2 py-1 bg-amber-50 text-amber-700 rounded-lg text-[10px] font-black border border-amber-100">
                         ₹{user.walletBalance.toLocaleString('en-IN')}
-                     </span>
-                  </td>
-                  <td className="px-6 py-5">
-                     <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded-lg text-[10px] font-black border border-purple-100">
-                        {user.referralCoins.toLocaleString('en-IN')} Coins
                      </span>
                   </td>
                   <td className="px-6 py-5">
@@ -615,7 +607,7 @@ const Users = () => {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="8" className="px-6 py-20 text-center">
+                  <td colSpan="7" className="px-6 py-20 text-center">
                     <div className="flex flex-col items-center gap-3 text-slate-300">
                       <UsersIcon size={48} className="opacity-20" />
                       <p className="text-sm font-bold uppercase tracking-widest">No customers found matching your search</p>

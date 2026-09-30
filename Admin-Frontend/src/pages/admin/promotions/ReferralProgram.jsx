@@ -26,11 +26,8 @@ const ReferralProgram = () => {
   // Config panel
   const [showConfig, setShowConfig] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
-  const [referralCoinsReferrer, setReferralCoinsReferrer] = useState(200);
-  const [referralCoinsReferee, setReferralCoinsReferee] = useState(0);
-  const [referralWalletMaxUsagePercentage, setReferralWalletMaxUsagePercentage] = useState(25);
+  const [referralRewardPerOrder, setReferralRewardPerOrder] = useState('');
   const [referralEnabled, setReferralEnabled] = useState(true);
-  const [referralRewardTiming, setReferralRewardTiming] = useState('first_order');
   const [savingConfig, setSavingConfig] = useState(false);
 
   const token = localStorage.getItem('adminToken');
@@ -64,11 +61,8 @@ const ReferralProgram = () => {
       const res = await fetch(`${API_BASE}/admin/referrals/config`, { headers });
       const data = await res.json();
       if (data.success) {
-        setReferralCoinsReferrer(data.config.referralCoinsReferrer);
-        setReferralCoinsReferee(data.config.referralCoinsReferee);
-        setReferralWalletMaxUsagePercentage(data.config.referralWalletMaxUsagePercentage ?? 25);
+        setReferralRewardPerOrder(data.config.referralRewardPerOrder ?? '');
         setReferralEnabled(data.config.referralEnabled);
-        setReferralRewardTiming(data.config.referralRewardTiming === 'signup' ? 'signup' : 'first_order');
       }
     } catch { /* silent */ }
     finally { setConfigLoading(false); }
@@ -84,12 +78,8 @@ const ReferralProgram = () => {
         method: 'PUT',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          referralCoinsReferrer,
-          referralCoinsReferee,
-          referralCoinsPerReferral: referralCoinsReferrer,
-          referralWalletMaxUsagePercentage,
-          referralEnabled,
-          referralRewardTiming
+          referralRewardPerOrder,
+          referralEnabled
         })
       });
       const data = await res.json();
@@ -308,7 +298,12 @@ const ReferralProgram = () => {
                     </td>
                     <td className="px-6 py-4">
                       {ref.referrerCoinsAwarded > 0 ? (
-                        <span className="font-black text-amber-600 text-[13px]">+{ref.referrerCoinsAwarded} Coins</span>
+                        <span className="font-black text-amber-600 text-[13px]">
+                          +{ref.referrerCoinsAwarded} Coins
+                          {ref.successfulOrders > 0 && (
+                            <span className="block text-[10px] text-slate-400 font-bold">{ref.successfulOrders} successful order{ref.successfulOrders > 1 ? 's' : ''}</span>
+                          )}
+                        </span>
                       ) : (
                         <span className="text-slate-300 text-[12px] font-bold">—</span>
                       )}
@@ -372,82 +367,20 @@ const ReferralProgram = () => {
                     </button>
                   </div>
 
-                  {/* Reward Timing */}
+                  {/* Coins to Referrer per successful order */}
                   <div className="space-y-3">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                      Reward Kab Dena Hai (Reward Timing)
-                    </label>
-                    <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
-                      <button
-                        type="button"
-                        onClick={() => setReferralRewardTiming('signup')}
-                        className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                          referralRewardTiming === 'signup'
-                            ? 'bg-blue-600 text-white shadow-md'
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        On Registration
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setReferralRewardTiming('first_order')}
-                        className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                          referralRewardTiming === 'first_order'
-                            ? 'bg-blue-600 text-white shadow-md'
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        After First Order
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Coins to Referrer */}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                      Coins to Referrer (The person who invites)
+                      Coins to Referrer per Successful Order
                     </label>
                     <div className="relative">
                       <input
                         type="text"
-                        value={referralCoinsReferrer}
-                        onChange={e => setReferralCoinsReferrer(Number(e.target.value.replace(/\D/g, '')) || 0)}
+                        inputMode="numeric"
+                        value={referralRewardPerOrder}
+                        onChange={e => setReferralRewardPerOrder(e.target.value.replace(/\D/g, ''))}
                         className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-black focus:ring-4 focus:ring-blue-50 outline-none transition-all"
                       />
                       <span className="absolute right-5 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Coins</span>
-                    </div>
-                  </div>
-
-                  {/* Coins to Referee */}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                      Coins to Referee (The person who is invited)
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={referralCoinsReferee}
-                        onChange={e => setReferralCoinsReferee(Number(e.target.value.replace(/\D/g, '')) || 0)}
-                        className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-black focus:ring-4 focus:ring-blue-50 outline-none transition-all"
-                      />
-                      <span className="absolute right-5 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Coins</span>
-                    </div>
-                  </div>
-
-                  {/* Max Usage % */}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                      Max Referral Wallet Usage Per Order (%)
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={referralWalletMaxUsagePercentage}
-                        onChange={e => setReferralWalletMaxUsagePercentage(Number(e.target.value.replace(/\D/g, '')) || 0)}
-                        className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-black focus:ring-4 focus:ring-blue-50 outline-none transition-all"
-                      />
-                      <span className="absolute right-5 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 uppercase tracking-widest">%</span>
                     </div>
                   </div>
 
@@ -455,10 +388,9 @@ const ReferralProgram = () => {
                   <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 flex gap-3 items-start">
                     <AlertCircle size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
                     <p className="text-[11px] text-blue-500 font-bold leading-relaxed uppercase tracking-wide">
-                      {referralRewardTiming === 'signup'
-                        ? 'Referrer and referee both get coins instantly when the referee registers with a code.'
-                        : 'Referrer and referee both get coins only after the referee\'s first order is delivered.'}
-                      {' '}Referral wallet usage is capped per order based on the percentage above.
+                      The referrer earns this fixed amount for EVERY delivered order of the referred customer, whatever the order value.
+                      Coins go to the single wallet, stay locked during the order's return window, and are withdrawn if the order is returned.
+                      Wallet redemption limits are set under Settings → Coins &amp; Wallet.
                     </p>
                   </div>
                 </div>

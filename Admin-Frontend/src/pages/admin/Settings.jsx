@@ -31,14 +31,13 @@ const Settings = () => {
   const [prepaidDiscountAmount, setPrepaidDiscountAmount] = useState(100);
 
   // Coins settings states
-  const [coinConversionEnabled, setCoinConversionEnabled] = useState(true);
-  const [coinsPerRupee, setCoinsPerRupee] = useState(100);
-  const [minimumRedeemCoins, setMinimumRedeemCoins] = useState(500);
-  const [maximumRedeemPerOrder, setMaximumRedeemPerOrder] = useState(10000);
+  // Wallet / reward rules — loaded from and validated by the backend (no hardcoded business values)
   const [welcomeBonusEnabled, setWelcomeBonusEnabled] = useState(true);
-  const [welcomeBonusCoins, setWelcomeBonusCoins] = useState(1000);
+  const [welcomeBonusCoins, setWelcomeBonusCoins] = useState('');
   const [rewardCoinsEnabled, setRewardCoinsEnabled] = useState(true);
-  const [rewardCoinsPerDeliveredOrder, setRewardCoinsPerDeliveredOrder] = useState(100);
+  const [orderRewardPercentage, setOrderRewardPercentage] = useState('');
+  const [orderRewardMaxCap, setOrderRewardMaxCap] = useState('');
+  const [walletRedemptionPercentage, setWalletRedemptionPercentage] = useState('');
   const [returnWindowDays, setReturnWindowDays] = useState(2);
   const [marqueeEnabled, setMarqueeEnabled] = useState(true);
   const [walletEnabled, setWalletEnabled] = useState(true);
@@ -113,14 +112,12 @@ const Settings = () => {
         setCodChargeAmount(s.codChargeAmount ?? 150);
         setPrepaidDiscountEnabled(s.prepaidDiscountEnabled ?? true);
         setPrepaidDiscountAmount(s.prepaidDiscountAmount ?? 100);
-        setCoinConversionEnabled(s.coinConversionEnabled ?? true);
-        setCoinsPerRupee(s.coinsPerRupee ?? 100);
-        setMinimumRedeemCoins(s.minimumRedeemCoins ?? 500);
-        setMaximumRedeemPerOrder(s.maximumRedeemPerOrder ?? 10000);
         setWelcomeBonusEnabled(s.welcomeBonusEnabled ?? true);
-        setWelcomeBonusCoins(s.welcomeBonusCoins ?? 1000);
+        setWelcomeBonusCoins(s.welcomeBonusCoins ?? '');
         setRewardCoinsEnabled(s.rewardCoinsEnabled ?? true);
-        setRewardCoinsPerDeliveredOrder(s.rewardCoinsPerDeliveredOrder ?? 100);
+        setOrderRewardPercentage(s.orderRewardPercentage ?? '');
+        setOrderRewardMaxCap(s.orderRewardMaxCap ?? '');
+        setWalletRedemptionPercentage(s.walletRedemptionPercentage ?? '');
         setReturnWindowDays(s.returnWindowDays ?? 2);
         setMarqueeEnabled(s.marqueeEnabled ?? true);
         setWalletEnabled(s.walletEnabled ?? true);
@@ -263,14 +260,12 @@ const Settings = () => {
             'Authorization': `Bearer ${token}`
           },
           body: JSON.stringify({
-            coinConversionEnabled,
-            coinsPerRupee: Number(coinsPerRupee),
-            minimumRedeemCoins: Number(minimumRedeemCoins),
-            maximumRedeemPerOrder: Number(maximumRedeemPerOrder),
             welcomeBonusEnabled: Boolean(welcomeBonusEnabled),
-            welcomeBonusCoins: Number(welcomeBonusCoins),
+            welcomeBonusCoins: welcomeBonusCoins === '' ? '' : Number(welcomeBonusCoins),
             rewardCoinsEnabled: Boolean(rewardCoinsEnabled),
-            rewardCoinsPerDeliveredOrder: Number(rewardCoinsPerDeliveredOrder),
+            orderRewardPercentage: orderRewardPercentage === '' ? '' : Number(orderRewardPercentage),
+            orderRewardMaxCap: orderRewardMaxCap === '' ? '' : Number(orderRewardMaxCap),
+            walletRedemptionPercentage: walletRedemptionPercentage === '' ? '' : Number(walletRedemptionPercentage),
             returnWindowDays: Number(returnWindowDays),
             marqueeEnabled: Boolean(marqueeEnabled),
             walletEnabled: Boolean(walletEnabled)
@@ -674,22 +669,52 @@ const Settings = () => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       <div className="space-y-2">
                         <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Welcome Bonus Coins</label>
-                        <input 
-                          type="number" 
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
                           value={welcomeBonusCoins}
                           onChange={e => setWelcomeBonusCoins(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
-                          required 
+                          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none"
+                          required
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Reward Coins Per Order</label>
-                        <input 
-                          type="number" 
-                          value={rewardCoinsPerDeliveredOrder}
-                          onChange={e => setRewardCoinsPerDeliveredOrder(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
-                          required 
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Order Reward (% of Selling Price)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={orderRewardPercentage}
+                          onChange={e => setOrderRewardPercentage(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Order Reward Max Cap (Coins / Order, 0 = No Cap)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={orderRewardMaxCap}
+                          onChange={e => setOrderRewardMaxCap(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Wallet Redemption (% of Product Value / Order)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={walletRedemptionPercentage}
+                          onChange={e => setWalletRedemptionPercentage(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none"
+                          required
                         />
                       </div>
                       <div className="space-y-2">

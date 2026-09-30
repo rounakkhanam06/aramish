@@ -27,11 +27,29 @@ const updateSettings = async (req, res) => {
       config = new SystemConfig();
     }
 
+    // Wallet/reward rules: validated here, applied by utils/walletService to all future
+    // transactions. Whole-coin amounts and 0-100 percentages.
+    const walletRuleLimits = {
+      welcomeBonusCoins: { label: 'Welcome bonus', integer: true },
+      referralRewardPerOrder: { label: 'Referral reward per order', integer: true },
+      orderRewardPercentage: { label: 'Order reward percentage', max: 100 },
+      orderRewardMaxCap: { label: 'Order reward maximum cap', integer: true },
+      walletRedemptionPercentage: { label: 'Wallet redemption percentage', max: 100 }
+    };
+    for (const [key, rule] of Object.entries(walletRuleLimits)) {
+      if (req.body[key] === undefined) continue;
+      const n = Number(req.body[key]);
+      if (req.body[key] === '' || !Number.isFinite(n) || n < 0 || (rule.max !== undefined && n > rule.max) || (rule.integer && !Number.isInteger(n))) {
+        const expected = rule.integer ? 'a whole number of coins (0 or more)' : `a number between 0 and ${rule.max}`;
+        return res.status(400).json({ success: false, message: `${rule.label} must be ${expected}` });
+      }
+    }
+
     const fields = [
       'platformName', 'supportEmail', 'helpline', 'currency',
       'commission', 'gstNo', 'gstPercentage', 'returnWindowDays',
-      'welcomeBonusCoins', 'rewardCoinsEnabled', 'rewardCoinsPerDeliveredOrder', 'marqueeEnabled', 'walletEnabled',
-      'coinConversionEnabled', 'coinsPerRupee', 'minimumRedeemCoins', 'maximumRedeemPerOrder',
+      'welcomeBonusCoins', 'rewardCoinsEnabled', 'marqueeEnabled', 'walletEnabled',
+      'referralRewardPerOrder', 'orderRewardPercentage', 'orderRewardMaxCap', 'walletRedemptionPercentage', 'referralEnabled',
       'crazyDealsHeaderName', 'showCrazyDealsTimer', 'crazyDealsDuration',
       'featuredCollectionHeaderName', 'showFeaturedCollectionTimer', 'featuredCollectionDuration',
       'newArrivalsHeaderName', 'showNewArrivalsTimer', 'newArrivalsDuration',
@@ -41,12 +59,13 @@ const updateSettings = async (req, res) => {
     fields.forEach(f => {
       if (req.body[f] !== undefined) {
         if ([
-          'commission', 'gstPercentage', 'coinsPerRupee', 'minimumRedeemCoins', 'maximumRedeemPerOrder',
-          'returnWindowDays', 'welcomeBonusCoins', 'rewardCoinsPerDeliveredOrder', 'crazyDealsDuration', 'featuredCollectionDuration', 'newArrivalsDuration',
-          'codChargeAmount', 'prepaidDiscountAmount'
+          'commission', 'gstPercentage',
+          'returnWindowDays', 'welcomeBonusCoins', 'crazyDealsDuration', 'featuredCollectionDuration', 'newArrivalsDuration',
+          'codChargeAmount', 'prepaidDiscountAmount',
+          'referralRewardPerOrder', 'orderRewardPercentage', 'orderRewardMaxCap', 'walletRedemptionPercentage'
         ].includes(f)) {
           config[f] = Number(req.body[f]);
-        } else if (['coinConversionEnabled', 'rewardCoinsEnabled', 'marqueeEnabled', 'walletEnabled', 'showCrazyDealsTimer', 'showFeaturedCollectionTimer', 'showNewArrivalsTimer', 'codChargeEnabled', 'prepaidDiscountEnabled', 'welcomeBonusEnabled'].includes(f)) {
+        } else if (['rewardCoinsEnabled', 'marqueeEnabled', 'walletEnabled', 'referralEnabled', 'showCrazyDealsTimer', 'showFeaturedCollectionTimer', 'showNewArrivalsTimer', 'codChargeEnabled', 'prepaidDiscountEnabled', 'welcomeBonusEnabled'].includes(f)) {
           config[f] = req.body[f] === true || req.body[f] === 'true';
         } else {
           config[f] = req.body[f];

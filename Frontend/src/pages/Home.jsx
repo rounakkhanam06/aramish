@@ -643,7 +643,7 @@ export default function Home() {
           >
             <span className="animate-pulse">🎁</span>
             <p className="text-[11px] md:text-sm font-black tracking-wide">
-              Refer friends and Earn <span className="text-amber-300 font-extrabold">{systemSettings?.referralCoinsPerReferral || 200} coins</span> on successful download of our mobile application!
+              Refer friends and Earn <span className="text-amber-300 font-extrabold">{systemSettings?.referralRewardPerOrder ?? 200} coins</span> on every successful order they place!
             </p>
             <span className="animate-pulse">🎁</span>
           </div>

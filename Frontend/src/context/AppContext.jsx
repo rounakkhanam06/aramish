@@ -70,7 +70,8 @@ export const AppProvider = ({ children }) => {
           });
           const data = await res.json();
           if (data.success) {
-            setCoins(data.coins || 0);
+            // Single combined wallet balance, as calculated by the backend
+            setCoins(data.walletBalance || 0);
           }
         } catch (err) {
           console.error("Error fetching user coins on load/login:", err);
@@ -202,10 +203,7 @@ export const AppProvider = ({ children }) => {
 
   const [systemSettings, setSystemSettings] = useState({
     commission: 15,
-    gstPercentage: 18,
-    coinsPerRupee: 100,
-    minimumRedeemCoins: 500,
-    maximumRedeemPerOrder: 10000
+    gstPercentage: 18
   });
 
   useEffect(() => {

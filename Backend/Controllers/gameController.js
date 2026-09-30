@@ -3,7 +3,6 @@ const UserGameProgress = require('../Models/UserGameProgress');
 const User = require('../Models/User');
 const DailyPlayCount = require('../Models/DailyPlayCount');
 const GamePlayLogModel = require('../Models/GamePlayLog');
-const CoinTransaction = require('../Models/CoinTransaction');
 
 // Helper to get formatted date string (YYYY-MM-DD)
 const getTodayDateString = () => {
@@ -211,16 +210,16 @@ const recordPlay = async (req, res) => {
         pointsAwarded = game.rewardPoints;
 
         if (pointsAwarded > 0) {
-          await User.findByIdAndUpdate(userId, { $inc: { referralCoins: pointsAwarded } });
-          progress.totalPointsEarned += pointsAwarded;
-
-          // Log transaction
-          await CoinTransaction.create({
+          // Credited to the single combined wallet (with its ledger entry)
+          const { creditWalletStandalone } = require('../utils/walletService');
+          await creditWalletStandalone({
             userId,
-            type: 'earned',
-            title: `Game Streak Reward (${game.name})`,
-            amount: pointsAwarded
+            amount: pointsAwarded,
+            type: 'GAME_REWARD',
+            source: 'GAME_REWARD',
+            description: `Game Streak Reward (${game.name})`
           });
+          progress.totalPointsEarned += pointsAwarded;
         }
 
         progress.completedCycles += 1;

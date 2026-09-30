@@ -9,28 +9,18 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 export default function WalletPage() {
   const navigate = useNavigate();
   const { user } = useApp();
-  const [coins, setCoins] = useState(0);
+  // All values come from the backend — nothing is calculated here.
+  // Main Wallet = coins (welcome/referral/order rewards); Refund Wallet = actual refunded money.
   const [walletBalance, setWalletBalance] = useState(0);
-  const [welcomeBonusRemaining, setWelcomeBonusRemaining] = useState(0);
-  const [coinTransactions, setCoinTransactions] = useState([]);
-  const [walletTransactions, setWalletTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  
-  // Coin Conversion settings
-  const [config, setConfig] = useState({
-    coinConversionEnabled: true,
-    coinsPerRupee: 100,
-    minimumRedeemCoins: 500,
-    maximumRedeemPerOrder: 10000
-  });
-
-  // Redemption state
-  const [redeemAmount, setRedeemAmount] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [historyTab, setHistoryTab] = useState('cash'); // default to cash/wallet transactions
-  const [refreshing, setRefreshing] = useState(false);
-
+  const [availableBalance, setAvailableBalance] = useState(0);
   const [lockedRewardCoins, setLockedRewardCoins] = useState(0);
+  const [redemptionPercentage, setRedemptionPercentage] = useState(null);
+  const [walletTransactions, setWalletTransactions] = useState([]);
+  const [refundWalletBalance, setRefundWalletBalance] = useState(0);
+  const [refundWalletTransactions, setRefundWalletTransactions] = useState([]);
+  const [historyTab, setHistoryTab] = useState('MAIN');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchWalletDetails = async () => {
     const token = localStorage.getItem('userToken');
@@ -45,19 +35,13 @@ export default function WalletPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setCoins(data.coins || 0);
         setWalletBalance(data.walletBalance || 0);
+        setAvailableBalance(data.availableWalletBalance || 0);
         setLockedRewardCoins(data.lockedRewardCoins || 0);
-        setWelcomeBonusRemaining(data.welcomeBonusRemaining || 0);
-        setCoinTransactions(data.coinTransactions || []);
+        setRedemptionPercentage(data.walletRedemptionPercentage ?? null);
         setWalletTransactions(data.walletTransactions || []);
-      }
-
-      // Fetch conversion configurations (Public Settings API)
-      const settingsRes = await fetch(`${API_BASE}/admin/settings`);
-      const settingsData = await settingsRes.json();
-      if (settingsData.success && settingsData.settings) {
-        setConfig(settingsData.settings);
+        setRefundWalletBalance(data.refundWalletBalance || 0);
+        setRefundWalletTransactions(data.refundWalletTransactions || []);
       }
     } catch (err) {
       console.error('Wallet fetch error:', err);
@@ -83,26 +67,25 @@ export default function WalletPage() {
     fetchWalletDetails();
   }, [user]);
 
-  const handleRedeem = async (e) => {
-    e.preventDefault();
+  const TX_LABELS = {
+    WELCOME_BONUS: 'Welcome Bonus',
+    REFERRAL_REWARD: 'Referral Reward',
+    ORDER_REWARD: 'Order Reward',
+    ORDER_REDEMPTION: 'Used on Order',
+    GAME_REWARD: 'Game Reward',
+    REFUND: 'Refund'
   };
-
-  const handleAddTestCoins = async () => {
-    const token = localStorage.getItem('userToken');
-    if (!token) return;
-    try {
-      const res = await fetch(`${API_BASE}/auth/wallet/test-coins`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast.success("1000 Test Coins added!");
-        fetchWalletDetails();
-      }
-    } catch (err) {
-      console.error(err);
-    }
+  const REFUND_WALLET_LABELS = {
+    REFUND_WALLET_CREDIT: 'Refund Credited',
+    REFUND_WALLET_DEBIT: 'Used on Order',
+    REFUND_WALLET_RESTORE: 'Credited Back (Order Cancelled/Returned)',
+    REFUND_WALLET_PARTIAL_REFUND: 'Partial Refund'
+  };
+  const txLabel = (tx) => {
+    if (REFUND_WALLET_LABELS[tx.type]) return REFUND_WALLET_LABELS[tx.type];
+    if (tx.type === 'ORDER_REWARD_REDUCE') return 'Order Reward Withdrawn';
+    if (tx.type === 'REFERRAL_REWARD_REVERSAL') return 'Referral Reward Withdrawn';
+    return TX_LABELS[tx.source] || tx.type;
   };
 
   const formatTxDate = (dateString) => {
@@ -161,13 +144,13 @@ export default function WalletPage() {
               <div className="w-12 h-12 bg-surface/15 rounded-full flex items-center justify-center mb-3 border border-white/20 shadow-inner">
                 <Coins className="w-6 h-6 text-amber-300 animate-pulse" />
               </div>
-              <p className="text-indigo-200 text-[10px] font-bold tracking-wider uppercase mb-1">Total Wallet Balance</p>
+              <p className="text-indigo-200 text-[10px] font-bold tracking-wider uppercase mb-1">Main Wallet / Coins</p>
               <h2 className="text-3xl font-black tracking-tight">₹{walletBalance.toFixed(2)}</h2>
               
               <div className="mt-3 pt-3 border-t border-white/10 w-full flex items-center justify-around gap-2 text-xs">
                 <div className="flex flex-col items-center">
                   <span className="text-[10px] text-emerald-300 font-semibold uppercase">Available to Spend</span>
-                  <span className="text-sm font-extrabold text-emerald-200">₹{Math.max(0, walletBalance - lockedRewardCoins).toFixed(2)}</span>
+                  <span className="text-sm font-extrabold text-emerald-200">₹{Number(availableBalance).toFixed(2)}</span>
                 </div>
                 {lockedRewardCoins > 0 && (
                   <div className="flex flex-col items-center border-l border-white/10 pl-4">
@@ -178,9 +161,11 @@ export default function WalletPage() {
               </div>
 
               <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
-                <span className="text-[10px] text-indigo-300 font-semibold bg-white/10 px-3 py-1 rounded-full border border-white/5">
-                  Welcome points remaining: ₹{welcomeBonusRemaining.toFixed(2)}
-                </span>
+                {redemptionPercentage !== null && (
+                  <span className="text-[10px] text-indigo-300 font-semibold bg-white/10 px-3 py-1 rounded-full border border-white/5">
+                    Use up to {redemptionPercentage}% of the product value on each order
+                  </span>
+                )}
                 {lockedRewardCoins > 0 && (
                   <span className="text-[10px] text-amber-300 font-semibold bg-amber-500/20 px-3 py-1 rounded-full border border-amber-400/30">
                     🔒 Locked until return window closes
@@ -190,34 +175,57 @@ export default function WalletPage() {
             </div>
           </div>
 
+          {/* Refund Wallet Card — actual refunded money, kept separate from coins */}
+          <div className="bg-gradient-to-br from-sky-700 to-cyan-900 rounded-[24px] p-6 text-white shadow-lg relative overflow-hidden">
+            <div className="relative z-10 flex flex-col items-center text-center">
+              <div className="w-12 h-12 bg-surface/15 rounded-full flex items-center justify-center mb-3 border border-white/20 shadow-inner">
+                <Landmark className="w-6 h-6 text-cyan-200" />
+              </div>
+              <p className="text-cyan-100 text-[10px] font-bold tracking-wider uppercase mb-1">Refund Wallet</p>
+              <h2 className="text-3xl font-black tracking-tight">₹{Number(refundWalletBalance).toFixed(2)}</h2>
+              <span className="mt-3 text-[10px] text-cyan-100 font-semibold bg-white/10 px-3 py-1 rounded-full border border-white/5">
+                Your refunded money — usable up to 100% on any order
+              </span>
+            </div>
+          </div>
 
             </div>
 
             {/* Right Column (History Section) */}
             <div className="md:col-span-5 space-y-3">
-              <div className="flex border-b border-white/10 pb-3">
-                <h3 className="text-xs font-black uppercase tracking-wider text-[#02006c]">
-                  Wallet Transactions History
-                </h3>
+              <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+                {[
+                  { key: 'MAIN', label: 'Coins History' },
+                  { key: 'REFUND', label: 'Refund Wallet History' }
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setHistoryTab(tab.key)}
+                    className={`text-[11px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full transition-colors cursor-pointer ${
+                      historyTab === tab.key ? 'bg-[#02006c] text-white' : 'text-[#02006c] hover:bg-slate-100'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
 
-            {walletTransactions.length === 0 ? (
+            {(historyTab === 'REFUND' ? refundWalletTransactions : walletTransactions).length === 0 ? (
               <div className="bg-surface rounded-xl shadow-sm border border-white/10 p-8 text-center text-slate-400">
                 <Clock className="w-8 h-8 text-slate-200 mx-auto mb-2" />
                 <p className="text-xs font-bold">No transactions yet.</p>
               </div>
             ) : (
               <div className="bg-surface rounded-xl shadow-sm border border-white/10 overflow-hidden">
-                {walletTransactions.map((tx, idx) => {
-                  const isCredit = ['Refund', 'Redemption', 'Order Cancellation', 'Welcome Bonus', 'REFUND', 'ORDER_REWARD'].includes(tx.type) && tx.amount > 0;
+                {(historyTab === 'REFUND' ? refundWalletTransactions : walletTransactions).map((tx, idx, list) => {
+                  const isCredit = tx.direction === 'credit';
                   const TxIcon = isCredit ? ArrowDownLeft : ArrowUpRight;
-                  
-                  const isLocked = tx.type === 'ORDER_REWARD' && tx.unlocksAt && new Date() < new Date(tx.unlocksAt);
+                  const isLocked = tx.isLocked;
 
                   return (
-                    <div 
-                      key={tx.id} 
-                      className={`flex items-start justify-between p-4 ${idx !== walletTransactions.length - 1 ? 'border-b border-slate-100' : ''}`}
+                    <div
+                      key={tx.id}
+                      className={`flex items-start justify-between p-4 ${idx !== list.length - 1 ? 'border-b border-slate-100' : ''}`}
                     >
                       <div className="flex items-start gap-3 flex-1 min-w-0 pr-3">
                         <div className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center mt-0.5 ${isCredit ? 'bg-emerald-50 text-emerald-500' : 'bg-rose-50 text-rose-500'}`}>
@@ -226,8 +234,13 @@ export default function WalletPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-1.5 mb-1">
                             <p className="text-[13px] font-bold text-slate-800 leading-tight mr-1">
-                              {tx.type === 'ORDER_REWARD' ? 'Order Reward' : tx.type}
+                              {txLabel(tx)}
                             </p>
+                            {tx.wallet === 'REFUND' && (
+                              <span className="text-[9px] font-bold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200 shrink-0 shadow-sm">
+                                Refund Wallet
+                              </span>
+                            )}
                             {tx.orderId && (
                               <span 
                                 onClick={() => navigate(`/order/${tx.orderId}`)}
@@ -238,11 +251,15 @@ export default function WalletPage() {
                             )}
                             {isLocked ? (
                               <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 flex items-center gap-0.5 shrink-0 shadow-sm">
-                                🔒 Locked till {formatTxDate(tx.unlocksAt)}
+                                🔒 Locked{tx.unlocksAt ? ` till ${formatTxDate(tx.unlocksAt)}` : ''}
                               </span>
-                            ) : tx.type === 'ORDER_REWARD' ? (
+                            ) : tx.rewardState === 'UNLOCKED' ? (
                               <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 shrink-0 shadow-sm">
                                 ✅ Unlocked
+                              </span>
+                            ) : tx.rewardState === 'WITHDRAWN' ? (
+                              <span className="text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 shrink-0 shadow-sm">
+                                Withdrawn (order returned)
                               </span>
                             ) : null}
                           </div>
@@ -251,7 +268,7 @@ export default function WalletPage() {
                         </div>
                       </div>
                       <div className={`text-sm font-black shrink-0 ${isCredit ? 'text-emerald-500' : 'text-rose-500'}`}>
-                        {isCredit ? '+' : '-'}₹{Math.abs(tx.amount).toFixed(2)}
+                        {isCredit ? '+' : '-'}₹{Number(tx.amount).toFixed(2)}
                       </div>
                     </div>
                   );

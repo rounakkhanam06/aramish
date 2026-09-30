@@ -1,6 +1,5 @@
 const User = require('../Models/User');
 const Referral = require('../Models/Referral');
-const CoinTransaction = require('../Models/CoinTransaction');
 const Order = require('../Models/Order');
 
 // Helper: generate unique 8-char code from user's name/phone
@@ -69,18 +68,19 @@ const getMyReferral = async (req, res) => {
       .populate('referee', 'name phone createdAt')
       .sort({ createdAt: -1 });
 
-    const SystemConfig = require('../Models/SystemConfig');
-    const systemConfig = await SystemConfig.findOne({});
-    const coinsPerReferral = systemConfig && systemConfig.referralCoinsReferrer !== undefined ? systemConfig.referralCoinsReferrer : 100;
-    const maxUsagePercentage = systemConfig && systemConfig.referralWalletMaxUsagePercentage !== undefined ? systemConfig.referralWalletMaxUsagePercentage : 25;
-    
+    const { getWalletConfig, roundMoney } = require('../utils/walletService');
+    const walletConfig = await getWalletConfig();
+
     const stats = {
       totalReferrals: referrals.length,
-      pendingReferrals: referrals.filter(r => r.status === 'pending').length,
-      completedReferrals: referrals.filter(r => r.status !== 'pending').length,
-      totalCoinsEarned: user.referralCoins || 0,
-      coinsPerReferral,
-      maxUsagePercentage
+      pendingReferrals: referrals.filter(r => !(r.successfulOrders > 0) && r.status === 'pending').length,
+      completedReferrals: referrals.filter(r => r.successfulOrders > 0 || r.status !== 'pending').length,
+      successfulOrders: referrals.reduce((sum, r) => sum + (r.successfulOrders || 0), 0),
+      // Coins earned from referrals — already part of the single wallet balance
+      totalCoinsEarned: roundMoney(referrals.reduce((sum, r) => sum + (r.referrerCoinsAwarded || 0), 0)),
+      coinsPerOrder: walletConfig.referralRewardPerOrder,
+      coinsPerReferral: walletConfig.referralRewardPerOrder, // legacy key for older app builds
+      maxUsagePercentage: walletConfig.walletRedemptionPercentage
     };
 
     let referredByInfo = null;
@@ -93,8 +93,7 @@ const getMyReferral = async (req, res) => {
           name: referrerUser.name || 'Friend',
           phone: referrerUser.phone ? `${referrerUser.phone.slice(0, 2)}******${referrerUser.phone.slice(-2)}` : '',
           code: referralRecord?.referralCode || referrerUser.referralCode || '',
-          status: referralRecord?.status || 'rewarded',
-          coinsAwarded: referralRecord?.refereeCoinsAwarded || 0,
+          status: referralRecord?.status || 'pending',
           createdAt: referralRecord?.createdAt || null
         };
       }
@@ -105,7 +104,6 @@ const getMyReferral = async (req, res) => {
     res.status(200).json({
       success: true,
       referralCode: user.referralCode,
-      referralCoins: user.referralCoins || 0,
       hasAppliedCode: !!user.referredBy,
       hasOrdered,
       referredBy: referredByInfo,
@@ -115,6 +113,7 @@ const getMyReferral = async (req, res) => {
         referee: r.referee ? { name: r.referee.name || 'New User', phone: r.referee.phone } : null,
         status: r.status,
         coinsEarned: r.referrerCoinsAwarded,
+        successfulOrders: r.successfulOrders || 0,
         createdAt: r.createdAt,
         completedAt: r.completedAt
       }))
@@ -125,113 +124,22 @@ const getMyReferral = async (req, res) => {
   }
 };
 
-// Helper: credit referral coins to both sides, log transactions, and notify.
-// Shared by the instant "reward on signup" path and the "reward on first order" path
-// so both timing modes go through the exact same crediting code.
-const creditReferralCoins = async ({ referrerId, refereeId, referrerCoins, refereeCoins, refereeDisplayName, referralCode, instant }) => {
-  if (referrerCoins > 0) {
-    await User.findByIdAndUpdate(referrerId, { $inc: { referralCoins: referrerCoins } });
-    await CoinTransaction.create({
-      userId: referrerId,
-      type: 'earned',
-      title: `Referral Reward (Invited ${refereeDisplayName})`,
-      amount: referrerCoins
-    });
-  }
-
-  if (refereeCoins > 0) {
-    await User.findByIdAndUpdate(refereeId, { $inc: { referralCoins: refereeCoins } });
-    await CoinTransaction.create({
-      userId: refereeId,
-      type: 'earned',
-      title: `Referral Reward (Signed up with code ${referralCode})`,
-      amount: refereeCoins
-    });
-  }
-
-  try {
-    const Notification = require('../Models/Notification');
-    const { sendNotificationToUser } = require('../Router/firebaseAdmin');
-
-    if (referrerCoins > 0) {
-      const referrerNotif = new Notification({
-        title: 'Referral Reward Credited! 🎉',
-        body: instant
-          ? `Your friend ${refereeDisplayName} joined using your code. You earned ${referrerCoins} coins!`
-          : `Your friend ${refereeDisplayName} placed their first order. You earned ${referrerCoins} coins!`,
-        target: 'Selected Users',
-        targetUserIds: [referrerId],
-        status: 'Delivered'
-      });
-      await referrerNotif.save();
-      await sendNotificationToUser(referrerId, { title: referrerNotif.title, body: referrerNotif.body });
-    }
-
-    if (refereeCoins > 0) {
-      const refereeNotif = new Notification({
-        title: 'Welcome Reward Credited! 🎁',
-        body: `You joined using code ${referralCode}. You earned ${refereeCoins} welcome coins!`,
-        target: 'Selected Users',
-        targetUserIds: [refereeId],
-        status: 'Delivered'
-      });
-      await refereeNotif.save();
-      await sendNotificationToUser(refereeId, { title: refereeNotif.title, body: refereeNotif.body });
-    }
-  } catch (notifErr) {
-    console.error('Error sending referral notifications:', notifErr.message);
-  }
-};
-
-// Helper: create the referral link between referrer and referee, honoring the admin's
-// chosen reward timing (instant at signup, or deferred to the referee's first order).
-// Used by both the OTP-signup flow and the standalone "apply code" endpoint so behavior
-// is identical no matter how the code was submitted. Caller is responsible for setting
-// `referee.referredBy` and saving the referee document — this only creates the Referral
-// record and (for instant timing) credits the coins.
-// Returns the reward timing that was applied ('signup' | 'first_order'), or null if a
-// referral between this pair already exists (one-time assignment guard).
+// Helper: create the referral link between referrer and referee. No coins are credited
+// here — the referrer earns the configured reward for EVERY successful (delivered) order of
+// the referee, credited by walletService.creditReferralReward. Used by both the OTP-signup
+// flow and the standalone "apply code" endpoint. Caller sets `referee.referredBy` and saves
+// the referee. Returns true when a new link was created, false if one already existed.
 const registerReferral = async (referrer, referee) => {
   const existing = await Referral.findOne({ referrer: referrer._id, referee: referee._id });
-  if (existing) return null;
+  if (existing) return false;
 
-  const SystemConfig = require('../Models/SystemConfig');
-  const config = await SystemConfig.findOne({});
-  const rewardTiming = config && config.referralRewardTiming === 'signup' ? 'signup' : 'first_order';
-  const referrerCoins = config && config.referralCoinsReferrer !== undefined ? config.referralCoinsReferrer : 100;
-  const refereeCoins = config && config.referralCoinsReferee !== undefined ? config.referralCoinsReferee : 100;
-
-  if (rewardTiming === 'signup') {
-    await Referral.create({
-      referrer: referrer._id,
-      referee: referee._id,
-      referralCode: referrer.referralCode,
-      status: 'rewarded',
-      completedAt: new Date(),
-      referrerCoinsAwarded: referrerCoins,
-      refereeCoinsAwarded: refereeCoins
-    });
-
-    await creditReferralCoins({
-      referrerId: referrer._id,
-      refereeId: referee._id,
-      referrerCoins,
-      refereeCoins,
-      refereeDisplayName: referee.name || referee.phone,
-      referralCode: referrer.referralCode,
-      instant: true
-    });
-  } else {
-    // Reward deferred — coins are credited later by completeReferral() on first delivered order
-    await Referral.create({
-      referrer: referrer._id,
-      referee: referee._id,
-      referralCode: referrer.referralCode,
-      status: 'pending'
-    });
-  }
-
-  return rewardTiming;
+  await Referral.create({
+    referrer: referrer._id,
+    referee: referee._id,
+    referralCode: referrer.referralCode,
+    status: 'pending'
+  });
+  return true;
 };
 
 // @desc    Apply a referral code (called during/after signup)
@@ -258,8 +166,8 @@ const applyReferralCode = async (req, res) => {
       return res.status(400).json({ success: false, message: error });
     }
 
-    const rewardTiming = await registerReferral(referrer, referee);
-    if (!rewardTiming) {
+    const created = await registerReferral(referrer, referee);
+    if (!created) {
       return res.status(400).json({ success: false, message: 'This referral has already been registered' });
     }
 
@@ -270,58 +178,11 @@ const applyReferralCode = async (req, res) => {
       success: true,
       referrerName: referrer.name || 'Friend',
       referrerCode: referrer.referralCode,
-      message: rewardTiming === 'signup'
-        ? `Referral code applied! You were referred by ${referrer.name || 'a friend'}. Coins credited!`
-        : `Referral code applied! You were referred by ${referrer.name || 'a friend'}. Coins will be credited after your first order.`
+      message: `Referral code applied! You were referred by ${referrer.name || 'a friend'}.`
     });
   } catch (error) {
     console.error('Apply Referral Error:', error);
     res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// @desc    Complete referral & award coins (called when first order placed)
-// @route   POST /api/referral/complete
-// @access  Private (User) — called internally
-const completeReferral = async (userId, referrerCoins = 100, refereeCoins = 100) => {
-  try {
-    const user = await User.findById(userId);
-    if (!user || !user.referredBy) return;
-
-    // Load actual config to get latest values
-    const SystemConfig = require('../Models/SystemConfig');
-    const config = await SystemConfig.findOne({});
-    const finalReferrerCoins = config && config.referralCoinsReferrer !== undefined ? config.referralCoinsReferrer : referrerCoins;
-    const finalRefereeCoins = config && config.referralCoinsReferee !== undefined ? config.referralCoinsReferee : refereeCoins;
-
-    // Atomically claim the pending referral so concurrent/duplicate calls (e.g. retried
-    // webhooks) can never credit the same referral twice. Referrals already rewarded at
-    // signup (rewardTiming: 'signup') are not 'pending', so this is a no-op for them.
-    const referral = await Referral.findOneAndUpdate(
-      { referee: userId, status: 'pending' },
-      {
-        $set: {
-          status: 'rewarded',
-          completedAt: new Date(),
-          referrerCoinsAwarded: finalReferrerCoins,
-          refereeCoinsAwarded: finalRefereeCoins
-        }
-      }
-    );
-    // findOneAndUpdate returns the pre-update doc; null means it was already claimed or never existed
-    if (!referral) return;
-
-    await creditReferralCoins({
-      referrerId: referral.referrer,
-      refereeId: userId,
-      referrerCoins: finalReferrerCoins,
-      refereeCoins: finalRefereeCoins,
-      refereeDisplayName: user.name || user.phone,
-      referralCode: referral.referralCode,
-      instant: false
-    });
-  } catch (err) {
-    console.error('Complete Referral Error:', err);
   }
 };
 
@@ -341,7 +202,7 @@ const adminGetAllReferrals = async (req, res) => {
 
     const [referrals, total] = await Promise.all([
       Referral.find(query)
-        .populate('referrer', 'name phone referralCode referralCoins')
+        .populate('referrer', 'name phone referralCode walletBalance')
         .populate('referee', 'name phone createdAt')
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -353,14 +214,16 @@ const adminGetAllReferrals = async (req, res) => {
       { $group: {
         _id: '$status',
         count: { $sum: 1 },
-        totalCoins: { $sum: '$referrerCoinsAwarded' }
+        totalCoins: { $sum: '$referrerCoinsAwarded' },
+        successfulOrders: { $sum: { $ifNull: ['$successfulOrders', 0] } }
       }}
     ]);
 
-    const statsMap = { pending: 0, completed: 0, rewarded: 0, totalCoins: 0 };
+    const statsMap = { pending: 0, completed: 0, rewarded: 0, totalCoins: 0, successfulOrders: 0 };
     stats.forEach(s => {
       statsMap[s._id] = s.count;
       statsMap.totalCoins += s.totalCoins;
+      statsMap.successfulOrders += s.successfulOrders;
     });
     statsMap.total = total;
 
@@ -381,20 +244,13 @@ const adminGetAllReferrals = async (req, res) => {
 // @access  Private (Admin)
 const getConfig = async (req, res) => {
   try {
-    const SystemConfig = require('../Models/SystemConfig');
-    let config = await SystemConfig.findOne({});
-    if (!config) {
-      config = await new SystemConfig().save();
-    }
+    const { getWalletConfig } = require('../utils/walletService');
+    const config = await getWalletConfig();
     res.status(200).json({
       success: true,
       config: {
-        referralCoinsPerReferral: config.referralCoinsPerReferral || 100,
-        referralCoinsReferrer: config.referralCoinsReferrer !== undefined ? config.referralCoinsReferrer : (config.referralCoinsPerReferral || 100),
-        referralCoinsReferee: config.referralCoinsReferee !== undefined ? config.referralCoinsReferee : (config.referralCoinsPerReferral || 100),
-        referralEnabled: config.referralEnabled !== false,
-        referralWalletMaxUsagePercentage: config.referralWalletMaxUsagePercentage !== undefined ? config.referralWalletMaxUsagePercentage : 25,
-        referralRewardTiming: config.referralRewardTiming === 'signup' ? 'signup' : 'first_order'
+        referralEnabled: config.referralEnabled,
+        referralRewardPerOrder: config.referralRewardPerOrder
       }
     });
   } catch (error) {
@@ -407,20 +263,26 @@ const getConfig = async (req, res) => {
 // @access  Private (Admin)
 const updateConfig = async (req, res) => {
   try {
-    const { referralCoinsPerReferral, referralCoinsReferrer, referralCoinsReferee, referralEnabled, referralWalletMaxUsagePercentage, referralRewardTiming } = req.body;
+    const { referralEnabled, referralRewardPerOrder } = req.body;
     const SystemConfig = require('../Models/SystemConfig');
     let config = await SystemConfig.findOne({});
     if (!config) config = new SystemConfig();
 
-    if (referralCoinsPerReferral !== undefined) config.referralCoinsPerReferral = Number(referralCoinsPerReferral);
-    if (referralCoinsReferrer !== undefined) config.referralCoinsReferrer = Number(referralCoinsReferrer);
-    if (referralCoinsReferee !== undefined) config.referralCoinsReferee = Number(referralCoinsReferee);
-    if (referralEnabled !== undefined) config.referralEnabled = referralEnabled;
-    if (referralWalletMaxUsagePercentage !== undefined) config.referralWalletMaxUsagePercentage = Number(referralWalletMaxUsagePercentage);
-    if (referralRewardTiming !== undefined) config.referralRewardTiming = referralRewardTiming === 'signup' ? 'signup' : 'first_order';
+    if (referralRewardPerOrder !== undefined) {
+      const amount = Number(referralRewardPerOrder);
+      if (referralRewardPerOrder === '' || referralRewardPerOrder === null || !Number.isFinite(amount) || amount < 0 || !Number.isInteger(amount)) {
+        return res.status(400).json({ success: false, message: 'Referral reward per order must be a whole number of coins (0 or more)' });
+      }
+      config.referralRewardPerOrder = amount;
+    }
+    if (referralEnabled !== undefined) config.referralEnabled = referralEnabled === true || referralEnabled === 'true';
 
     await config.save();
-    res.status(200).json({ success: true, message: 'Referral config updated', config });
+    res.status(200).json({
+      success: true,
+      message: 'Referral config updated',
+      config: { referralEnabled: config.referralEnabled, referralRewardPerOrder: config.referralRewardPerOrder }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -429,7 +291,7 @@ const updateConfig = async (req, res) => {
 module.exports = {
   getMyReferral,
   applyReferralCode,
-  completeReferral,
+  registerReferral,
   validateReferralCode,
   adminGetAllReferrals,
   getConfig,

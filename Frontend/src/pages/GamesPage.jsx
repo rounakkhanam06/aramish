@@ -29,7 +29,7 @@ const GAME_ASSETS = {
 
 export default function GamesPage() {
   const navigate = useNavigate();
-  const { coins, addCoins, user } = useApp();
+  const { coins, addCoins, user, systemSettings } = useApp();
   
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -119,11 +119,8 @@ export default function GamesPage() {
     try {
       const token = localStorage.getItem('userToken');
       if (!token) {
-        // Fallback for guest play
-        if (scoreAmount > 0) {
-          addCoins(scoreAmount);
-          toast.success(`You won ${scoreAmount} Coins! Log in to save streak progress.`);
-        }
+        // Guests have no wallet — coins are only ever credited by the backend
+        toast.success('Log in to save your streak progress and earn wallet coins.');
         return;
       }
       const res = await fetch(`${API_BASE}/games/play`, {
@@ -138,7 +135,7 @@ export default function GamesPage() {
       if (data.success) {
         if (data.pointsAwarded > 0) {
           toast.success(`🎉 Streak Completed! You won ${data.pointsAwarded} Coins!`, { duration: 5000 });
-          addCoins(data.pointsAwarded);
+          addCoins(data.pointsAwarded); // mirrors the amount the backend just credited to the wallet
         } else if (data.cycleCompleted) {
           toast.success('Streak Cycle Completed! Rules limits met.');
         } else {
@@ -150,10 +147,7 @@ export default function GamesPage() {
       }
     } catch (err) {
       console.error('Failed to record game play', err);
-      // Fail-safe fallback if API is offline
-      if (scoreAmount > 0) {
-        addCoins(scoreAmount);
-      }
+      toast.error('Could not record this game play. Please check your connection.');
     }
   };
 
@@ -423,7 +417,7 @@ export default function GamesPage() {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-lg font-black text-[#071226]">Invite Friends</h3>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">Share & earn 100 coins per invite</p>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">Earn {systemSettings?.referralRewardPerOrder ?? 200} coins for every order your friends complete</p>
               </div>
               <button
                 onClick={() => setShowShareModal(false)}

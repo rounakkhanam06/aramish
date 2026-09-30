@@ -837,17 +837,18 @@ export default function ProductDetailsPage() {
           </div>
 
           {/* Reward Coins Offer Banner */}
-          {systemSettings?.rewardCoinsEnabled !== false && (systemSettings?.rewardCoinsPerDeliveredOrder ?? 100) > 0 && (
+          {systemSettings?.walletEnabled !== false && systemSettings?.rewardCoinsEnabled !== false && (systemSettings?.orderRewardPercentage ?? 0) > 0 && (
             <div className="bg-gradient-to-r from-amber-500/10 via-amber-400/15 to-amber-500/10 border border-amber-300/50 rounded-2xl p-3.5 flex items-center gap-3 text-amber-900 shadow-3xs my-2">
               <div className="w-9 h-9 rounded-full bg-amber-500/20 border border-amber-400/30 flex items-center justify-center flex-shrink-0 shadow-inner">
                 <Coins className="w-5 h-5 text-amber-600 animate-bounce" />
               </div>
               <div className="text-xs leading-tight">
                 <p className="font-black text-amber-900 flex items-center gap-1.5 text-xs">
-                  Earn {systemSettings?.rewardCoinsPerDeliveredOrder ?? 100} Aramish Coins! 🪙
+                  Earn {systemSettings.orderRewardPercentage}% back in Aramish Coins! 🪙
                 </p>
                 <p className="text-amber-800/90 text-[11px] font-semibold mt-0.5">
-                  Buy this item & get <span className="font-extrabold text-amber-950">₹{systemSettings?.rewardCoinsPerDeliveredOrder ?? 100} Coins credited to your wallet</span> upon delivery. Use it for your next order!
+                  Get <span className="font-extrabold text-amber-950">{systemSettings.orderRewardPercentage}% of the price as coins</span>
+                  {(systemSettings?.orderRewardMaxCap ?? 0) > 0 && <> (up to {systemSettings.orderRewardMaxCap} coins per order)</>} in your wallet after delivery. Usable once the return window closes.
                 </p>
               </div>
             </div>

@@ -60,11 +60,18 @@ const userSchema = new mongoose.Schema({
     unique: true,
     sparse: true
   },
-  referralCoins: {
+  // Single combined coin wallet (welcome bonus + referral rewards + order rewards).
+  // Only ever modified through utils/walletService.js, which writes a WalletTransaction
+  // for every change. Locked (in-return-window) reward coins are included here and
+  // excluded from the spendable amount by walletService.getWalletSummary().
+  walletBalance: {
     type: Number,
     default: 0
   },
-  walletBalance: {
+  // Refund Wallet: the customer's actual refunded MONEY (not coins). Kept completely separate
+  // from walletBalance, has no redemption % limit, and is returned to this wallet if an
+  // order paid with it is cancelled/returned. Also only modified through walletService.
+  refundWalletBalance: {
     type: Number,
     default: 0
   },
@@ -75,10 +82,6 @@ const userSchema = new mongoose.Schema({
   welcomeBonusDate: {
     type: Date,
     default: null
-  },
-  welcomeBonusRemaining: {
-    type: Number,
-    default: 0
   },
   referredBy: {
     type: mongoose.Schema.Types.ObjectId,
