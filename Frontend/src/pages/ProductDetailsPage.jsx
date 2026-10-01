@@ -714,7 +714,7 @@ export default function ProductDetailsPage() {
                 {product.brandName}
               </span>
               {(activeVariant?.sku || product.sku) && (
-                <span className="text-[11px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200/60">
+                <span className="text-[11px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200/60 select-text cursor-text">
                   SKU: {activeVariant?.sku || product.sku}
                 </span>
               )}
@@ -1085,7 +1085,7 @@ export default function ProductDetailsPage() {
                               return validSpecs.map(([key, val], idx) => (
                                 <div key={`${key}-${idx}`} className="flex flex-col border-b border-white/10 pb-1">
                                   <span className="text-[11px] text-slate-400 mb-0.5 capitalize font-extrabold">{key}</span>
-                                  <span className="text-xs font-bold text-slate-800">{val}</span>
+                                  <span className="text-xs font-bold text-slate-800 select-text cursor-text">{val}</span>
                                 </div>
                               ));
                             } else {
