@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { getImageUrl } from '../../utils/imageHelper';
-import { Image } from 'lucide-react';
 
 /**
  * OptimizedImage – A reusable image component with:
@@ -96,18 +95,16 @@ export default function OptimizedImage({
     if (type === 'product') {
       return (
         <div
-          className={`flex flex-col items-center justify-center text-slate-350 bg-surface border border-white/10 rounded-xl ${className}`}
-          style={{
-            width: '100%',
-            height: '100%',
-            aspectRatio: '1/1',
-            ...style,
-          }}
-          aria-label={alt}
+          className={`relative overflow-hidden bg-surface ${className}`}
+          style={style}
           {...props}
         >
-          <Image className="w-6 h-6 stroke-[1.5]" />
-          <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 mt-1">No Image</span>
+          <img
+            src="/no-image-available.svg"
+            alt={alt}
+            className="w-full h-full"
+            style={{ objectFit: 'contain', objectPosition: 'center' }}
+          />
         </div>
       );
     }

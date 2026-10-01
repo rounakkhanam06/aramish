@@ -37,6 +37,18 @@ export default function OptimizedImage({
   const fallback = FALLBACK_GRADIENTS[type] || FALLBACK_GRADIENTS.default;
 
   if (error || !resolvedSrc) {
+    if (type === 'product') {
+      return (
+        <img
+          src="/no-image-available.svg"
+          alt={alt}
+          className={className}
+          style={{ objectFit: 'contain', ...style }}
+          {...props}
+        />
+      );
+    }
+
     return (
       <div
         className={className}

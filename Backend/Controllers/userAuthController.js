@@ -105,16 +105,16 @@ const sendOtp = async (req, res) => {
           .replace(/\$\{otp\}|\{otp\}/g, otp);
         const encodedMsg = encodeURIComponent(message);
 
-        let smsUrl = `${rawUrl}?APIKey=${apiKey}&msisdn=91${phone}&sid=${senderId}&msg=${encodedMsg}&fl=0&gwid=${gwid}`;
-        let maskedUrl = `${rawUrl}?APIKey=******&msisdn=91${phone}&sid=${senderId}&msg=${encodedMsg}&fl=0&gwid=${gwid}`;
+        let smsUrl = `${rawUrl}?APIKey=${apiKey}&senderid=${senderId}&channel=Trans&DCS=0&flashsms=0&number=91${phone}&text=${encodedMsg}&route=0`;
+        let maskedUrl = `${rawUrl}?APIKey=******&senderid=${senderId}&channel=Trans&DCS=0&flashsms=0&number=91${phone}&text=${encodedMsg}&route=0`;
 
-        if (peId) {
-          smsUrl += `&EntityId=${peId}`;
-          maskedUrl += `&EntityId=${peId}`;
-        }
         if (templateId) {
-          smsUrl += `&dlttemplateid=${templateId}`;
-          maskedUrl += `&dlttemplateid=${templateId}`;
+          smsUrl += `&DLTTemplateId=${templateId}`;
+          maskedUrl += `&DLTTemplateId=${templateId}`;
+        }
+        if (peId) {
+          smsUrl += `&PEId=${peId}`;
+          maskedUrl += `&PEId=${peId}`;
         }
 
         console.log(`📡 Sending SMS via SMS India Hub to 91${phone}...`);

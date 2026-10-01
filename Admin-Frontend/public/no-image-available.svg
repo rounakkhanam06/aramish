@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <rect width="400" height="400" fill="#f8f9fa" rx="20"/>
+  <circle cx="200" cy="200" r="110" fill="#e9ecef" />
+  <text x="200" y="80" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#495057" text-anchor="middle" letter-spacing="3">NO IMAGE</text>
+  
+  <g stroke="#495057" stroke-width="6" fill="#ced4da" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 100,240 C 100,240 100,200 130,180 C 160,160 170,160 210,190 C 240,210 260,200 280,210 C 310,225 310,240 310,240 C 310,260 270,270 200,270 C 130,270 100,260 100,240 Z" />
+    <path d="M 130,180 C 160,200 180,220 220,210" fill="none" />
+    <path d="M 150,170 L 170,195" fill="none" />
+    <path d="M 170,160 L 190,185" fill="none" />
+    <path d="M 190,160 L 210,185" fill="none" />
+    
+    <path d="M 100,240 C 100,260 140,280 200,280 C 260,280 300,270 310,240 C 310,260 270,270 200,270 C 130,270 100,260 100,240 Z" fill="#fff" />
+  </g>
+  
+  <text x="200" y="350" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#495057" text-anchor="middle" letter-spacing="3">AVAILABLE</text>
+</svg>

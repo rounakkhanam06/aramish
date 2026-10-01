@@ -570,13 +570,12 @@ const applyProductUpdate = async (req, res) => {
     console.log('[updateProduct] Final descriptionImages:', updatedDescImages);
     product.descriptionImages = updatedDescImages.map(img => getImageUrl(img)).filter(Boolean);
 
-    // Fallback: If global product has no images, but a variation does, use it
-    const hasValidImages = product.images && product.images.filter(img => img && img.trim() !== '' && img !== 'undefined').length > 0;
-    if (!hasValidImages && product.variations && product.variations.length > 0) {
+    // For variant products the main image is a copy of the first variant image (the admin form
+    // has no separate main-image gallery), so re-derive it on every save: otherwise an image
+    // removed from all variants would linger here. No variant images -> no main image.
+    if (product.variations && product.variations.length > 0) {
       const firstVarWithImg = product.variations.find(v => v.images && v.images.length > 0);
-      if (firstVarWithImg) {
-        product.images = [firstVarWithImg.images[0]];
-      }
+      product.images = firstVarWithImg ? [firstVarWithImg.images[0]] : [];
     }
 
     // Only save over the version read above: an order/return that changed stock in between
