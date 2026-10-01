@@ -3,11 +3,19 @@ const axios = require('axios');
 const SHIPROCKET_API_BASE = process.env.SHIPROCKET_API_BASE || 'https://apiv2.shiprocket.in';
 let shiprocketToken = null;
 let tokenExpiry = null;
+// After a failed login, wait before trying again. Every checkout/order asks for a token, and
+// retrying a rejected login on each one keeps adding failed attempts, which gets (and keeps)
+// the Shiprocket account blocked.
+const LOGIN_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
+let loginRetryAfter = null;
 
 const getShiprocketToken = async () => {
     try {
         if (shiprocketToken && tokenExpiry && new Date() < tokenExpiry) {
             return shiprocketToken;
+        }
+        if (loginRetryAfter && new Date() < loginRetryAfter) {
+            return null;
         }
 
         const email = process.env.SHIPROCKET_EMAIL;
@@ -27,11 +35,16 @@ const getShiprocketToken = async () => {
             shiprocketToken = response.data.token;
             // Token is usually valid for 10 days, setting it to 9 days to be safe
             tokenExpiry = new Date(new Date().getTime() + 9 * 24 * 60 * 60 * 1000);
+            loginRetryAfter = null;
             return shiprocketToken;
         }
         return null;
     } catch (error) {
         console.error('Error fetching Shiprocket token:', error.response?.data || error.message);
+        // Rejected credentials / blocked account: don't retry on every request.
+        if (error.response && [400, 401, 403].includes(error.response.status)) {
+            loginRetryAfter = new Date(Date.now() + LOGIN_RETRY_COOLDOWN_MS);
+        }
         return null;
     }
 };

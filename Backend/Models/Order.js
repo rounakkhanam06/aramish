@@ -57,7 +57,8 @@ const orderSchema = new mongoose.Schema({
   },
   paymentStatus: {
     type: String,
-    enum: ['Pending', 'Paid', 'Failed', 'Refunded', 'Partially Refunded'],
+    // 'Cancelled': the order was cancelled before any payment was collected (e.g. COD).
+    enum: ['Pending', 'Paid', 'Failed', 'Refunded', 'Partially Refunded', 'Cancelled'],
     default: 'Pending'
   },
   paymentId: {

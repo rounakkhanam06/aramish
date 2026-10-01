@@ -5,6 +5,16 @@ const { runWalletTransaction, reverseOrderRewards, creditRefundWallet, restoreRe
 
 const orderLabel = (id) => id.toString().substring(id.toString().length - 6).toUpperCase();
 
+// Puts `qty` units back on the variant they were sold from (or on the product's top-level stock
+// for a line without a variant). `qty` may be negative to undo a restore.
+const restoreItemStock = (productId, variationSku, qty, sessionOpt = {}) => (variationSku
+  ? Product.findOneAndUpdate(
+    { _id: productId, 'variations.sku': variationSku },
+    { $inc: { 'variations.$.stock': qty, stock: qty, sales: -qty } },
+    sessionOpt
+  )
+  : Product.findByIdAndUpdate(productId, { $inc: { stock: qty, sales: -qty } }, sessionOpt));
+
 /**
  * Narrow, non-transactional stock/coupon restore used ONLY by the admin hard-delete path
  * (Backend/Controllers/orderController.js exports.deleteOrder), which removes the Order
@@ -22,12 +32,7 @@ const handleOrderCancellationStockAndCoupon = async (order) => {
 
   for (const item of order.items) {
     if (item.productId) {
-      await Product.findByIdAndUpdate(item.productId, {
-        $inc: {
-          stock: item.quantity || 1,
-          sales: -(item.quantity || 1)
-        }
-      });
+      await restoreItemStock(item.productId, item.variationSku, item.quantity || 1);
     }
   }
 
@@ -132,20 +137,8 @@ const handleOrderCancellationRefunds = async (order, options = {}) => {
       for (const item of order.items) {
         if (!item.productId) continue;
         const qty = item.quantity || 1;
-        if (item.variationSku) {
-          await Product.findOneAndUpdate(
-            { _id: item.productId, 'variations.sku': item.variationSku },
-            { $inc: { 'variations.$.stock': qty, sales: -qty } },
-            sessionOpt
-          );
-          undo.push(() => Product.findOneAndUpdate(
-            { _id: item.productId, 'variations.sku': item.variationSku },
-            { $inc: { 'variations.$.stock': -qty, sales: qty } }
-          ));
-        } else {
-          await Product.findByIdAndUpdate(item.productId, { $inc: { stock: qty, sales: -qty } }, sessionOpt);
-          undo.push(() => Product.findByIdAndUpdate(item.productId, { $inc: { stock: -qty, sales: qty } }));
-        }
+        await restoreItemStock(item.productId, item.variationSku, qty, sessionOpt);
+        undo.push(() => restoreItemStock(item.productId, item.variationSku, -qty));
       }
 
       if (order.couponCode) {
@@ -205,8 +198,10 @@ const handleOrderCancellationRefunds = async (order, options = {}) => {
     }
   }
 
-  // Set the payment status to Refunded
-  order.paymentStatus = 'Refunded';
+  // Only money that was actually taken is refunded. An unpaid order (COD not yet collected, or
+  // an online payment that never completed) with no Refund Wallet money on it is just cancelled.
+  const moneyWasTaken = ['Paid', 'Refunded', 'Partially Refunded'].includes(order.paymentStatus) || (order.refundWalletUsed || 0) > 0;
+  order.paymentStatus = moneyWasTaken ? 'Refunded' : 'Cancelled';
 };
 
 /**
@@ -242,8 +237,8 @@ const handleReturnRefund = async (returnRequest, order) => {
     for (const item of returnRequest.items) {
       if (!item.productId) continue;
       const qty = item.quantity || 1;
-      await Product.findByIdAndUpdate(item.productId, { $inc: { stock: qty, sales: -qty } }, sessionOpt);
-      undo.push(() => Product.findByIdAndUpdate(item.productId, { $inc: { stock: -qty, sales: qty } }));
+      await restoreItemStock(item.productId, item.variationSku, qty, sessionOpt);
+      undo.push(() => restoreItemStock(item.productId, item.variationSku, -qty));
     }
 
     await reverseOrderRewards(order._id, { ctx });
@@ -317,7 +312,18 @@ const handleReturnRefund = async (returnRequest, order) => {
   }
 };
 
+// When the order was delivered, for return/exchange windows. `updatedAt` alone moves on every
+// later write to the order (tracking updates, a rejected return), silently extending the window.
+const getDeliveredAt = (order) => {
+  const delivered = (order.trackingHistory || [])
+    .filter(t => t && t.timestamp && String(t.status || '').toUpperCase() === 'DELIVERED')
+    .map(t => new Date(t.timestamp));
+  return delivered.length > 0 ? new Date(Math.max(...delivered)) : order.updatedAt;
+};
+
 module.exports = {
+  refundOnlinePayment,
+  getDeliveredAt,
   handleOrderCancellationStockAndCoupon,
   handleOrderCancellationRefunds,
   handleReturnRefund

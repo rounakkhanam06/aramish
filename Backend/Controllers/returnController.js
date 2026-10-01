@@ -2,7 +2,7 @@ const ReturnRequest = require('../Models/ReturnRequest');
 const Order = require('../Models/Order');
 const Product = require('../Models/Product');
 const shiprocketService = require('../Router/shiprocketService');
-const { handleReturnRefund } = require('../utils/orderHelper');
+const { handleReturnRefund, getDeliveredAt } = require('../utils/orderHelper');
 
 // Builds the Shiprocket reverse-pickup order and attempts AWB assignment for a return
 // request, mutating the passed returnRequest document's shipment fields in place. Used both
@@ -97,6 +97,30 @@ const createReturnShipment = async (returnRequest, order) => {
   }
 };
 
+// Most the customer can get back for `returnItems` (prices taken from the order, never from the
+// request): the items' value; for a Wallet refund also their share of GST, plus delivery and
+// platform fee on a full return. Never more than the money actually paid (cash/online + Refund
+// Wallet) — coins redeemed on the order are non-returnable.
+const calculateEligibleRefund = (order, returnItems, refundMethod) => {
+  const itemsValue = returnItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  let eligible = itemsValue;
+  if (refundMethod === 'Wallet') {
+    // Return lines saved before they recorded a variant match their order line by product alone.
+    const returnedQty = (orderItem) => returnItems
+      .filter(r => String(r.productId) === String(orderItem.productId) &&
+        (!r.variationSku || r.variationSku === orderItem.variationSku))
+      .reduce((sum, r) => sum + r.quantity, 0);
+    const isFullReturn = order.items.every(orderItem => returnedQty(orderItem) === orderItem.quantity);
+    const proportionalGst = (order.subtotal && order.subtotal > 0) ? (itemsValue / order.subtotal) * (order.gstAmount || 0) : 0;
+    eligible += proportionalGst;
+    if (isFullReturn) {
+      eligible += (order.deliveryCharge || 0) + (order.platformCommission || 0);
+    }
+  }
+  const moneyPaid = (order.total || 0) + (order.refundWalletUsed || 0);
+  return Math.round(Math.min(eligible, moneyPaid) * 100) / 100;
+};
+
 // @desc    Create a return request (User)
 // @route   POST /returns
 // @access  Private (User)
@@ -128,7 +152,7 @@ exports.createReturnRequest = async (req, res) => {
     const config = await SystemConfig.findOne();
     const returnWindowDays = (config && config.returnWindowDays !== undefined) ? config.returnWindowDays : 7;
     
-    const deliveryDate = order.updatedAt;
+    const deliveryDate = getDeliveredAt(order);
     const timeDiff = new Date() - new Date(deliveryDate);
     const daysDiff = timeDiff / (1000 * 60 * 60 * 24);
 
@@ -161,33 +185,43 @@ exports.createReturnRequest = async (req, res) => {
     }
 
     // Validate return items and calculate refund amount securely (H-04 return amount security, M-13 return item validation)
-    let calculatedRefundAmount = 0;
     const validatedReturnItems = [];
 
+    // Several lines of an order can share a productId (different sizes/colours), so each return
+    // line is matched to an order line by variant too, and quantities are summed per order line
+    // so duplicate return lines can't exceed what was bought.
+    const returnedQtyByLine = new Map();
     for (const returnItem of parsedItems) {
-      if (!returnItem.productId || !returnItem.quantity || returnItem.quantity <= 0) {
+      const qty = Number(returnItem.quantity);
+      if (!returnItem.productId || !Number.isInteger(qty) || qty <= 0) {
         return res.status(400).json({ success: false, message: 'Invalid product or quantity in return request' });
       }
 
       // Find item in original order
-      const orderItem = order.items.find(item => item.productId.toString() === returnItem.productId.toString());
+      const orderItem = order.items.find(item =>
+        item.productId.toString() === returnItem.productId.toString() &&
+        (returnItem.variationSku ? item.variationSku === returnItem.variationSku : true)
+      );
       if (!orderItem) {
         return res.status(400).json({ success: false, message: `Item ${returnItem.productId} is not part of this order` });
       }
 
       // Check return quantity against ordered quantity
-      if (returnItem.quantity > orderItem.quantity) {
-        return res.status(400).json({ success: false, message: `Return quantity (${returnItem.quantity}) for "${orderItem.name}" exceeds ordered quantity (${orderItem.quantity})` });
+      const lineQty = (returnedQtyByLine.get(orderItem) || 0) + qty;
+      if (lineQty > orderItem.quantity) {
+        return res.status(400).json({ success: false, message: `Return quantity (${lineQty}) for "${orderItem.name}" exceeds ordered quantity (${orderItem.quantity})` });
       }
+      returnedQtyByLine.set(orderItem, lineQty);
 
-      // Price is loaded from order, not trust user input
-      calculatedRefundAmount += orderItem.price * returnItem.quantity;
+    }
 
+    for (const [orderItem, quantity] of returnedQtyByLine) {
       validatedReturnItems.push({
         productId: orderItem.productId,
+        variationSku: orderItem.variationSku || null,
         name: orderItem.name,
         price: orderItem.price,
-        quantity: returnItem.quantity,
+        quantity,
         image: orderItem.image
       });
     }
@@ -203,32 +237,7 @@ exports.createReturnRequest = async (req, res) => {
 
     const finalRefundMethod = req.body.refundMethod || (parsedBankDetails ? 'Bank' : 'Original');
 
-    // Cap the refund amount based on user selection (Wallet gets full fees back, Bank/UPI only gets item price).
-    // Refundable money = what the customer actually paid: cash/online (order.total) plus
-    // Refund Wallet money. Coins redeemed on the order are non-returnable and excluded.
-    const moneyPaid = (order.total || 0) + (order.refundWalletUsed || 0);
-    let refundAmount = 0;
-    if (finalRefundMethod === 'Bank' || finalRefundMethod === 'UPI') {
-      refundAmount = Math.min(calculatedRefundAmount, moneyPaid);
-    } else if (finalRefundMethod === 'Wallet') {
-      const isFullReturn = order.items.every(orderItem => {
-        const rItem = validatedReturnItems.find(r => r.productId.toString() === orderItem.productId.toString());
-        return rItem && rItem.quantity === orderItem.quantity;
-      });
-
-      const proportionalGst = (order.subtotal && order.subtotal > 0) ? (calculatedRefundAmount / order.subtotal) * (order.gstAmount || 0) : 0;
-      
-      let walletRefund = calculatedRefundAmount + proportionalGst;
-      if (isFullReturn) {
-        walletRefund += (order.deliveryCharge || 0) + (order.platformCommission || 0);
-      }
-      
-      refundAmount = Math.min(walletRefund, moneyPaid);
-    } else {
-      refundAmount = Math.min(calculatedRefundAmount, moneyPaid);
-    }
-    
-    refundAmount = Math.round(refundAmount * 100) / 100;
+    const refundAmount = calculateEligibleRefund(order, validatedReturnItems, finalRefundMethod);
 
     let imagePaths = [];
     if (req.processedFiles && req.processedFiles.length > 0) {
@@ -484,6 +493,22 @@ exports.updateReturnStatus = async (req, res) => {
       });
     }
 
+    // An admin-entered amount may lower the refund (e.g. a damaged return) but never exceed what
+    // the customer is eligible for on these items.
+    let adminRefundAmount;
+    if (refundAmount !== undefined && refundAmount !== null && refundAmount !== '') {
+      adminRefundAmount = Number(refundAmount);
+      const order = await Order.findById(returnRequest.orderId);
+      const maxRefund = order ? calculateEligibleRefund(order, returnRequest.items, returnRequest.refundMethod) : 0;
+      if (!Number.isFinite(adminRefundAmount) || adminRefundAmount < 0 || adminRefundAmount > maxRefund) {
+        return res.status(400).json({
+          success: false,
+          message: `Refund amount must be between ₹0 and ₹${maxRefund}, the eligible amount for this return.`
+        });
+      }
+      adminRefundAmount = Math.round(adminRefundAmount * 100) / 100;
+    }
+
     oldStatus = returnRequest.status;
 
     // Acquire atomic status lock to prevent concurrent double-spend/double-refund
@@ -505,7 +530,7 @@ exports.updateReturnStatus = async (req, res) => {
     // Update local variables
     returnRequest.status = status;
     if (adminNotes !== undefined) returnRequest.adminNotes = adminNotes;
-    if (refundAmount !== undefined) returnRequest.refundAmount = refundAmount;
+    if (adminRefundAmount !== undefined) returnRequest.refundAmount = adminRefundAmount;
 
     // Handle Shiprocket return order creation on approval
     if (status === 'Approved') {
@@ -564,6 +589,9 @@ exports.updateReturnStatus = async (req, res) => {
           order.status = 'Refunded'; // Full return
           order.paymentStatus = 'Refunded';
         } else {
+          // Must leave 'Return Requested': from there the generic admin endpoint still allows
+          // 'Cancelled', which would run a second, full-order refund and restock.
+          order.status = 'Partially Refunded';
           order.paymentStatus = 'Partially Refunded';
         }
         await order.save();

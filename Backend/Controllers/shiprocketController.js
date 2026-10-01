@@ -1,9 +1,9 @@
 const shiprocketService = require('../Router/shiprocketService');
 const Order = require('../Models/Order');
 const mongoose = require('mongoose');
-const crypto = require('crypto');
 const { handleOrderCancellationRefunds } = require('../utils/orderHelper');
 const { processDeliveredOrderRewards } = require('../utils/walletService');
+const { verifyWebhookToken } = require('../utils/shiprocketWebhookAuth');
 
 // Forward-shipping updates (Processing/Shipped/Out for Delivery/Delivered) must never pull an
 // order back out of a cancelled or post-delivery state — e.g. a late or duplicate DELIVERED
@@ -20,6 +20,10 @@ const keepFinalStatus = (currentStatus, mappedStatus) =>
     (FINAL_OR_POST_DELIVERY_STATUSES.includes(currentStatus) && FORWARD_SHIPPING_STATUSES.includes(mappedStatus))
         ? currentStatus
         : mappedStatus;
+// Delivered or later (returns/exchanges): the forward shipment is done, so a cancel/RTO for it
+// must not trigger a cancellation refund.
+const isPastForwardShipping = (status) =>
+    status === 'Delivered' || (status !== 'Cancelled' && FINAL_OR_POST_DELIVERY_STATUSES.includes(status));
 
 exports.checkServiceability = async (req, res) => {
     try {
@@ -297,7 +301,7 @@ exports.cancelShiprocketOrder = async (req, res) => {
         const order = await Order.findById(orderId);
         if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
 
-        if (['Delivered', 'Cancelled'].includes(order.status)) {
+        if (!['Pending', 'Processing', 'Shipped', 'Out for Delivery'].includes(order.status)) {
             return res.status(400).json({ success: false, message: `Cannot cancel order with status: ${order.status}` });
         }
 
@@ -379,7 +383,7 @@ exports.syncOrderStatus = async (req, res) => {
                     mappedStatus = 'Out for Delivery';
                 } else if (srStatus === 'DELIVERED') {
                     mappedStatus = 'Delivered';
-                } else if (['CANCELLED', 'RTO INITIATED', 'RTO DELIVERED'].includes(srStatus)) {
+                } else if (['CANCELLED', 'RTO INITIATED', 'RTO DELIVERED'].includes(srStatus) && !isPastForwardShipping(order.status)) {
                     mappedStatus = 'Cancelled';
                 }
                 mappedStatus = keepFinalStatus(order.status, mappedStatus);
@@ -449,24 +453,16 @@ exports.syncOrderStatus = async (req, res) => {
 exports.webhookReceiver = async (req, res) => {
     try {
         const payload = req.body;
-        // Shiprocket's webhook dashboard sends back a static token in a header you choose
-        // (Auth Token Type — configured here as x-api-key), not an HMAC signature.
-        const token = req.headers['x-api-key'];
-        const webhookSecret = process.env.SHIPROCKET_WEBHOOK_SECRET;
+        const authError = verifyWebhookToken(req);
+        if (authError) {
+            return res.status(authError.status).json({ success: false, message: authError.message });
+        }
 
-        if (webhookSecret || process.env.ENV === 'production') {
-            if (!webhookSecret) {
-                console.error('SHIPROCKET_WEBHOOK_SECRET is not set in environment.');
-                return res.status(500).json({ success: false, message: 'Server configuration error' });
-            }
-            const tokenBuf = Buffer.from(token || '');
-            const secretBuf = Buffer.from(webhookSecret);
-            const isValid = tokenBuf.length === secretBuf.length && crypto.timingSafeEqual(tokenBuf, secretBuf);
-
-            if (!isValid) {
-                console.error('Shiprocket Webhook token missing or invalid.');
-                return res.status(401).json({ success: false, message: 'Unauthorized: Invalid token' });
-            }
+        // Shiprocket posts every shipment of the account to this one URL, including the
+        // exchange reverse-pickup/replacement shipments (EXC_REV_/EXC_FWD_ channel ids).
+        const channelRef = String(payload.order_id || payload.channel_order_id || '');
+        if (channelRef.startsWith('EXC_')) {
+            return require('./exchangeController').handleExchangeWebhook(req, res);
         }
 
         // Shiprocket sends POST request to this endpoint
@@ -513,16 +509,22 @@ exports.webhookReceiver = async (req, res) => {
             } else if (srStatus === 'DELIVERED') {
                 mappedStatus = 'Delivered';
             } else if (['CANCELLED', 'RTO INITIATED', 'RTO DELIVERED', 'RTO_INITIATED', 'RTO_DELIVERED', 'CANCELED'].includes(srStatus)) {
-                if (order.status !== 'Cancelled') {
-                    // Stock/coupon restore and reward clawback happen atomically together
-                    // (redeemed coins are not restored). If this throws, it propagates to the outer webhook
-                    // try/catch (no local swallow here), so order.save() below is never
-                    // reached and order.status is never persisted as Cancelled without the
-                    // refund having actually succeeded — Shiprocket's webhook retry will then
-                    // safely re-attempt the whole thing.
-                    await handleOrderCancellationRefunds(order);
+                if (isPastForwardShipping(order.status)) {
+                    // A late cancel/RTO for a shipment that already reached the customer (or
+                    // already went through a return/exchange) must not refund/restock again.
+                    mappedStatus = order.status;
+                } else {
+                    if (order.status !== 'Cancelled') {
+                        // Stock/coupon restore and reward clawback happen atomically together
+                        // (redeemed coins are not restored). If this throws, it propagates to the outer webhook
+                        // try/catch (no local swallow here), so order.save() below is never
+                        // reached and order.status is never persisted as Cancelled without the
+                        // refund having actually succeeded — Shiprocket's webhook retry will then
+                        // safely re-attempt the whole thing.
+                        await handleOrderCancellationRefunds(order);
+                    }
+                    mappedStatus = 'Cancelled';
                 }
-                mappedStatus = 'Cancelled';
             } else if (['NEW', 'PICKUP SCHEDULED', 'AWB ASSIGNED', 'PICKUP GENERATED', 'OUT FOR PICKUP', 'PICKED UP', 'READY TO SHIP', 'AWB_ASSIGNED', 'PICKUP_SCHEDULED', 'PICKUP_GENERATED', 'OUT_FOR_PICKUP', 'PICKED_UP', 'READY_TO_SHIP'].includes(srStatus)) {
                 mappedStatus = 'Processing';
             }

@@ -126,11 +126,13 @@ exports.webhookReceiver = async (req, res) => {
         }
 
         let itemPrice = product.sellingPrice;
-        if (item.variationSku) {
-          const variant = (product.variations || []).find(v => v.sku === item.variationSku);
-          if (variant) {
-            itemPrice = (!variant.useDefaultPricing && variant.sellingPrice !== undefined) ? variant.sellingPrice : product.sellingPrice;
-          }
+        const variant = item.variationSku ? (product.variations || []).find(v => v.sku === item.variationSku) : null;
+        if (variant) {
+          itemPrice = (!variant.useDefaultPricing && variant.sellingPrice !== undefined) ? variant.sellingPrice : product.sellingPrice;
+        } else if ((product.variations || []).length > 0) {
+          // Variant products are sold per variant; their top-level `stock` is only the total.
+          console.error(`❌ Variant "${item.variationSku}" of product ${item.productId} not found during reconciliation`);
+          return res.status(200).json({ success: false, message: 'Product variant not found' });
         }
 
         calculatedSubtotal += itemPrice * item.quantity;
@@ -167,6 +169,7 @@ exports.webhookReceiver = async (req, res) => {
               {
                 $inc: {
                   'variations.$.stock': -item.quantity,
+                  stock: -item.quantity,
                   sales: item.quantity
                 }
               },
@@ -290,7 +293,7 @@ exports.webhookReceiver = async (req, res) => {
           if (rolledBack.variationSku) {
             await Product.findOneAndUpdate(
               { _id: rolledBack.productId, 'variations.sku': rolledBack.variationSku },
-              { $inc: { 'variations.$.stock': rolledBack.quantity, sales: -rolledBack.quantity } }
+              { $inc: { 'variations.$.stock': rolledBack.quantity, stock: rolledBack.quantity, sales: -rolledBack.quantity } }
             );
           } else {
             await Product.findByIdAndUpdate(rolledBack.productId, {

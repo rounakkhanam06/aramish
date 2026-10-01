@@ -780,6 +780,7 @@ export default function OrderDetailsPage() {
 
       const itemsPayload = returnSelectedItems.map(item => ({
         productId: item.productId || item.id,
+        variationSku: item.variationSku || null,
         name: item.name,
         price: item.price,
         quantity: item.quantity,

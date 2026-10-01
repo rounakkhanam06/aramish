@@ -613,7 +613,7 @@ const redeemForOrder = async ({ userId, orderId, eligibleProductValue, payableTo
     description: `Used for Order #${orderLabel(orderId)} (max ${config.walletRedemptionPercentage}% of ₹${roundMoney(eligibleProductValue)} product value)`,
     idempotencyKey: `ORDER_REDEMPTION:${orderId}`
   }, ctx);
-  if (!debit) throw new Error('Your wallet balance changed while placing the order. Please try again.');
+  if (!debit) throw Object.assign(new Error('Your wallet balance changed while placing the order. Please try again.'), { status: 409 });
   return { amount, limit };
 };
 
@@ -668,7 +668,7 @@ const useRefundWalletForOrder = async ({ userId, orderId, payableTotal }, ctx) =
     description: `Refund Wallet used for Order #${orderLabel(orderId)}`,
     idempotencyKey: `REFUND_WALLET_DEBIT:${orderId}`
   }, ctx);
-  if (!debit) throw new Error('Your Refund Wallet balance changed while placing the order. Please try again.');
+  if (!debit) throw Object.assign(new Error('Your Refund Wallet balance changed while placing the order. Please try again.'), { status: 409 });
   return { amount };
 };
 

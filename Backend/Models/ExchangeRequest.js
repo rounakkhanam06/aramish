@@ -33,7 +33,9 @@ const shipmentLegSchema = new mongoose.Schema({
   awb:         { type: String, default: null },
   trackingUrl: { type: String, default: null },
   response:    { type: mongoose.Schema.Types.Mixed, default: null },
-  status:      { type: String, enum: ['Pending', 'Created', 'AWB Assigned', 'Failed'], default: 'Pending' },
+  // 'Pending' | 'Created' | 'AWB Assigned' | 'Failed', or the raw courier status from the
+  // Shiprocket webhook (e.g. 'In Transit', 'Delivered') — so no enum here.
+  status:      { type: String, default: 'Pending' },
   failed:      { type: Boolean, default: false }
 }, { _id: false });
 

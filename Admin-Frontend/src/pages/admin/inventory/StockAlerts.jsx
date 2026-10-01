@@ -97,6 +97,7 @@ const StockAlerts = () => {
     if (!variantStockModal) return;
     const updatedVariations = variantStockModal.variations.map(v => ({
       ...v,
+      originalStock: v.stock,
       stock: variantStockValues[v.sku] !== undefined ? Number(variantStockValues[v.sku]) : v.stock
     }));
     const newTotalStock = updatedVariations.reduce((sum, v) => sum + Number(v.stock), 0);

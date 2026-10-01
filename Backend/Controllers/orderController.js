@@ -4,11 +4,11 @@ const Coupon = require('../Models/Coupon');
 const Product = require('../Models/Product');
 const User = require('../Models/User');
 const shiprocketService = require('../Router/shiprocketService');
-const axios = require('axios');
 const mongoose = require('mongoose');
 const CouponUsage = require('../Models/CouponUsage');
 const { handleOrderCancellationStockAndCoupon, handleOrderCancellationRefunds } = require('../utils/orderHelper');
 const walletService = require('../utils/walletService');
+const { isRazorpayConfigured, verifyAndCapturePayment } = require('../utils/razorpayService');
 
 // Resolves the price the customer actually pays for a line (admin selling price, or the
 // variation's own selling price) — never the MRP.
@@ -24,6 +24,10 @@ const resolveLinePricing = (product, variationSku) => {
     stock: variant.stock
   };
 };
+// A checkout problem caused by the request (bad input, stock, coupon, payment) rather than the
+// server, answered with its own 4xx status instead of 500.
+const checkoutError = (message, status = 400) => Object.assign(new Error(message), { status });
+
 // @desc    Create a new order
 // @route   POST /api/orders
 // @access  Private
@@ -69,13 +73,25 @@ exports.createOrder = async (req, res) => {
     for (const item of items) {
       const product = productMap[item.productId];
       if (!product) {
-        throw new Error(`Product "${item.name}" not found.`);
+        throw checkoutError(`Product "${item.name}" not found.`, 400);
       }
-      const qty = item.quantity || 1;
+      if (product.status !== 'Approved') {
+        throw checkoutError(`"${product.name}" is not available for purchase.`, 400);
+      }
+      // A negative/fractional quantity would pass the `stock >= qty` guard, add stock back and
+      // lower the order total.
+      const qty = item.quantity === undefined || item.quantity === null ? 1 : Number(item.quantity);
+      if (!Number.isInteger(qty) || qty < 1) {
+        throw checkoutError(`Invalid quantity for "${product.name}".`, 400);
+      }
+      // A variant product is sold (and stocked) per variant; `stock` is only their total.
+      if (!item.variationSku && product.variations && product.variations.length > 0) {
+        throw checkoutError(`Please select a size/colour for "${product.name}".`, 400);
+      }
 
       const pricing = resolveLinePricing(product, item.variationSku);
       if (!pricing) {
-        throw new Error(`Variation "${item.variationSku}" of "${product.name}" not found.`);
+        throw checkoutError(`Variation "${item.variationSku}" of "${product.name}" not found.`, 400);
       }
       const itemPrice = pricing.price;
       const itemMrp = pricing.mrp;
@@ -112,6 +128,7 @@ exports.createOrder = async (req, res) => {
           {
             $inc: {
               'variations.$.stock': -item.quantity,
+              stock: -item.quantity,
               sales: item.quantity
             }
           },
@@ -133,7 +150,7 @@ exports.createOrder = async (req, res) => {
         );
       }
       if (!result) {
-        throw new Error(`"${item.name}" is out of stock or does not have enough quantity.`);
+        throw checkoutError(`"${item.name}" is out of stock or does not have enough quantity.`, 409);
       }
       decrementedProducts.push({ 
         productId: item.productId, 
@@ -157,7 +174,7 @@ exports.createOrder = async (req, res) => {
         { new: true, ...sessionOpt }
       );
       if (!coupon) {
-        throw new Error('Invalid, expired, or fully used coupon.');
+        throw checkoutError('Invalid, expired, or fully used coupon.', 400);
       }
       couponUsageIncremented = true;
 
@@ -179,7 +196,7 @@ exports.createOrder = async (req, res) => {
       );
 
       if (!updatedUsage) {
-        throw new Error('You have already used this coupon.');
+        throw checkoutError('You have already used this coupon.', 400);
       }
 
       // Apply discount based on coupon rules
@@ -194,7 +211,7 @@ exports.createOrder = async (req, res) => {
         }
         discountAmount = Math.min(discountAmount, calculatedSubtotal);
       } else {
-        throw new Error(`Minimum order amount of ₹${coupon.minOrder} is required to use this coupon.`);
+        throw checkoutError(`Minimum order amount of ₹${coupon.minOrder} is required to use this coupon.`, 400);
       }
     }
 
@@ -285,40 +302,16 @@ exports.createOrder = async (req, res) => {
 
     // 6. Verify Razorpay payment if paymentMethod is Online
     if (paymentMethod === 'Online') {
-      const rzpKeyId = process.env.RAZORPAY_KEY_ID;
-      const rzpKeySecret = process.env.RAZORPAY_KEY_SECRET;
-
-      if (rzpKeyId && rzpKeySecret) {
+      if (isRazorpayConfigured()) {
         if (!paymentId) {
-          throw new Error('Payment ID is required for Online payments.');
+          throw checkoutError('Payment ID is required for Online payments.', 400);
         }
 
         try {
-          const rzpAuth = Buffer.from(`${rzpKeyId}:${rzpKeySecret}`).toString('base64');
-          const rzpResponse = await axios.get(`https://api.razorpay.com/v1/payments/${paymentId}`, {
-            headers: {
-              'Authorization': `Basic ${rzpAuth}`
-            }
-          });
-
-          const paymentData = rzpResponse.data;
-          if (!paymentData || (paymentData.status !== 'captured' && paymentData.status !== 'authorized')) {
-            throw new Error('Razorpay payment is not captured or authorized.');
-          }
-
-          // Verify amount (Razorpay amount is in paise)
-          const paidAmountRupees = paymentData.amount / 100;
-          if (Math.abs(paidAmountRupees - finalPayableTotal) > 1) {
-            throw new Error(`Payment amount mismatch. Expected: ₹${finalPayableTotal}, Paid: ₹${paidAmountRupees}`);
-          }
-
-          if (paymentData.currency !== 'INR') {
-            throw new Error('Currency mismatch. Only INR is supported.');
-          }
-
+          await verifyAndCapturePayment(paymentId, finalPayableTotal);
         } catch (paymentErr) {
           console.error('Razorpay verification error:', paymentErr.response?.data || paymentErr.message);
-          throw new Error(`Payment verification failed: ${paymentErr.response?.data?.error?.description || paymentErr.message}`);
+          throw checkoutError(`Payment verification failed: ${paymentErr.response?.data?.error?.description || paymentErr.message}`, 400);
         }
       } else {
         console.warn('RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET not set in environment. Bypassing live verification.');
@@ -482,8 +475,9 @@ exports.createOrder = async (req, res) => {
             { _id: rolledBack.productId, 'variations.sku': rolledBack.variationSku },
             { 
               $inc: { 
-                'variations.$.stock': rolledBack.quantity, 
-                sales: -rolledBack.quantity 
+                'variations.$.stock': rolledBack.quantity,
+                stock: rolledBack.quantity,
+                sales: -rolledBack.quantity
               } 
             }
           );
@@ -521,7 +515,10 @@ exports.createOrder = async (req, res) => {
       }
     }
 
-    res.status(500).json({ success: false, message: error.message });
+    let status = error.status || 500;
+    if (error.name === 'ValidationError' || error.name === 'CastError') status = 400;
+    else if (error.code === 11000 && error.keyPattern && error.keyPattern.paymentId) status = 409;
+    res.status(status).json({ success: false, message: status === 409 && error.code === 11000 ? 'This payment has already been used for another order.' : error.message });
   }
 };
 
@@ -981,9 +978,11 @@ exports.cancelOrder = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized to cancel this order' });
     }
 
-    // A user can cancel an order unless it is Out for Delivery or Delivered or already Cancelled
-    const nonCancellableStates = ['Out for Delivery', 'Delivered', 'Cancelled', 'Return Requested', 'Refunded', 'Partially Refunded'];
-    if (nonCancellableStates.includes(order.status)) {
+    // Only orders that haven't reached the customer can be cancelled. An allowlist (not a
+    // denylist) so post-delivery states — returns and every exchange state — can never trigger
+    // a full refund + restock.
+    const cancellableStates = ['Pending', 'Processing', 'Shipped'];
+    if (!cancellableStates.includes(order.status)) {
       return res.status(400).json({ 
         success: false, 
         message: `Cannot cancel order. Current status is ${order.status}` 

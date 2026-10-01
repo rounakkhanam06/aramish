@@ -1,6 +1,9 @@
 const Cart = require('../Models/Cart');
 const Product = require('../Models/Product');
 
+// Variant products are sold per variant; their top-level `stock` is only the total.
+const hasVariants = (product) => Array.isArray(product.variations) && product.variations.length > 0;
+
 // Helper to get or create cart
 const getOrCreateCart = async (userId) => {
   let cart = await Cart.findOne({ userId });
@@ -31,15 +34,21 @@ const getCart = async (req, res) => {
 const addToCart = async (req, res) => {
   try {
     const { productId, quantity, variationSku, attributes } = req.body;
-    const qty = Number(quantity) || 1;
+    const qty = quantity === undefined || quantity === null ? 1 : Number(quantity);
 
     if (!productId) {
       return res.status(400).json({ success: false, message: 'Product ID is required' });
+    }
+    if (!Number.isInteger(qty) || qty < 1) {
+      return res.status(400).json({ success: false, message: 'Quantity must be a whole number of at least 1' });
     }
 
     const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
+    }
+    if (!variationSku && hasVariants(product)) {
+      return res.status(400).json({ success: false, message: `Please select a size/colour for "${product.name}".` });
     }
 
     let availableStock = product.stock;
@@ -98,7 +107,7 @@ const updateCartQuantity = async (req, res) => {
     const { productId, quantity, variationSku } = req.body;
     const qty = Number(quantity);
 
-    if (!productId || isNaN(qty) || qty < 1) {
+    if (!productId || !Number.isInteger(qty) || qty < 1) {
       return res.status(400).json({ success: false, message: 'Product ID and valid quantity are required' });
     }
 
@@ -106,6 +115,9 @@ const updateCartQuantity = async (req, res) => {
     const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
+    }
+    if (!variationSku && hasVariants(product)) {
+      return res.status(400).json({ success: false, message: `Please select a size/colour for "${product.name}".` });
     }
 
     let availableStock = product.stock;

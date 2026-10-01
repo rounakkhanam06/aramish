@@ -17,6 +17,7 @@ const returnRequestSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Product'
       },
+      variationSku: { type: String, default: null },
       name: { type: String, required: true },
       price: { type: Number, required: true },
       quantity: { type: Number, required: true },

@@ -132,7 +132,7 @@ const ReelVideo = ({ src, onVisible, isMuted, toggleMute, active, onDoubleTap })
 };
 
 export default function StudioPage() {
-  const { addToCart, user, socketRef } = useApp();
+  const { user, socketRef } = useApp();
   const navigate = useNavigate();
   const routerLocation = useLocation();
   
@@ -491,7 +491,9 @@ export default function StudioPage() {
       navigate('/login');
       return;
     }
-    addToCart(product);
+    // Products are sold per size/colour variant and the cart API requires one, so let the
+    // customer pick it on the product page.
+    navigate(`/product/${product.id || product._id}`);
   };
 
   return (

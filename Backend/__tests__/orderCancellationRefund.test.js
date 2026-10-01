@@ -118,7 +118,8 @@ describe('handleOrderCancellationRefunds — full successful bundle', () => {
 
     const freshOrder = await Order.findById(order._id);
     expect(freshOrder.refundProcessed).toBe(true);
-    expect(order.paymentStatus).toBe('Refunded');
+    // Unpaid COD order (only non-returnable coins used): nothing was collected, so nothing refunded.
+    expect(order.paymentStatus).toBe('Cancelled');
   });
 
   test('claws back the locked order reward when a delivered order is cancelled/refunded', async () => {

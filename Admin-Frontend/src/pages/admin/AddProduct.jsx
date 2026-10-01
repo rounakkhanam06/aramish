@@ -241,7 +241,9 @@ const AddProduct = () => {
           if (p.flags) {
             setFlags(prev => ({ ...prev, ...p.flags }));
           }
-          setVariations(p.variations || []);
+          // originalStock lets the server tell an admin stock edit from stock that orders changed
+          // while this form was open.
+          setVariations((p.variations || []).map(v => ({ ...v, originalStock: v.stock })));
         }
       } catch (err) {
         console.error('Failed to load product details:', err);

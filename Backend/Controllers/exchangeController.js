@@ -3,18 +3,18 @@ const Order = require('../Models/Order');
 const Product = require('../Models/Product');
 const SystemConfig = require('../Models/SystemConfig');
 const User = require('../Models/User');
-const axios = require('axios');
+const mongoose = require('mongoose');
 const shiprocketService = require('../Router/shiprocketService');
 const { EXCHANGE_WEBHOOK_MAP } = require('../Router/shiprocketService');
 const { resolveVariantPrice } = require('../utils/priceHelper');
+const { getDeliveredAt, refundOnlinePayment } = require('../utils/orderHelper');
+const { verifyWebhookToken } = require('../utils/shiprocketWebhookAuth');
+const { isRazorpayConfigured, verifyAndCapturePayment } = require('../utils/razorpayService');
 
-// Verifies a Razorpay payment covers `expectedAmount` (rupees). Mirrors orderController.js's
-// checkout verification so the same trust model applies to exchange price-difference payments.
+// Verifies (and captures) a Razorpay payment covering `expectedAmount` (rupees) — the same check
+// checkout uses, applied to exchange price-difference payments.
 const verifyRazorpayPayment = async (paymentId, expectedAmount) => {
-  const rzpKeyId = process.env.RAZORPAY_KEY_ID;
-  const rzpKeySecret = process.env.RAZORPAY_KEY_SECRET;
-
-  if (!rzpKeyId || !rzpKeySecret) {
+  if (!isRazorpayConfigured()) {
     if (process.env.ENV === 'production') {
       throw new Error('Razorpay keys not configured on server.');
     }
@@ -23,24 +23,7 @@ const verifyRazorpayPayment = async (paymentId, expectedAmount) => {
   }
 
   try {
-    const rzpAuth = Buffer.from(`${rzpKeyId}:${rzpKeySecret}`).toString('base64');
-    const rzpResponse = await axios.get(`https://api.razorpay.com/v1/payments/${paymentId}`, {
-      headers: { 'Authorization': `Basic ${rzpAuth}` }
-    });
-
-    const paymentData = rzpResponse.data;
-    if (!paymentData || (paymentData.status !== 'captured' && paymentData.status !== 'authorized')) {
-      throw new Error('Razorpay payment is not captured or authorized.');
-    }
-
-    const paidAmountRupees = paymentData.amount / 100;
-    if (Math.abs(paidAmountRupees - expectedAmount) > 1) {
-      throw new Error(`Payment amount mismatch. Expected: ₹${expectedAmount}, Paid: ₹${paidAmountRupees}`);
-    }
-
-    if (paymentData.currency !== 'INR') {
-      throw new Error('Currency mismatch. Only INR is supported.');
-    }
+    await verifyAndCapturePayment(paymentId, expectedAmount);
   } catch (paymentErr) {
     console.error('Razorpay verification error:', paymentErr.response?.data || paymentErr.message);
     throw new Error(`Payment verification failed: ${paymentErr.response?.data?.error?.description || paymentErr.message}`);
@@ -61,11 +44,75 @@ const addAudit = (exchange, action, admin, fromStatus, toStatus, notes = '') => 
   });
 };
 
+// Allowed exchange status transitions (admin and webhook). Terminal states have no exits, so
+// stock side effects (reserve on Approved, release on Cancelled/Failed, restock on Completed)
+// can each happen at most once.
+const EXCHANGE_TRANSITIONS = {
+  'Requested': ['Approved', 'Rejected', 'Cancelled'],
+  'Approved': ['Pickup Scheduled', 'Old Item Picked Up', 'Replacement Dispatched', 'Completed', 'Cancelled', 'Failed', 'Manual Review'],
+  'Pickup Scheduled': ['Old Item Picked Up', 'Replacement Dispatched', 'Completed', 'Cancelled', 'Failed', 'Manual Review'],
+  'Old Item Picked Up': ['Replacement Dispatched', 'Completed', 'Failed', 'Manual Review'],
+  'Replacement Dispatched': ['Completed', 'Failed', 'Manual Review'],
+  'Manual Review': ['Pickup Scheduled', 'Old Item Picked Up', 'Replacement Dispatched', 'Completed', 'Cancelled', 'Failed'],
+  'Completed': [],
+  'Rejected': [],
+  'Cancelled': [],
+  'Failed': []
+};
+
+// Atomically moves the exchange from `from` to `to`; null if another request (admin or
+// webhook) changed it first.
+const claimExchangeStatus = (id, from, to) =>
+  ExchangeRequest.findOneAndUpdate({ _id: id, status: from }, { $set: { status: to } });
+
+// The customer's old item is back in the warehouse. Its sale is replaced by the replacement's,
+// so `sales` stays unchanged.
+const restockOriginalItem = (exchange) => {
+  const { productId, variationSku } = exchange.originalItem;
+  const qty = exchange.originalItem.quantity || 1;
+  return variationSku
+    ? Product.findOneAndUpdate({ _id: productId, 'variations.sku': variationSku }, { $inc: { 'variations.$.stock': qty, stock: qty } })
+    : Product.findByIdAndUpdate(productId, { $inc: { stock: qty } });
+};
+
+// The exchange won't happen, so the price difference the customer paid goes back: to the
+// original Razorpay payment, or to the Refund Wallet if that refund fails. A COD difference was
+// never collected and is simply no longer due. Claimed via paymentStatus so it runs once.
+const refundExchangeDifference = async (exchange) => {
+  if (exchange.paymentStatus === 'Pending') {
+    exchange.paymentStatus = 'Not Required';
+    return;
+  }
+  if (exchange.paymentStatus !== 'Collected' || !(exchange.additionalAmount > 0)) return;
+
+  const claimed = await ExchangeRequest.findOneAndUpdate(
+    { _id: exchange._id, paymentStatus: 'Collected' },
+    { $set: { paymentStatus: 'Refunded' } }
+  );
+  if (!claimed) return;
+  try {
+    await refundOnlinePayment({
+      order: { paymentMethod: 'Online', paymentId: exchange.paymentId, userId: exchange.userId },
+      amountRupees: exchange.additionalAmount,
+      allowStoreCredit: true,
+      storeCredit: {
+        orderId: exchange.orderId,
+        description: `Refund of price difference for Exchange #${exchange._id.toString().slice(-6).toUpperCase()}`,
+        idempotencyKey: `EXCHANGE_DIFFERENCE_REFUND:${exchange._id}`
+      }
+    });
+    exchange.paymentStatus = 'Refunded';
+  } catch (err) {
+    await ExchangeRequest.updateOne({ _id: exchange._id }, { $set: { paymentStatus: 'Collected' } });
+    throw err;
+  }
+};
+
 const releaseReservedStock = async (exchange) => {
   if (exchange.inventoryReservation && !exchange.inventoryReservation.released && exchange.inventoryReservation.variantSku) {
     await Product.findOneAndUpdate(
       { _id: exchange.inventoryReservation.productId, 'variations.sku': exchange.inventoryReservation.variantSku },
-      { $inc: { 'variations.$.stock': exchange.inventoryReservation.quantity || 1 } }
+      { $inc: { 'variations.$.stock': exchange.inventoryReservation.quantity || 1, stock: exchange.inventoryReservation.quantity || 1 } }
     );
     exchange.inventoryReservation.released = true;
     exchange.inventoryReservation.releasedAt = new Date();
@@ -214,7 +261,7 @@ exports.createExchangeRequest = async (req, res) => {
     // Exchange window check
     const config = await SystemConfig.findOne();
     const windowDays = (config && config.returnWindowDays !== undefined) ? config.returnWindowDays : 7;
-    const daysDiff = (new Date() - new Date(order.updatedAt)) / (1000 * 60 * 60 * 24);
+    const daysDiff = (new Date() - new Date(getDeliveredAt(order))) / (1000 * 60 * 60 * 24);
     if (daysDiff > windowDays) {
       return res.status(400).json({ success: false, message: `Exchange window of ${windowDays} days has expired` });
     }
@@ -290,6 +337,10 @@ exports.createExchangeRequest = async (req, res) => {
       if (difPaymentMethod === 'Online') {
         if (!difPaymentId) {
           return res.status(400).json({ success: false, message: 'paymentId is required for Online payment of the price difference' });
+        }
+        // A captured payment can only pay for one thing (an order or one exchange).
+        if (await ExchangeRequest.exists({ paymentId: difPaymentId }) || await Order.exists({ paymentId: difPaymentId })) {
+          return res.status(400).json({ success: false, message: 'This payment has already been used.' });
         }
         await verifyRazorpayPayment(difPaymentId, priceDifference);
         resolvedPaymentId = difPaymentId;
@@ -456,210 +507,228 @@ exports.updateExchangeStatus = async (req, res) => {
 
     const fromStatus = exchange.status;
 
-    // ── APPROVE ──────────────────────────────────────────────────────────────
-    if (status === 'Approved') {
-      // Defensive gate: an exchange should never reach Approve with an uncollected
-      // online price-difference payment (guards against races/manual API calls).
-      if (exchange.additionalAmount > 0 && exchange.paymentMethod === 'Online' && exchange.paymentStatus !== 'Collected') {
-        return res.status(400).json({ success: false, message: 'Price difference payment has not been completed for this exchange.' });
-      }
+    const allowed = EXCHANGE_TRANSITIONS[fromStatus] || [];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot move exchange from '${fromStatus}' to '${status}'. Allowed: ${allowed.join(', ') || 'none'}`
+      });
+    }
+    // Defensive gate: an exchange should never reach Approve with an uncollected
+    // online price-difference payment (guards against races/manual API calls).
+    if (status === 'Approved' && exchange.additionalAmount > 0 && exchange.paymentMethod === 'Online' && exchange.paymentStatus !== 'Collected') {
+      return res.status(400).json({ success: false, message: 'Price difference payment has not been completed for this exchange.' });
+    }
+    if (status === 'Rejected' && !rejectionReason) {
+      return res.status(400).json({ success: false, message: 'rejectionReason is mandatory when rejecting an exchange' });
+    }
+    if (status === 'Cancelled' && !adminNotes) {
+      return res.status(400).json({ success: false, message: 'adminNotes is mandatory when cancelling an exchange' });
+    }
 
-      if (adminNotes) exchange.adminNotes = adminNotes;
+    // Claim the transition before any stock side effect, so a double-click or a webhook racing
+    // this request can't reserve/release/restock twice.
+    if (!(await claimExchangeStatus(exchange._id, fromStatus, status))) {
+      return res.status(409).json({ success: false, message: 'This exchange was updated by another process. Please refresh and try again.' });
+    }
+    const releaseClaim = () => ExchangeRequest.updateOne({ _id: exchange._id, status }, { $set: { status: fromStatus } });
 
-      // Hard stock check with atomic reservation
-      const reservationResult = await Product.findOneAndUpdate(
-        {
-          _id: exchange.requestedVariant.productId,
-          variations: {
-            $elemMatch: { sku: exchange.requestedVariant.sku, stock: { $gt: 0 } }
-          }
-        },
-        { $inc: { 'variations.$.stock': -1 } },
-        { new: true }
-      );
+    try {
+      // ── APPROVE ──────────────────────────────────────────────────────────────
+      if (status === 'Approved') {
+        if (adminNotes) exchange.adminNotes = adminNotes;
 
-      if (!reservationResult) {
-        return res.status(400).json({
-          success: false,
-          message: `Requested variant (${exchange.requestedVariant.color} / ${exchange.requestedVariant.size}) is out of stock. Cannot approve exchange.`
-        });
-      }
-
-      // Record reservation
-      exchange.inventoryReservation = {
-        variantSku: exchange.requestedVariant.sku,
-        productId: exchange.requestedVariant.productId,
-        quantity: 1,
-        reservedAt: new Date(),
-        released: false,
-        releasedAt: null
-      };
-
-      const originalOrder = await Order.findById(exchange.orderId).populate('userId');
-      const cityState = shiprocketService.parseCityState(originalOrder.deliveryAddress.address);
-
-      // ── Create Reverse Shipment (pickup old item) ──────────────────────────
-      try {
-        const reversePayload = buildReversePayload(exchange, originalOrder, cityState);
-
-        const reverseResp = await shiprocketService.createShiprocketReturnOrder(reversePayload);
-        exchange.reverse = {
-          orderId: reverseResp?.order_id ? String(reverseResp.order_id) : null,
-          shipmentId: reverseResp?.shipment_id ? String(reverseResp.shipment_id) : null,
-          awb: null,
-          trackingUrl: null,
-          status: 'Created',
-          failed: false,
-          response: reverseResp
-        };
-
-        if (reverseResp?.shipment_id) {
-          try {
-            const awbResp = await shiprocketService.assignAWB(reverseResp.shipment_id);
-            const awbData = awbResp?.response?.data;
-            if (awbData?.awb_code) {
-              exchange.reverse.awb = awbData.awb_code;
-              exchange.reverse.trackingUrl = `https://shiprocket.co/tracking/${awbData.awb_code}`;
-              exchange.reverse.status = 'AWB Assigned';
-              exchange.courierName = awbData.courier_name || null;
+        // Hard stock check with atomic reservation
+        const reservationResult = await Product.findOneAndUpdate(
+          {
+            _id: exchange.requestedVariant.productId,
+            variations: {
+              $elemMatch: { sku: exchange.requestedVariant.sku, stock: { $gt: 0 } }
             }
-          } catch (awbErr) {
-            console.error('Exchange reverse AWB assignment failed:', awbErr.message);
-          }
-        }
-      } catch (reverseErr) {
-        console.error('Exchange reverse shipment creation failed:', reverseErr.message);
-        exchange.reverse = { status: 'Failed', failed: true };
-        exchange.shipmentErrors.push({
-          leg: 'reverse',
-          error: reverseErr.message,
-          timestamp: new Date()
-        });
-        exchange.lastError = reverseErr.message;
-        addTimeline(exchange, 'Requested', 'system', null, 'Reverse shipment creation failed: ' + reverseErr.message);
-      }
-
-      // ── Create Forward Shipment (deliver replacement) ──────────────────────
-      try {
-        const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState);
-
-        const forwardResp = await shiprocketService.createExchangeForwardOrder(forwardPayload);
-        exchange.forward = {
-          orderId: forwardResp?.order_id ? String(forwardResp.order_id) : null,
-          shipmentId: forwardResp?.shipment_id ? String(forwardResp.shipment_id) : null,
-          awb: null,
-          trackingUrl: null,
-          status: 'Created',
-          failed: false,
-          response: forwardResp
-        };
-
-        if (forwardResp?.shipment_id) {
-          try {
-            const awbResp = await shiprocketService.assignAWB(forwardResp.shipment_id);
-            const awbData = awbResp?.response?.data;
-            if (awbData?.awb_code) {
-              exchange.forward.awb = awbData.awb_code;
-              exchange.forward.trackingUrl = `https://shiprocket.co/tracking/${awbData.awb_code}`;
-              exchange.forward.status = 'AWB Assigned';
-              if (!exchange.courierName) exchange.courierName = awbData.courier_name || null;
-            }
-          } catch (awbErr) {
-            console.error('Exchange forward AWB assignment failed:', awbErr.message);
-          }
-        }
-      } catch (forwardErr) {
-        console.error('Exchange forward shipment creation failed:', forwardErr.message);
-        exchange.forward = { status: 'Failed', failed: true };
-        exchange.shipmentErrors.push({
-          leg: 'forward',
-          error: forwardErr.message,
-          timestamp: new Date()
-        });
-        exchange.lastError = forwardErr.message;
-        addTimeline(exchange, 'Requested', 'system', null, 'Forward shipment creation failed: ' + forwardErr.message);
-      }
-
-      exchange.status = 'Approved';
-      order.status = 'Exchange Approved';
-      addTimeline(exchange, 'Approved', 'admin', admin?._id, 'Exchange approved by admin. Shipment creation attempted.');
-      addAudit(exchange, 'approved', admin, fromStatus, 'Approved', adminNotes || '');
-    }
-
-    // ── REJECT ────────────────────────────────────────────────────────────────
-    else if (status === 'Rejected') {
-      if (!rejectionReason) {
-        return res.status(400).json({ success: false, message: 'rejectionReason is mandatory when rejecting an exchange' });
-      }
-      exchange.status = 'Rejected';
-      exchange.rejectionReason = rejectionReason;
-      if (adminNotes) exchange.adminNotes = adminNotes;
-      order.status = 'Delivered';  // Revert
-      addTimeline(exchange, 'Rejected', 'admin', admin?._id, rejectionReason);
-      addAudit(exchange, 'rejected', admin, fromStatus, 'Rejected', rejectionReason);
-    }
-
-    // ── CANCEL ────────────────────────────────────────────────────────────────
-    else if (status === 'Cancelled') {
-      if (!adminNotes) {
-        return res.status(400).json({ success: false, message: 'adminNotes is mandatory when cancelling an exchange' });
-      }
-      await releaseReservedStock(exchange);
-      exchange.status = 'Cancelled';
-      exchange.adminNotes = adminNotes;
-      order.status = 'Exchange Cancelled';
-      addTimeline(exchange, 'Cancelled', 'admin', admin?._id, adminNotes);
-      addAudit(exchange, 'cancelled', admin, fromStatus, 'Cancelled', adminNotes);
-    }
-
-    // ── COMPLETED ─────────────────────────────────────────────────────────────
-    else if (status === 'Completed') {
-      // Restore original variant stock
-      if (exchange.originalItem.variationSku) {
-        await Product.findOneAndUpdate(
-          { _id: exchange.originalItem.productId, 'variations.sku': exchange.originalItem.variationSku },
-          { $inc: { 'variations.$.stock': 1, 'variations.$.sales': -1 } }
+          },
+          { $inc: { 'variations.$.stock': -1, stock: -1 } },
+          { new: true }
         );
+
+        if (!reservationResult) {
+          await releaseClaim();
+          return res.status(400).json({
+            success: false,
+            message: `Requested variant (${exchange.requestedVariant.color} / ${exchange.requestedVariant.size}) is out of stock. Cannot approve exchange.`
+          });
+        }
+
+        // Record reservation
+        exchange.inventoryReservation = {
+          variantSku: exchange.requestedVariant.sku,
+          productId: exchange.requestedVariant.productId,
+          quantity: 1,
+          reservedAt: new Date(),
+          released: false,
+          releasedAt: null
+        };
+
+        const originalOrder = await Order.findById(exchange.orderId).populate('userId');
+        const cityState = shiprocketService.parseCityState(originalOrder.deliveryAddress.address);
+
+        // ── Create Reverse Shipment (pickup old item) ──────────────────────────
+        try {
+          const reversePayload = buildReversePayload(exchange, originalOrder, cityState);
+
+          const reverseResp = await shiprocketService.createShiprocketReturnOrder(reversePayload);
+          exchange.reverse = {
+            orderId: reverseResp?.order_id ? String(reverseResp.order_id) : null,
+            shipmentId: reverseResp?.shipment_id ? String(reverseResp.shipment_id) : null,
+            awb: null,
+            trackingUrl: null,
+            status: 'Created',
+            failed: false,
+            response: reverseResp
+          };
+
+          if (reverseResp?.shipment_id) {
+            try {
+              const awbResp = await shiprocketService.assignAWB(reverseResp.shipment_id);
+              const awbData = awbResp?.response?.data;
+              if (awbData?.awb_code) {
+                exchange.reverse.awb = awbData.awb_code;
+                exchange.reverse.trackingUrl = `https://shiprocket.co/tracking/${awbData.awb_code}`;
+                exchange.reverse.status = 'AWB Assigned';
+                exchange.courierName = awbData.courier_name || null;
+              }
+            } catch (awbErr) {
+              console.error('Exchange reverse AWB assignment failed:', awbErr.message);
+            }
+          }
+        } catch (reverseErr) {
+          console.error('Exchange reverse shipment creation failed:', reverseErr.message);
+          exchange.reverse = { status: 'Failed', failed: true };
+          exchange.shipmentErrors.push({
+            leg: 'reverse',
+            error: reverseErr.message,
+            timestamp: new Date()
+          });
+          exchange.lastError = reverseErr.message;
+          addTimeline(exchange, 'Requested', 'system', null, 'Reverse shipment creation failed: ' + reverseErr.message);
+        }
+
+        // ── Create Forward Shipment (deliver replacement) ──────────────────────
+        try {
+          const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState);
+
+          const forwardResp = await shiprocketService.createExchangeForwardOrder(forwardPayload);
+          exchange.forward = {
+            orderId: forwardResp?.order_id ? String(forwardResp.order_id) : null,
+            shipmentId: forwardResp?.shipment_id ? String(forwardResp.shipment_id) : null,
+            awb: null,
+            trackingUrl: null,
+            status: 'Created',
+            failed: false,
+            response: forwardResp
+          };
+
+          if (forwardResp?.shipment_id) {
+            try {
+              const awbResp = await shiprocketService.assignAWB(forwardResp.shipment_id);
+              const awbData = awbResp?.response?.data;
+              if (awbData?.awb_code) {
+                exchange.forward.awb = awbData.awb_code;
+                exchange.forward.trackingUrl = `https://shiprocket.co/tracking/${awbData.awb_code}`;
+                exchange.forward.status = 'AWB Assigned';
+                if (!exchange.courierName) exchange.courierName = awbData.courier_name || null;
+              }
+            } catch (awbErr) {
+              console.error('Exchange forward AWB assignment failed:', awbErr.message);
+            }
+          }
+        } catch (forwardErr) {
+          console.error('Exchange forward shipment creation failed:', forwardErr.message);
+          exchange.forward = { status: 'Failed', failed: true };
+          exchange.shipmentErrors.push({
+            leg: 'forward',
+            error: forwardErr.message,
+            timestamp: new Date()
+          });
+          exchange.lastError = forwardErr.message;
+          addTimeline(exchange, 'Requested', 'system', null, 'Forward shipment creation failed: ' + forwardErr.message);
+        }
+
+        exchange.status = 'Approved';
+        order.status = 'Exchange Approved';
+        addTimeline(exchange, 'Approved', 'admin', admin?._id, 'Exchange approved by admin. Shipment creation attempted.');
+        addAudit(exchange, 'approved', admin, fromStatus, 'Approved', adminNotes || '');
       }
-      exchange.status = 'Completed';
-      order.status = 'Exchange Completed';
-      addTimeline(exchange, 'Completed', 'admin', admin?._id, adminNotes || 'Exchange completed');
-      addAudit(exchange, 'completed', admin, fromStatus, 'Completed', adminNotes || '');
-    }
 
-    // ── FAILED ────────────────────────────────────────────────────────────────
-    else if (status === 'Failed') {
-      await releaseReservedStock(exchange);
-      exchange.status = 'Failed';
-      if (adminNotes) exchange.adminNotes = adminNotes;
-      order.status = 'Delivered';
-      addTimeline(exchange, 'Failed', 'admin', admin?._id, adminNotes || '');
-      addAudit(exchange, 'failed', admin, fromStatus, 'Failed', adminNotes || '');
-    }
+      // ── REJECT ────────────────────────────────────────────────────────────────
+      else if (status === 'Rejected') {
+        await refundExchangeDifference(exchange);
+        exchange.status = 'Rejected';
+        exchange.rejectionReason = rejectionReason;
+        if (adminNotes) exchange.adminNotes = adminNotes;
+        order.status = 'Delivered';  // Revert
+        addTimeline(exchange, 'Rejected', 'admin', admin?._id, rejectionReason);
+        addAudit(exchange, 'rejected', admin, fromStatus, 'Rejected', rejectionReason);
+      }
 
-    // ── MANUAL REVIEW ─────────────────────────────────────────────────────────
-    else if (status === 'Manual Review') {
-      exchange.status = 'Manual Review';
-      if (adminNotes) exchange.adminNotes = adminNotes;
-      order.status = 'Manual Review';
-      addTimeline(exchange, 'Manual Review', 'admin', admin?._id, adminNotes || '');
-      addAudit(exchange, 'manual_review', admin, fromStatus, 'Manual Review', adminNotes || '');
-    }
+      // ── CANCEL ────────────────────────────────────────────────────────────────
+      else if (status === 'Cancelled') {
+        await refundExchangeDifference(exchange);
+        await releaseReservedStock(exchange);
+        exchange.status = 'Cancelled';
+        exchange.adminNotes = adminNotes;
+        order.status = 'Exchange Cancelled';
+        addTimeline(exchange, 'Cancelled', 'admin', admin?._id, adminNotes);
+        addAudit(exchange, 'cancelled', admin, fromStatus, 'Cancelled', adminNotes);
+      }
 
-    // ── INTERMEDIATE STATUSES (set by admin/webhook) ───────────────────────────
-    else if (['Pickup Scheduled', 'Old Item Picked Up', 'Replacement Dispatched'].includes(status)) {
-      exchange.status = status;
-      order.status = status;
-      addTimeline(exchange, status, 'admin', admin?._id, adminNotes || '');
-      addAudit(exchange, 'status_updated', admin, fromStatus, status, adminNotes || '');
-    }
+      // ── COMPLETED ─────────────────────────────────────────────────────────────
+      else if (status === 'Completed') {
+        await restockOriginalItem(exchange);
+        exchange.status = 'Completed';
+        order.status = 'Exchange Completed';
+        addTimeline(exchange, 'Completed', 'admin', admin?._id, adminNotes || 'Exchange completed');
+        addAudit(exchange, 'completed', admin, fromStatus, 'Completed', adminNotes || '');
+      }
 
-    else {
-      return res.status(400).json({ success: false, message: `Invalid status transition: ${status}` });
-    }
+      // ── FAILED ────────────────────────────────────────────────────────────────
+      else if (status === 'Failed') {
+        await refundExchangeDifference(exchange);
+        await releaseReservedStock(exchange);
+        exchange.status = 'Failed';
+        if (adminNotes) exchange.adminNotes = adminNotes;
+        order.status = 'Delivered';
+        addTimeline(exchange, 'Failed', 'admin', admin?._id, adminNotes || '');
+        addAudit(exchange, 'failed', admin, fromStatus, 'Failed', adminNotes || '');
+      }
 
-    await exchange.save();
-    await order.save();
+      // ── MANUAL REVIEW ─────────────────────────────────────────────────────────
+      else if (status === 'Manual Review') {
+        exchange.status = 'Manual Review';
+        if (adminNotes) exchange.adminNotes = adminNotes;
+        order.status = 'Manual Review';
+        addTimeline(exchange, 'Manual Review', 'admin', admin?._id, adminNotes || '');
+        addAudit(exchange, 'manual_review', admin, fromStatus, 'Manual Review', adminNotes || '');
+      }
+
+      // ── INTERMEDIATE STATUSES (set by admin/webhook) ───────────────────────────
+      else if (['Pickup Scheduled', 'Old Item Picked Up', 'Replacement Dispatched'].includes(status)) {
+        exchange.status = status;
+        order.status = status;
+        addTimeline(exchange, status, 'admin', admin?._id, adminNotes || '');
+        addAudit(exchange, 'status_updated', admin, fromStatus, status, adminNotes || '');
+      }
+
+      else {
+        await releaseClaim();
+        return res.status(400).json({ success: false, message: `Invalid status transition: ${status}` });
+      }
+
+      await exchange.save();
+      await order.save();
+    } catch (sideEffectErr) {
+      await releaseClaim();
+      throw sideEffectErr;
+    }
 
     res.json({ success: true, message: `Exchange status updated to ${exchange.status}`, exchange });
   } catch (error) {
@@ -672,8 +741,13 @@ exports.updateExchangeStatus = async (req, res) => {
 
 exports.handleExchangeWebhook = async (req, res) => {
   try {
+    const authError = verifyWebhookToken(req);
+    if (authError) {
+      return res.status(authError.status).json({ success: false, message: authError.message });
+    }
+
     const payload = req.body;
-    const rawOrderId = payload.order_id || payload.awb || '';
+    const rawOrderId = payload.order_id || payload.channel_order_id || payload.awb || '';
 
     // Determine leg
     let leg = null;
@@ -689,11 +763,17 @@ exports.handleExchangeWebhook = async (req, res) => {
       return res.status(200).json({ success: true, message: 'Not an exchange webhook, skipped' });
     }
 
+    if (!mongoose.Types.ObjectId.isValid(exchangeId)) {
+      return res.status(200).json({ success: true, message: 'Exchange not found, skipped' });
+    }
     const exchange = await ExchangeRequest.findById(exchangeId);
     if (!exchange) return res.status(200).json({ success: true, message: 'Exchange not found, skipped' });
 
-    const rawStatus = payload.current_status || payload.status || '';
-    const mapped = (EXCHANGE_WEBHOOK_MAP[leg] && EXCHANGE_WEBHOOK_MAP[leg][rawStatus]) || null;
+    const rawStatus = String(payload.current_status || payload.status || '').trim();
+    // Shiprocket sends statuses upper-cased ("DELIVERED"); the map is keyed in title case.
+    const legMap = EXCHANGE_WEBHOOK_MAP[leg] || {};
+    const mapKey = Object.keys(legMap).find(k => k.toUpperCase() === rawStatus.toUpperCase().replace(/_/g, ' '));
+    const mapped = mapKey ? legMap[mapKey] : null;
 
     // Append to webhook history
     exchange.webhookHistory.push({
@@ -710,39 +790,37 @@ exports.handleExchangeWebhook = async (req, res) => {
 
     const order = await Order.findById(exchange.orderId);
 
-    if (mapped && mapped !== exchange.status) {
-      const prevStatus = exchange.status;
+    // A single failed leg needs a human; only both legs failing is a full failure.
+    let target = mapped;
+    if (mapped === 'Failed') {
+      exchange[leg].failed = true;
+      target = (exchange.reverse.failed && exchange.forward.failed) ? 'Failed' : 'Manual Review';
+    }
 
-      if (mapped === 'Completed') {
-        // Restore original variant stock
-        if (exchange.originalItem.variationSku) {
-          await Product.findOneAndUpdate(
-            { _id: exchange.originalItem.productId, 'variations.sku': exchange.originalItem.variationSku },
-            { $inc: { 'variations.$.stock': 1, 'variations.$.sales': -1 } }
-          );
-        }
-        exchange.status = 'Completed';
-        if (order) order.status = 'Exchange Completed';
-      } else if (mapped === 'Failed') {
-        await releaseReservedStock(exchange);
-        exchange[leg].failed = true;
-        // Check if both legs failed → full failure
-        if (exchange.reverse.failed && exchange.forward.failed) {
-          exchange.status = 'Failed';
+    const fromStatus = exchange.status;
+    if (target && target !== fromStatus && (EXCHANGE_TRANSITIONS[fromStatus] || []).includes(target)) {
+      // Same claim as the admin endpoint: duplicate/out-of-order webhooks can't restock twice.
+      if (await claimExchangeStatus(exchange._id, fromStatus, target)) {
+        if (target === 'Completed') {
+          await restockOriginalItem(exchange);
+          if (order) order.status = 'Exchange Completed';
+        } else if (target === 'Failed') {
+          try {
+            await refundExchangeDifference(exchange);
+          } catch (refundErr) {
+            // Leave it for an admin: back out of 'Failed' so the admin "Failed" action (which
+            // refunds and releases stock) is still available.
+            await ExchangeRequest.updateOne({ _id: exchange._id, status: target }, { $set: { status: fromStatus } });
+            throw refundErr;
+          }
+          await releaseReservedStock(exchange);
           if (order) order.status = 'Delivered';
-        } else {
-          exchange.status = 'Manual Review';
-          if (order) order.status = 'Manual Review';
+        } else if (order) {
+          order.status = target;
         }
-      } else if (mapped === 'Manual Review') {
-        exchange.status = 'Manual Review';
-        if (order) order.status = 'Manual Review';
-      } else {
-        exchange.status = mapped;
-        if (order) order.status = mapped;
+        exchange.status = target;
+        addTimeline(exchange, exchange.status, 'webhook', null, `Shiprocket: ${rawStatus}`);
       }
-
-      addTimeline(exchange, exchange.status, 'webhook', null, `Shiprocket: ${rawStatus}`);
     }
 
     await exchange.save();

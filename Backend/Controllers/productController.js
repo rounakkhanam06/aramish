@@ -384,7 +384,11 @@ const createProduct = async (req, res) => {
 // @desc    Update a Product
 // @route   PUT /api/admin/catalog/products/:id
 // @access  Private (Admin)
-const updateProduct = async (req, res) => {
+const STALE_WRITE = Symbol('stale product write');
+
+// One attempt at applying the admin's edit. Returns STALE_WRITE (without responding) when the
+// product changed between reading and saving it, so the caller can retry on fresh data.
+const applyProductUpdate = async (req, res) => {
   try {
     console.log('[updateProduct] body keys:', Object.keys(req.body));
     console.log('[updateProduct] mrp:', req.body.mrp, 'sellingPrice:', req.body.sellingPrice);
@@ -392,6 +396,8 @@ const updateProduct = async (req, res) => {
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
+    const loadedUpdatedAt = product.updatedAt;
+    const loadedStock = product.stock;
 
     const finalSellingPrice = req.body.sellingPrice !== undefined ? Number(req.body.sellingPrice) : product.sellingPrice;
     const finalMrp = req.body.mrp !== undefined ? (req.body.mrp ? Number(req.body.mrp) : undefined) : product.mrp;
@@ -465,7 +471,8 @@ const updateProduct = async (req, res) => {
     if (req.body.flags !== undefined) product.flags = parseJsonField(req.body.flags);
     if (req.body.tags !== undefined) product.tags = parseJsonField(req.body.tags);
     if (req.body.variations !== undefined) {
-      const variations = parseJsonField(req.body.variations, []);
+      // Copied because the loop below edits it and a retried attempt must start from the request.
+      const variations = JSON.parse(JSON.stringify(parseJsonField(req.body.variations, []) ?? []));
       if (!Array.isArray(variations) || variations.length === 0) {
         return res.status(400).json({ success: false, message: 'At least one variant is required.' });
       }
@@ -504,8 +511,33 @@ const updateProduct = async (req, res) => {
         v.images = [...existingVImages.map(img => getImageUrl(img)), ...newVImages].filter(Boolean);
       }
 
+      // Orders, cancellations, returns and exchanges change variant stock while an admin has
+      // this form open, so the stock values in the form may be stale. Each existing variant
+      // carries `originalStock` (what the form loaded): unchanged by the admin -> keep the live
+      // stock; changed by the admin while the live stock also moved -> refuse instead of
+      // silently overwriting those orders' stock movements.
+      for (const v of variations) {
+        const live = product.variations.find(ev =>
+          (v._id && String(ev._id) === String(v._id)) || (v.sku && ev.sku === v.sku));
+        if (!live) continue; // new variant: take the entered stock
+        const submitted = Number(v.stock);
+        const baseline = v.originalStock === undefined || v.originalStock === null || v.originalStock === ''
+          ? null : Number(v.originalStock);
+        if (baseline !== null && submitted === baseline) {
+          v.stock = live.stock;
+        } else if (submitted !== live.stock && baseline !== live.stock) {
+          return res.status(409).json({
+            success: false,
+            message: `Stock for variant ${live.sku} changed to ${live.stock} (orders/returns) since this form was opened. Reload the product and enter the stock again.`
+          });
+        }
+      }
+
       product.variations = variations;
       product.markModified('variations');
+    } else if (req.body.stock !== undefined && product.variations && product.variations.length > 0 && Number(req.body.stock) !== loadedStock) {
+      // For variant products `stock` is the total of the variants (kept in sync automatically).
+      return res.status(400).json({ success: false, message: 'This product has variants. Update the stock of each variant instead of the total.' });
     }
 
     // Process Images
@@ -547,7 +579,17 @@ const updateProduct = async (req, res) => {
       }
     }
 
-    await product.save();
+    // Only save over the version read above: an order/return that changed stock in between
+    // would otherwise be overwritten by this full-document save.
+    product.$where = { updatedAt: loadedUpdatedAt };
+    try {
+      await product.save();
+    } catch (saveErr) {
+      // VersionError when the variants array was modified (versioned save), otherwise
+      // DocumentNotFoundError: either way the document changed since it was read.
+      if (saveErr.name === 'DocumentNotFoundError' || saveErr.name === 'VersionError') return STALE_WRITE;
+      throw saveErr;
+    }
     res.status(200).json({ success: true, message: 'Product updated successfully', product });
   } catch (error) {
     console.error('Update Product Error:', error);
@@ -560,6 +602,13 @@ const updateProduct = async (req, res) => {
     }
     res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
+};
+
+const updateProduct = async (req, res) => {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (await applyProductUpdate(req, res) !== STALE_WRITE) return;
+  }
+  res.status(409).json({ success: false, message: 'This product is being updated by orders right now. Please try saving again.' });
 };
 
 // @desc    Delete a Product

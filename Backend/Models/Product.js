@@ -124,6 +124,15 @@ const productSchema = new mongoose.Schema({
   }]
 }, { timestamps: true });
 
+// For a product with variants, `stock` is the total across its variants (what the admin
+// inventory list and stock alerts show). Every atomic variant stock $inc also $incs `stock` by
+// the same amount; this keeps it right whenever the whole document is saved.
+productSchema.pre('validate', function () {
+  if (this.variations && this.variations.length > 0) {
+    this.stock = this.variations.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
+  }
+});
+
 productSchema.index({ status: 1 });
 productSchema.index({ category: 1 });
 productSchema.index({ createdAt: -1 });

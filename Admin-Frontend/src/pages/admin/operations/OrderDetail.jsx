@@ -473,6 +473,7 @@ const OrderDetail = () => {
                            <option value="Paid">Paid</option>
                            <option value="Failed">Failed</option>
                            <option value="Refunded">Refunded</option>
+                           <option value="Cancelled" disabled>Cancelled (nothing collected)</option>
                          </select>
                       </div>
                    </div>
