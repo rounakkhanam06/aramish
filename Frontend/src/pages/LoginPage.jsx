@@ -246,7 +246,7 @@ export default function LoginPage() {
     <div className="min-h-[100dvh] w-full md:max-w-md md:mx-auto flex flex-col relative bg-[#F8F9FD] md:shadow-2xl md:border-x md:border-white/10">
 
       {/* Curved Orange top banner */}
-      <div className="relative h-52 shrink-0 bg-gradient-to-br from-orange-300 via-orange-400 to-[#1A2542] flex flex-col items-center justify-center pt-4">
+      <div className="relative h-52 shrink-0 bg-gradient-to-br from-orange-50 via-amber-100 to-orange-200 flex flex-col items-center justify-center pt-4">
         {renderLeafOverlay()}
 
         {/* Back to Home or Back to Phone Input */}
@@ -261,17 +261,17 @@ export default function LoginPage() {
               navigate('/');
             }
           }}
-          className="absolute top-6 left-4 w-9 h-9 bg-surface/20 backdrop-blur-sm border border-white/10 rounded-full flex items-center justify-center text-white active:scale-90 transition-all z-20 cursor-pointer shadow-sm"
+          className="absolute top-6 left-4 w-9 h-9 bg-black/5 backdrop-blur-sm border border-black/10 rounded-full flex items-center justify-center text-slate-700 active:scale-90 transition-all z-20 cursor-pointer shadow-sm hover:bg-black/10"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
 
         {/* Logo Container */}
-        <div className="relative z-10 h-28 flex items-center justify-center mb-2 animate-fade-in drop-shadow-xl">
+        <div className="relative z-10 h-44 flex items-center justify-center mb-2 animate-fade-in drop-shadow-xl">
           <img
             src="/aramish-logo.png"
             alt="Aramish Logo"
-            className="h-full w-auto object-contain drop-shadow-lg"
+            className="h-full w-auto object-contain drop-shadow-md"
             onError={(e) => { e.target.style.display = 'none'; }}
           />
         </div>

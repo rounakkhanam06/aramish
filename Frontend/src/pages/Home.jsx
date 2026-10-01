@@ -656,9 +656,9 @@ export default function Home() {
             {(systemSettings?.marqueeEnabled !== false) && !user && !isMobileAppWebView() && (
               <div className="w-full bg-[#0B132B] rounded-xl py-4 overflow-hidden select-none marquee-container relative mb-2">
                 <div className="animate-marquee flex items-center gap-8 text-[11px] font-bold text-amber-400 tracking-wider uppercase font-sans">
-                  <span>Download the Aramish App, Login & Get {systemSettings?.welcomeBonusCoins || 1000} Welcome Coins.</span>
+                  <span>Download the Aramish App, Login & Get {systemSettings?.welcomeBonusCoins || 1000} Welcome Coins. *T&C apply.</span>
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400/50 flex-shrink-0" />
-                  <span>Download the Aramish App, Login & Get {systemSettings?.welcomeBonusCoins || 1000} Welcome Coins.</span>
+                  <span>Download the Aramish App, Login & Get {systemSettings?.welcomeBonusCoins || 1000} Welcome Coins. *T&C apply.</span>
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400/50 flex-shrink-0" />
                 </div>
               </div>
@@ -1006,17 +1006,29 @@ export default function Home() {
               </div>
             </LazySection>
 
-            {/* 7. Explore All Products — no category/section filter, just everything */}
-            <button
-              onClick={() => navigate('/all-products')}
-              className="w-full flex items-center justify-between gap-3 bg-[#0B132B] hover:bg-[#1a2542] text-white rounded-2xl py-4 px-6 shadow-md transition-all cursor-pointer group"
-            >
-              <div className="flex items-center gap-3">
-                <LayoutGrid className="w-5 h-5 text-amber-300" />
-                <span className="text-sm md:text-base font-black tracking-wide">Explore All Products</span>
+            {/* 7. Explore All Products — Render all products in a grid instead of a button */}
+            <div className="space-y-4 pt-6 border-t border-white/10">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl md:text-2xl font-extrabold text-[#02006c] font-sans">
+                  ALL PRODUCTS
+                </h3>
+                <span className="text-[9px] md:text-xs bg-[#0B132B]/10 border border-[#0B132B]/20 text-[#0B132B] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                  Explore
+                </span>
               </div>
-              <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </button>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {rawAllProducts.length > 0 ? (
+                  rawAllProducts.map(normaliseProduct).map((product) => (
+                    <ProductCard key={`all-${product.id}`} product={product} />
+                  ))
+                ) : (
+                  <div className="col-span-2 md:col-span-4 py-8 flex flex-col items-center justify-center text-center text-slate-400">
+                    <LayoutGrid className="w-8 h-8 opacity-50 mb-2" />
+                    <span className="text-sm">No products found.</span>
+                  </div>
+                )}
+              </div>
+            </div>
 
           </>
         ) : (

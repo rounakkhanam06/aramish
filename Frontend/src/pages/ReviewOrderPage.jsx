@@ -464,7 +464,7 @@ export default function ReviewOrderPage() {
         addOrder(mappedOrder);
         clearCart();
         toast.success(`Order Placed Successfully via ${method}!`);
-        navigate('/orders', { replace: true });
+        navigate('/order-success', { replace: true, state: { order: o } });
       } else {
         toast.error(data.message || "Failed to place order.");
       }

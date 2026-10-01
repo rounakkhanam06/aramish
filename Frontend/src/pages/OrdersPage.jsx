@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Search, SlidersHorizontal, ChevronRight, Star, PenLine, Package, X, Image as ImageIcon, Video } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import toast from '../utils/toast';
 import { BANNERS } from '../data/mockData';
 import OptimizedImage from '../components/ui/OptimizedImage';
 import { getImageUrl } from '../utils/imageHelper';
+import CoinDrop from '../components/ui/CoinDrop';
 
 const fallbackImages = [
   'https://images.unsplash.com/photo-1549298916-b41d501d3772?auto=format&fit=crop&q=80&w=200',
@@ -33,7 +34,9 @@ const getStatusStyle = (status) => STATUS_STYLES[status] || DEFAULT_STATUS_STYLE
 
 export default function OrdersPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { orders: appOrders, refreshOrders } = useApp();
+  const [showCoinDrop, setShowCoinDrop] = useState(location.state?.showCoins || false);
 
   const [myReviews, setMyReviews] = useState([]);
   const [loadingReviews, setLoadingReviews] = useState(false);
@@ -246,6 +249,7 @@ export default function OrdersPage() {
 
   return (
     <div className="bg-surface min-h-screen font-sans pb-20 select-none">
+      {showCoinDrop && <CoinDrop onComplete={() => setShowCoinDrop(false)} />}
       {/* Header (Mobile Only) */}
       <div className="px-4 py-3 flex items-center gap-3 sticky top-0 bg-[#FFE4D6] z-50 shadow-sm md:hidden">
         <button onClick={() => navigate(-1)} className="p-1 -ml-1 hover:bg-gold/10 rounded-full transition-colors cursor-pointer">

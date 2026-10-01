@@ -844,11 +844,10 @@ export default function ProductDetailsPage() {
               </div>
               <div className="text-xs leading-tight">
                 <p className="font-black text-amber-900 flex items-center gap-1.5 text-xs">
-                  Earn {systemSettings.orderRewardPercentage}% back in Aramish Coins! 🪙
+                  Earn Aramish Coins on Every Order 🪙
                 </p>
                 <p className="text-amber-800/90 text-[11px] font-semibold mt-0.5">
-                  Get <span className="font-extrabold text-amber-950">{systemSettings.orderRewardPercentage}% of the price as coins</span>
-                  {(systemSettings?.orderRewardMaxCap ?? 0) > 0 && <> (up to {systemSettings.orderRewardMaxCap} coins per order)</>} in your wallet after delivery. Usable once the return window closes.
+                  Get reward coins on every order{(systemSettings?.orderRewardMaxCap ?? 0) > 0 && <>, up to {systemSettings.orderRewardMaxCap} coins per order</>}. Usable once the return window closes.
                 </p>
               </div>
             </div>
@@ -1291,8 +1290,11 @@ export default function ProductDetailsPage() {
           </div>
         </div>
 
-        {/* Similar Products Grid (Spans full width) */}
-        <div className="col-span-1 md:col-span-12 bg-surface py-6 px-4 md:rounded-2xl md:border md:border-white/10 md:shadow-xs mt-4">
+      </div>
+
+      {/* Similar Products Grid (Spans full width) */}
+      <div className={`max-w-7xl mx-auto w-full px-0 md:px-6 lg:px-8 pb-6 md:pb-8 ${(!displayStock || displayStock <= 0) ? 'grayscale opacity-90' : ''}`}>
+        <div className="bg-surface py-6 px-4 md:rounded-2xl md:border md:border-white/10 md:shadow-xs mt-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-lg tracking-tight text-[#02006c]">Similar Products</h3>
             <div 

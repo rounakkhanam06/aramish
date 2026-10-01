@@ -63,6 +63,7 @@ const ReferralLandingPage = lazyRetry(() => import('./pages/ReferralLandingPage'
 const SavedAddressesPage = lazyRetry(() => import('./pages/SavedAddressesPage'));
 const TrackOrderPage     = lazyRetry(() => import('./pages/TrackOrderPage'));
 const OrderDetailsPage   = lazyRetry(() => import('./pages/OrderDetailsPage'));
+const OrderSuccessPage   = lazyRetry(() => import('./pages/OrderSuccessPage'));
 const BrandPage          = lazyRetry(() => import('./pages/BrandPage'));
 const SearchPage         = lazyRetry(() => import('./pages/SearchPage'));
 const NotFoundPage       = lazyRetry(() => import('./pages/NotFoundPage'));
@@ -159,6 +160,7 @@ function AppContent() {
           <Route path="/refer" element={<ReferEarnPage />} />
           <Route path="/r/:code" element={<ReferralLandingPage />} />
           <Route path="/saved-addresses" element={<SavedAddressesPage />} />
+          <Route path="/order-success" element={<OrderSuccessPage />} />
           <Route path="/track-order/:orderId" element={<TrackOrderPage />} />
           <Route path="/order-details/:orderId" element={<OrderDetailsPage />} />
           <Route path="/brand/:brandId" element={<BrandPage />} />

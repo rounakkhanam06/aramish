@@ -118,7 +118,8 @@ export default function Layout({ children }) {
                            location.pathname.toLowerCase().startsWith('/track-order') ||
                            location.pathname.toLowerCase().startsWith('/order-details') ||
                            location.pathname.toLowerCase().startsWith('/saved-addresses') ||
-                           location.pathname.toLowerCase().startsWith('/review-order');
+                           location.pathname.toLowerCase().startsWith('/review-order') ||
+                           location.pathname.toLowerCase().startsWith('/order-success');
 
   const hideMobileNavMobile = isLoginPage || 
                               isSearchPage ||
@@ -138,13 +139,15 @@ export default function Layout({ children }) {
                               location.pathname.toLowerCase().startsWith('/support') ||
                               location.pathname.toLowerCase().startsWith('/privacy') ||
                               location.pathname.toLowerCase().startsWith('/terms') ||
-                              location.pathname.toLowerCase().startsWith('/return-exchange-policy');
+                              location.pathname.toLowerCase().startsWith('/return-exchange-policy') ||
+                              location.pathname.toLowerCase().startsWith('/order-success');
 
   // Desktop/Tablet overrides:
   // - Show Top Navbar on all pages except login, studio, and search
   // - Hide Bottom MobileNav on all pages
   const isStudioPage = location.pathname.toLowerCase().startsWith('/studio');
-  const hideNavbar = isMobile ? hideNavbarMobile : (isLoginPage || isStudioPage || isSearchPage);
+  const isOrderSuccessPage = location.pathname.toLowerCase().startsWith('/order-success');
+  const hideNavbar = isMobile ? hideNavbarMobile : (isLoginPage || isStudioPage || isSearchPage || isOrderSuccessPage);
   const hideMobileNav = isMobile ? hideMobileNavMobile : true;
 
   const [pullDistance, setPullDistance] = useState(0);
