@@ -139,6 +139,31 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
   });
 });
 
+// Serve Apple Universal Links (AASA) for iOS deep linking / Referral handling
+app.get('/.well-known/apple-app-site-association', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  const aasaPath = path.join(__dirname, '../Frontend/public/.well-known/apple-app-site-association');
+  res.sendFile(aasaPath, (err) => {
+    if (err) {
+      // Inline fallback – update TEAM_ID and BUNDLE_ID when your iOS app is ready
+      res.json({
+        "applinks": {
+          "details": [
+            {
+              "appIDs": ["REPLACE_WITH_TEAM_ID.REPLACE_WITH_IOS_BUNDLE_ID"],
+              "components": [
+                { "/": "/r/*", "comment": "Referral invite links" },
+                { "/": "/referral/*", "comment": "Referral deep links" },
+                { "/": "/product/*", "comment": "Product deep links" }
+              ]
+            }
+          ]
+        }
+      });
+    }
+  });
+});
+
 // Routes
 app.use('/admin/auth', require('./Router/adminAuthRoutes'));
 app.use('/auth', require('./Router/userAuthRoutes'));
