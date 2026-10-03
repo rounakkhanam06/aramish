@@ -857,7 +857,7 @@ export default function ReviewOrderPage() {
                   {paymentMethod === 'COD' && <span className="w-2 h-2 rounded-full bg-[#0B132B]" />}
                 </button>
 
-                {/* Online Payment option */}
+                {/* Online Payment option (Commented out)
                 <button
                   type="button"
                   onClick={() => {
@@ -882,6 +882,7 @@ export default function ReviewOrderPage() {
                   </div>
                   {paymentMethod === 'ONLINE' && <span className="w-2 h-2 rounded-full bg-[#0B132B]" />}
                 </button>
+                */}
               </div>
             )}
           </div>
@@ -1193,7 +1194,8 @@ export default function ReviewOrderPage() {
             <p className="text-slate-600 text-sm leading-relaxed mb-6">
               {feeInfoModal === 'platform' 
                 ? 'This nominal fee helps us maintain the platform, ensure secure payments, and provide you with a seamless shopping experience.'
-                : 'A small fee charged by our delivery partners for handling cash. Pay online to avoid this fee!'
+                // Online payment is switched off for now — restore " Pay online to avoid this fee!" when it's back.
+                : 'A small fee charged by our delivery partners for handling cash.'
               }
             </p>
             <button onClick={() => setFeeInfoModal(null)} className="w-full bg-[#0B132B] text-white py-3 rounded-xl font-bold active:scale-95 transition-transform">
