@@ -11,6 +11,11 @@ import toast from 'react-hot-toast';
 import OptimizedImage from '../../../components/common/OptimizedImage';
 import { formatDate, formatDateTime } from '../../../utils/date';
 
+// A leg with its AWB whose courier pickup hasn't been requested yet (and that isn't moving yet).
+const LEG_NOT_YET_MOVING = ['PENDING', 'CREATED', 'AWB ASSIGNED', 'NEW'];
+const legNeedsPickup = (leg) =>
+  !!leg?.awb && !leg.pickupScheduled && LEG_NOT_YET_MOVING.includes(String(leg.status || '').toUpperCase().replace(/_/g, ' ').trim());
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const STATUS_COLORS = {
@@ -245,7 +250,7 @@ const Exchanges = () => {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        toast.success(`Shipment retry successful for ${leg} leg`);
+        toast.success(data.message || `Shipment retry successful for ${leg} leg`);
         fetchDetail(selectedExchange._id);
         fetchExchanges();
       } else {
@@ -667,7 +672,19 @@ const Exchanges = () => {
                         </div>
                         <AWBField label="Reverse AWB" awb={selectedExchange.reverse?.awb} trackingUrl={selectedExchange.reverse?.trackingUrl} />
                         {selectedExchange.reverse?.status && <p className="text-[10px] text-amber-600 mt-1.5 font-bold">Status: {selectedExchange.reverse.status}</p>}
-                        {!selectedExchange.reverse?.awb && <p className="text-[10px] text-amber-500 italic">Shipment not yet created</p>}
+                        {!selectedExchange.reverse?.awb && <p className="text-[10px] text-amber-500 italic">{selectedExchange.reverse?.shipmentId ? 'Shipment created — courier (AWB) not assigned yet' : 'Shipment not yet created'}</p>}
+                        {selectedExchange.reverse?.shipmentId && !selectedExchange.reverse?.failed && (!selectedExchange.reverse?.awb || legNeedsPickup(selectedExchange.reverse)) && (
+                          <div className="flex justify-between items-center mt-2 pt-2 border-t border-amber-200/50">
+                            <span className="text-[10px] text-red-600 font-medium">{!selectedExchange.reverse?.awb ? 'No courier booked' : 'Courier pickup not scheduled'}</span>
+                            <button
+                              onClick={() => handleRetryShipment('reverse')}
+                              disabled={updatingStatus}
+                              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-[9px] px-2 py-1 rounded disabled:opacity-50"
+                            >
+                              {updatingStatus ? 'Working...' : (!selectedExchange.reverse?.awb ? 'Assign AWB' : 'Schedule Pickup')}
+                            </button>
+                          </div>
+                        )}
                         {selectedExchange.reverse?.failed && (
                           <div className="flex justify-between items-center mt-2 pt-2 border-t border-amber-200/50">
                             <span className="text-[10px] text-red-600 font-medium">Failed attempt</span>
@@ -690,7 +707,19 @@ const Exchanges = () => {
                         </div>
                         <AWBField label="Forward AWB" awb={selectedExchange.forward?.awb} trackingUrl={selectedExchange.forward?.trackingUrl} />
                         {selectedExchange.forward?.status && <p className="text-[10px] text-blue-600 mt-1.5 font-bold">Status: {selectedExchange.forward.status}</p>}
-                        {!selectedExchange.forward?.awb && <p className="text-[10px] text-blue-500 italic">Shipment not yet created</p>}
+                        {!selectedExchange.forward?.awb && <p className="text-[10px] text-blue-500 italic">{selectedExchange.forward?.shipmentId ? 'Shipment created — courier (AWB) not assigned yet' : 'Shipment not yet created'}</p>}
+                        {selectedExchange.forward?.shipmentId && !selectedExchange.forward?.failed && (!selectedExchange.forward?.awb || legNeedsPickup(selectedExchange.forward)) && (
+                          <div className="flex justify-between items-center mt-2 pt-2 border-t border-blue-200/50">
+                            <span className="text-[10px] text-red-600 font-medium">{!selectedExchange.forward?.awb ? 'No courier booked' : 'Replacement: schedule once packed'}</span>
+                            <button
+                              onClick={() => handleRetryShipment('forward')}
+                              disabled={updatingStatus}
+                              className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[9px] px-2 py-1 rounded disabled:opacity-50"
+                            >
+                              {updatingStatus ? 'Working...' : (!selectedExchange.forward?.awb ? 'Assign AWB' : 'Schedule Pickup')}
+                            </button>
+                          </div>
+                        )}
                         {selectedExchange.forward?.failed && (
                           <div className="flex justify-between items-center mt-2 pt-2 border-t border-blue-200/50">
                             <span className="text-[10px] text-red-600 font-medium">Failed attempt</span>

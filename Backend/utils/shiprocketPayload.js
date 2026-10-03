@@ -10,7 +10,12 @@ const { parseCityState } = require('../Router/shiprocketService');
 
 const DEFAULT_WEIGHT_KG = 0.5;
 // Shiprocket requires an email and phone; these are used only when the customer has none.
-const FALLBACK_EMAIL = 'customer@aramish.com';
+// Most customers sign up with a phone OTP and have no email, so their Shiprocket emails go to the
+// store's own inbox (customers still get SMS updates). Never a made-up address on someone else's
+// domain — those emails carry the customer's name, address and items.
+const DEFAULT_STORE_EMAIL = 'aramishshoes@gmail.com';
+const fallbackEmail = () =>
+  (process.env.SHIPROCKET_FALLBACK_EMAIL || '').trim() || (process.env.RETURN_SHIPPING_EMAIL || '').trim() || DEFAULT_STORE_EMAIL;
 const FALLBACK_PHONE = '9876543210';
 
 const toShiprocketDate = (date) => new Date(date || Date.now()).toISOString().slice(0, 16).replace('T', ' ');
@@ -68,7 +73,8 @@ const cheapestCourier = (couriers, isCod) => {
 const buildShiprocketOrderPayload = (order, user, { weight, hsnByProductId } = {}) => {
   const addr = order.deliveryAddress || {};
   const { city, state } = parseCityState(addr.address);
-  const payable = Math.max(0, Number(order.total) || 0);
+  // Rounded to paise: stored totals can carry float leftovers (e.g. 1989.7199999999998).
+  const payable = Math.max(0, Math.round((Number(order.total) || 0) * 100) / 100);
   const isCod = order.paymentMethod === 'COD' && payable > 0;
   // Prepaid: declare the full order value (what was paid in any form), for the invoice/insurance.
   const declaredValue = isCod
@@ -86,7 +92,7 @@ const buildShiprocketOrderPayload = (order, user, { weight, hsnByProductId } = {
     billing_pincode: addr.pincode,
     billing_state: state,
     billing_country: 'India',
-    billing_email: (user && user.email) || FALLBACK_EMAIL,
+    billing_email: (user && user.email) || fallbackEmail(),
     billing_phone: addr.phone || (user && user.phone) || FALLBACK_PHONE,
     shipping_is_billing: true,
     order_items: (order.items || []).map(item => toOrderItem({
@@ -105,9 +111,46 @@ const buildShiprocketOrderPayload = (order, user, { weight, hsnByProductId } = {
   };
 };
 
+// The warehouse returns and exchange pickups are delivered back to. These must come from the
+// server's .env — there is deliberately no made-up fallback address, since a return sent to a
+// wrong address is worse than one that fails with a clear message admin can see and retry.
+const RETURN_WAREHOUSE_ENV = {
+  address: 'RETURN_SHIPPING_ADDRESS',
+  city: 'RETURN_SHIPPING_CITY',
+  state: 'RETURN_SHIPPING_STATE',
+  phone: 'RETURN_SHIPPING_PHONE',
+  pincode: 'SHIPROCKET_PICKUP_PINCODE'
+};
+
+/** Names of the return-warehouse settings missing from the environment (empty when all set). */
+const missingReturnWarehouseSettings = () =>
+  Object.values(RETURN_WAREHOUSE_ENV).filter(key => !String(process.env[key] || '').trim());
+
+/** The return warehouse address, or throws naming the missing .env settings. */
+const getReturnWarehouse = () => {
+  const missing = missingReturnWarehouseSettings();
+  if (missing.length) {
+    throw new Error(`Return warehouse address is not configured on the server (missing ${missing.join(', ')} in .env)`);
+  }
+  const env = (key) => String(process.env[key]).trim();
+  return {
+    name: (process.env.RETURN_SHIPPING_NAME || '').trim() || 'Aramish Warehouse',
+    address: env(RETURN_WAREHOUSE_ENV.address),
+    address_2: (process.env.RETURN_SHIPPING_ADDRESS_2 || '').trim(),
+    city: env(RETURN_WAREHOUSE_ENV.city),
+    state: env(RETURN_WAREHOUSE_ENV.state),
+    country: 'India',
+    pincode: env(RETURN_WAREHOUSE_ENV.pincode),
+    phone: env(RETURN_WAREHOUSE_ENV.phone),
+    email: (process.env.RETURN_SHIPPING_EMAIL || '').trim() || fallbackEmail()
+  };
+};
+
 module.exports = {
+  missingReturnWarehouseSettings,
+  getReturnWarehouse,
   DEFAULT_WEIGHT_KG,
-  FALLBACK_EMAIL,
+  fallbackEmail,
   FALLBACK_PHONE,
   toShiprocketDate,
   loadShippingDetails,

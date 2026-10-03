@@ -10,7 +10,8 @@ const { resolveVariantPrice } = require('../utils/priceHelper');
 const { getDeliveredAt, refundOnlinePayment } = require('../utils/orderHelper');
 const { verifyWebhookToken } = require('../utils/shiprocketWebhookAuth');
 const { isRazorpayConfigured, verifyAndCapturePayment } = require('../utils/razorpayService');
-const { loadShippingDetails, toOrderItem } = require('../utils/shiprocketPayload');
+const { loadShippingDetails, toOrderItem, getReturnWarehouse, fallbackEmail } = require('../utils/shiprocketPayload');
+const { srErrorMessage, readAwbResult, requestPickupChecked, PICKUP_BOOKED_OR_LATER } = require('../utils/shiprocketResults');
 
 // Verifies (and captures) a Razorpay payment covering `expectedAmount` (rupees) — the same check
 // checkout uses, applied to exchange price-difference payments.
@@ -126,32 +127,66 @@ const exchangeHsnCodes = async (exchange) => {
   return (await loadShippingDetails(items)).hsnByProductId;
 };
 
-// Assigns the AWB for one exchange leg. Shiprocket reports most failures (e.g. a low wallet
-// balance) inside a normal reply, so a missing awb_code is recorded as a shipment error that
-// admin can see, instead of being silently ignored.
-const assignExchangeLegAwb = async (exchange, leg, shipmentId) => {
-  let error = null;
-  try {
-    const awbResp = await shiprocketService.assignAWB(shipmentId);
-    const awbData = awbResp?.response?.data;
-    if (awbData?.awb_code) {
-      exchange[leg].awb = awbData.awb_code;
-      exchange[leg].trackingUrl = `https://shiprocket.co/tracking/${awbData.awb_code}`;
-      exchange[leg].status = 'AWB Assigned';
-      if (leg === 'reverse' || !exchange.courierName) exchange.courierName = awbData.courier_name || null;
-      return;
+// A leg that has its AWB but whose courier pickup was never requested, and that hasn't started
+// moving yet (shipments created before pickups were requested automatically may already be on
+// their way — those must not get a new pickup request).
+const LEG_NOT_YET_MOVING = ['PENDING', 'CREATED', 'AWB ASSIGNED', 'NEW'];
+const needsPickupRequest = (legData) =>
+  !!legData?.awb && !legData.pickupScheduled &&
+  LEG_NOT_YET_MOVING.includes(String(legData.status || '').toUpperCase().replace(/_/g, ' ').trim());
+
+// Books the courier for one exchange leg whose Shiprocket shipment exists: assigns the AWB, then
+// (when `schedulePickup`) requests the courier pickup — Shiprocket does neither by itself, and
+// without the pickup request no courier comes. Steps already done are skipped, so a retry just
+// continues. Shiprocket reports most failures (e.g. a low wallet balance) inside a normal reply;
+// they are recorded as shipment errors admin can see and retry. Returns true when all done.
+const bookExchangeLeg = async (exchange, leg, { schedulePickup = true } = {}) => {
+  const shipmentId = exchange[leg].shipmentId;
+  const fail = (message) => {
+    console.error(`Exchange ${leg} shipment not booked:`, message);
+    exchange.shipmentErrors.push({ leg, error: message, timestamp: new Date() });
+    return false;
+  };
+
+  if (!exchange[leg].awb) {
+    let awbResp;
+    try {
+      // The reverse leg is a return (pickup of the old item from the customer).
+      awbResp = await shiprocketService.assignAWB(shipmentId, null, { isReturn: leg === 'reverse' });
+    } catch (awbErr) {
+      return fail(`AWB not assigned: ${srErrorMessage(awbErr)}`);
     }
-    error = awbData?.awb_assign_error || awbResp?.message || 'Shiprocket did not assign an AWB';
-  } catch (awbErr) {
-    error = awbErr.response?.data?.message || awbErr.message;
+    const { awbInfo, error } = readAwbResult(awbResp);
+    if (error) return fail(`AWB not assigned: ${error}`);
+    exchange[leg].awb = awbInfo.awb_code;
+    exchange[leg].trackingUrl = `https://shiprocket.co/tracking/${awbInfo.awb_code}`;
+    exchange[leg].status = 'AWB Assigned';
+    if (leg === 'reverse' || !exchange.courierName) exchange.courierName = awbInfo.courier_name || null;
   }
-  console.error(`Exchange ${leg} AWB assignment failed:`, error);
-  exchange.shipmentErrors.push({ leg, error: `AWB not assigned: ${error}. Assign it from the Shiprocket panel.`, timestamp: new Date() });
+
+  if (schedulePickup && !exchange[leg].pickupScheduled) {
+    const { scheduled, error } = await requestPickupChecked(shiprocketService, shipmentId);
+    if (!scheduled) return fail(`Courier assigned (AWB ${exchange[leg].awb}) but pickup not scheduled: ${error}`);
+    exchange[leg].pickupScheduled = true;
+    exchange[leg].status = 'Pickup Scheduled';
+  }
+  return true;
+};
+
+// Shiprocket sometimes answers an order-create call without creating anything. Treat that as a
+// failure, so the leg is marked Failed (and can be retried) instead of "Created" with no order.
+const requireShiprocketOrder = (resp, leg) => {
+  if (!resp?.order_id || !resp?.shipment_id) {
+    throw new Error(`Shiprocket did not create the ${leg} shipment${resp?.message ? `: ${resp.message}` : ''}`);
+  }
+  return resp;
 };
 
 // Builds the Shiprocket reverse-shipment payload (pickup of the old item). Priced at the
 // original item's value, since that's what's being returned.
-const buildReversePayload = (exchange, originalOrder, cityState, hsnByProductId = {}) => ({
+const buildReversePayload = (exchange, originalOrder, cityState, hsnByProductId = {}) => {
+  const warehouse = getReturnWarehouse();
+  return {
   order_id: `EXC_REV_${exchange._id.toString()}`,
   order_date: new Date().toISOString().slice(0, 16).replace('T', ' '),
   channel_id: '',
@@ -163,18 +198,18 @@ const buildReversePayload = (exchange, originalOrder, cityState, hsnByProductId 
   pickup_state: cityState.state,
   pickup_country: 'India',
   pickup_pincode: originalOrder.deliveryAddress.pincode,
-  pickup_email: originalOrder.userId?.email || 'customer@aramish.com',
+  pickup_email: originalOrder.userId?.email || fallbackEmail(),
   pickup_phone: originalOrder.deliveryAddress.phone || originalOrder.userId?.phone || '9999999999',
-  shipping_customer_name: process.env.RETURN_SHIPPING_NAME || 'Aramish Warehouse',
+  shipping_customer_name: warehouse.name,
   shipping_last_name: '',
-  shipping_address: process.env.RETURN_SHIPPING_ADDRESS || 'Warehouse 12, Sector 63',
-  shipping_address_2: '',
-  shipping_city: process.env.RETURN_SHIPPING_CITY || 'Noida',
-  shipping_state: process.env.RETURN_SHIPPING_STATE || 'Uttar Pradesh',
+  shipping_address: warehouse.address,
+  shipping_address_2: warehouse.address_2,
+  shipping_city: warehouse.city,
+  shipping_state: warehouse.state,
   shipping_country: 'India',
-  shipping_pincode: process.env.SHIPROCKET_PICKUP_PINCODE || '201301',
-  shipping_phone: process.env.RETURN_SHIPPING_PHONE || '9876543210',
-  shipping_email: process.env.RETURN_SHIPPING_EMAIL || 'warehouse@aramish.com',
+  shipping_pincode: warehouse.pincode,
+  shipping_phone: warehouse.phone,
+  shipping_email: warehouse.email,
   order_items: [toOrderItem({
     name: exchange.originalItem.name,
     sku: exchange.originalItem.variationSku || exchange.originalItem.productId.toString(),
@@ -185,7 +220,8 @@ const buildReversePayload = (exchange, originalOrder, cityState, hsnByProductId 
   payment_method: 'Prepaid',
   sub_total: exchange.originalItem.price,
   length: 10, breadth: 10, height: 10, weight: 0.5
-});
+  };
+};
 
 // Builds the Shiprocket forward-shipment payload (delivery of the replacement). Priced at the
 // replacement's actual value. If the price difference is being collected via COD, the courier
@@ -205,7 +241,7 @@ const buildForwardPayload = (exchange, originalOrder, cityState, hsnByProductId 
     billing_pincode: originalOrder.deliveryAddress.pincode,
     billing_state: cityState.state,
     billing_country: 'India',
-    billing_email: originalOrder.userId?.email || 'customer@aramish.com',
+    billing_email: originalOrder.userId?.email || fallbackEmail(),
     billing_phone: originalOrder.deliveryAddress.phone || originalOrder.userId?.phone || '9999999999',
     shipping_is_billing: true,
     shipping_customer_name: originalOrder.deliveryAddress.name || originalOrder.userId?.name || 'Customer',
@@ -216,7 +252,7 @@ const buildForwardPayload = (exchange, originalOrder, cityState, hsnByProductId 
     shipping_pincode: originalOrder.deliveryAddress.pincode,
     shipping_state: cityState.state,
     shipping_country: 'India',
-    shipping_email: originalOrder.userId?.email || 'customer@aramish.com',
+    shipping_email: originalOrder.userId?.email || fallbackEmail(),
     shipping_phone: originalOrder.deliveryAddress.phone || originalOrder.userId?.phone || '9999999999',
     order_items: [toOrderItem({
       name: `${exchange.requestedVariant.name || exchange.originalItem.name} (${exchange.requestedVariant.color}/${exchange.requestedVariant.size})`,
@@ -601,7 +637,7 @@ exports.updateExchangeStatus = async (req, res) => {
         try {
           const reversePayload = buildReversePayload(exchange, originalOrder, cityState, await exchangeHsnCodes(exchange));
 
-          const reverseResp = await shiprocketService.createShiprocketReturnOrder(reversePayload);
+          const reverseResp = requireShiprocketOrder(await shiprocketService.createShiprocketReturnOrder(reversePayload), 'reverse');
           exchange.reverse = {
             orderId: reverseResp?.order_id ? String(reverseResp.order_id) : null,
             shipmentId: reverseResp?.shipment_id ? String(reverseResp.shipment_id) : null,
@@ -613,7 +649,7 @@ exports.updateExchangeStatus = async (req, res) => {
           };
 
           if (reverseResp?.shipment_id) {
-            await assignExchangeLegAwb(exchange, 'reverse', reverseResp.shipment_id);
+            await bookExchangeLeg(exchange, 'reverse');
           }
         } catch (reverseErr) {
           console.error('Exchange reverse shipment creation failed:', reverseErr.message);
@@ -631,7 +667,7 @@ exports.updateExchangeStatus = async (req, res) => {
         try {
           const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState, await exchangeHsnCodes(exchange));
 
-          const forwardResp = await shiprocketService.createExchangeForwardOrder(forwardPayload);
+          const forwardResp = requireShiprocketOrder(await shiprocketService.createExchangeForwardOrder(forwardPayload), 'forward');
           exchange.forward = {
             orderId: forwardResp?.order_id ? String(forwardResp.order_id) : null,
             shipmentId: forwardResp?.shipment_id ? String(forwardResp.shipment_id) : null,
@@ -643,7 +679,8 @@ exports.updateExchangeStatus = async (req, res) => {
           };
 
           if (forwardResp?.shipment_id) {
-            await assignExchangeLegAwb(exchange, 'forward', forwardResp.shipment_id);
+            // Warehouse pickup of the replacement is scheduled by admin ("Schedule Pickup") once it is packed.
+          await bookExchangeLeg(exchange, 'forward', { schedulePickup: false });
           }
         } catch (forwardErr) {
           console.error('Exchange forward shipment creation failed:', forwardErr.message);
@@ -791,6 +828,15 @@ exports.handleExchangeWebhook = async (req, res) => {
 
     // Update leg status
     exchange[leg].status = rawStatus;
+    // An AWB assigned straight from the Shiprocket panel is only learnt from its webhooks.
+    const webhookAwb = payload.awb || payload.awb_code;
+    if (webhookAwb && !exchange[leg].awb) {
+      exchange[leg].awb = String(webhookAwb);
+      exchange[leg].trackingUrl = `https://shiprocket.co/tracking/${webhookAwb}`;
+    }
+    if (PICKUP_BOOKED_OR_LATER.test(rawStatus.toUpperCase().replace(/_/g, ' '))) {
+      exchange[leg].pickupScheduled = true;
+    }
 
     const order = await Order.findById(exchange.orderId);
 
@@ -856,6 +902,16 @@ exports.updateExchangeAddress = async (req, res) => {
     const exchange = await ExchangeRequest.findById(req.params.id);
     if (!exchange) return res.status(404).json({ success: false, message: 'Exchange request not found' });
 
+    // Shipments already created in Shiprocket keep the address they were created with, so a
+    // change here would not reach the courier — the pickup/delivery would still go to the old one.
+    const createdLegs = ['reverse', 'forward'].filter(l => exchange[l]?.shipmentId);
+    if (createdLegs.length) {
+      return res.status(400).json({
+        success: false,
+        message: `The ${createdLegs.join(' and ')} shipment is already created in Shiprocket with the current address. Change the address in the Shiprocket panel for that shipment instead.`
+      });
+    }
+
     const order = await Order.findById(exchange.orderId);
     if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
 
@@ -904,6 +960,23 @@ exports.retryExchangeShipment = async (req, res) => {
     const admin = req.admin || req.user;
 
     try {
+      // The shipment already exists in Shiprocket and only its courier (AWB) and/or pickup request
+      // are missing, e.g. the wallet was low, or the replacement is now packed. Continue from
+      // there — re-creating would make a duplicate Shiprocket order — and don't count it as a
+      // failed retry (the shipment itself is fine).
+      if (exchange[leg]?.shipmentId && (!exchange[leg]?.awb || needsPickupRequest(exchange[leg]))) {
+        const booked = await bookExchangeLeg(exchange, leg);
+        exchange.lastRetryAt = new Date();
+        const note = booked
+          ? `Courier booked for ${leg} leg (AWB ${exchange[leg].awb}), pickup scheduled.`
+          : `Booking failed for ${leg} leg: ${exchange.shipmentErrors[exchange.shipmentErrors.length - 1].error}`;
+        addTimeline(exchange, exchange.status, 'admin', admin?._id, note);
+        addAudit(exchange, booked ? 'shipment_retry' : 'shipment_retry_failed', admin, exchange.status, exchange.status, note);
+        exchange.shipmentRetryInProgress = false;
+        await exchange.save();
+        return res.status(booked ? 200 : 502).json({ success: booked, message: note, exchange });
+      }
+
       if (exchange.retryCount >= 3) {
         exchange.status = 'Manual Review';
         addTimeline(exchange, 'Manual Review', 'system', null, 'Maximum retry limit (3) exceeded. Moved to Manual Review.');
@@ -931,7 +1004,7 @@ exports.retryExchangeShipment = async (req, res) => {
         // Create Reverse Shipment
         const reversePayload = buildReversePayload(exchange, originalOrder, cityState, await exchangeHsnCodes(exchange));
 
-        const reverseResp = await shiprocketService.createShiprocketReturnOrder(reversePayload);
+        const reverseResp = requireShiprocketOrder(await shiprocketService.createShiprocketReturnOrder(reversePayload), 'reverse');
         exchange.reverse = {
           orderId: reverseResp?.order_id ? String(reverseResp.order_id) : null,
           shipmentId: reverseResp?.shipment_id ? String(reverseResp.shipment_id) : null,
@@ -943,13 +1016,13 @@ exports.retryExchangeShipment = async (req, res) => {
         };
 
         if (reverseResp?.shipment_id) {
-          await assignExchangeLegAwb(exchange, 'reverse', reverseResp.shipment_id);
+          await bookExchangeLeg(exchange, 'reverse');
         }
       } else {
         // Create Forward Shipment
         const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState, await exchangeHsnCodes(exchange));
 
-        const forwardResp = await shiprocketService.createExchangeForwardOrder(forwardPayload);
+        const forwardResp = requireShiprocketOrder(await shiprocketService.createExchangeForwardOrder(forwardPayload), 'forward');
         exchange.forward = {
           orderId: forwardResp?.order_id ? String(forwardResp.order_id) : null,
           shipmentId: forwardResp?.shipment_id ? String(forwardResp.shipment_id) : null,
@@ -961,7 +1034,8 @@ exports.retryExchangeShipment = async (req, res) => {
         };
 
         if (forwardResp?.shipment_id) {
-          await assignExchangeLegAwb(exchange, 'forward', forwardResp.shipment_id);
+          // Warehouse pickup of the replacement is scheduled by admin ("Schedule Pickup") once it is packed.
+          await bookExchangeLeg(exchange, 'forward', { schedulePickup: false });
         }
       }
 

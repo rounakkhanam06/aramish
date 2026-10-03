@@ -101,7 +101,9 @@ const checkServiceability = async (pickupPincode, deliveryPincode, weight, cod =
     }
 };
 
-const assignAWB = async (shipmentId, courierId = null) => {
+// `isReturn`: a return / reverse-pickup shipment. Shiprocket can usually work this out from the
+// order itself, but its API takes `is_return: 1` for these, so it is always sent explicitly.
+const assignAWB = async (shipmentId, courierId = null, { isReturn = false } = {}) => {
     try {
         const payload = {
             shipment_id: shipmentId
@@ -109,6 +111,9 @@ const assignAWB = async (shipmentId, courierId = null) => {
 
         if (courierId) {
             payload.courier_id = courierId;
+        }
+        if (isReturn) {
+            payload.is_return = 1;
         }
 
         const response = await withToken((token) => axios.post(`${SHIPROCKET_API_BASE}/v1/external/courier/assign/awb`, payload, {

@@ -29,6 +29,7 @@ const Returns = () => {
   const [manageOpen, setManageOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [retryingShipment, setRetryingShipment] = useState(false);
   const [adminNotes, setAdminNotes] = useState('');
   const [editRefundAmount, setEditRefundAmount] = useState('');
 
@@ -144,6 +145,35 @@ const Returns = () => {
       toast.error('Error updating status');
     } finally {
       setUpdatingStatus(false);
+    }
+  };
+
+  // Re-tries the Shiprocket return pickup: assigns the courier (AWB) when the return order already
+  // exists, otherwise creates the return order again.
+  const handleRetryShipment = async () => {
+    if (!selectedReturn) return;
+    const token = getToken();
+    if (!token) return;
+    try {
+      setRetryingShipment(true);
+      const res = await fetch(`${API_BASE}/returns/admin/${selectedReturn._id}/retry-shipment`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message || 'Return pickup booked');
+        fetchReturns();
+      } else {
+        toast.error(data.message || 'Retry failed', { duration: 8000 });
+      }
+      if (data.returnRequest) {
+        await fetchReturnDetail(selectedReturn._id);
+      }
+    } catch (err) {
+      toast.error('Could not retry the return pickup');
+    } finally {
+      setRetryingShipment(false);
     }
   };
 
@@ -609,18 +639,36 @@ const Returns = () => {
                       </div>
                     )}
 
-                    {/* Shiprocket errors (e.g. pickup AWB not assigned because of a low wallet balance) */}
-                    {selectedReturn.shipmentErrors && selectedReturn.shipmentErrors.length > 0 && !selectedReturn.awbCode && (
-                      <div className="bg-red-50 rounded-2xl p-4 border border-red-200">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-red-600 mb-2">Return pickup problem</p>
-                        <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                          {selectedReturn.shipmentErrors.slice(-3).reverse().map((err, i) => (
-                            <div key={i} className="text-[11px] text-red-700 border-b border-red-100 pb-1.5 last:border-0 last:pb-0">
-                              {err.error}
-                              <p className="text-[9px] text-red-400 font-mono mt-0.5">{formatDateTime(err.timestamp)}</p>
-                            </div>
-                          ))}
+                    {/* Return pickup not fully booked (Shiprocket order, courier or pickup request failed): show why + retry */}
+                    {['Approved', 'Pick-up Scheduled'].includes(selectedReturn.status) &&
+                      !(selectedReturn.awbCode && selectedReturn.pickupScheduled) &&
+                      ((selectedReturn.shipmentErrors?.length > 0) || ['Failed', 'Manual Review'].includes(selectedReturn.shipmentStatus) ||
+                        (selectedReturn.awbCode && selectedReturn.status === 'Approved')) && (
+                      <div className="bg-red-50 rounded-2xl p-4 border border-red-200 space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-red-600">
+                            {!selectedReturn.shiprocketReturnShipmentId ? 'Return pickup not created'
+                              : !selectedReturn.awbCode ? 'Courier (AWB) not assigned'
+                              : 'Courier pickup not scheduled'}
+                          </p>
+                          <button
+                            onClick={handleRetryShipment}
+                            disabled={retryingShipment}
+                            className="bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg disabled:opacity-50 shrink-0"
+                          >
+                            {retryingShipment ? 'Retrying...' : (!selectedReturn.shiprocketReturnShipmentId ? 'Retry Return Pickup' : !selectedReturn.awbCode ? 'Assign AWB' : 'Schedule Pickup')}
+                          </button>
                         </div>
+                        {selectedReturn.shipmentErrors?.length > 0 && (
+                          <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                            {selectedReturn.shipmentErrors.slice(-3).reverse().map((err, i) => (
+                              <div key={i} className="text-[11px] text-red-700 border-b border-red-100 pb-1.5 last:border-0 last:pb-0">
+                                {err.error}
+                                <p className="text-[9px] text-red-400 font-mono mt-0.5">{formatDateTime(err.timestamp)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
 

@@ -36,7 +36,9 @@ const shipmentLegSchema = new mongoose.Schema({
   // 'Pending' | 'Created' | 'AWB Assigned' | 'Failed', or the raw courier status from the
   // Shiprocket webhook (e.g. 'In Transit', 'Delivered') — so no enum here.
   status:      { type: String, default: 'Pending' },
-  failed:      { type: Boolean, default: false }
+  failed:      { type: Boolean, default: false },
+  // Courier pickup requested from Shiprocket (needed after the AWB, or no courier comes).
+  pickupScheduled: { type: Boolean, default: false }
 }, { _id: false });
 
 const exchangeRequestSchema = new mongoose.Schema({

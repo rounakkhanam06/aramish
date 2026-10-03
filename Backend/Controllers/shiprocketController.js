@@ -5,6 +5,7 @@ const { handleOrderCancellationRefunds } = require('../utils/orderHelper');
 const { processDeliveredOrderRewards } = require('../utils/walletService');
 const { verifyWebhookToken } = require('../utils/shiprocketWebhookAuth');
 const { loadShippingDetails, buildShiprocketOrderPayload, cheapestCourier } = require('../utils/shiprocketPayload');
+const { srErrorMessage, readAwbResult, readLabelResult, requestPickupChecked } = require('../utils/shiprocketResults');
 
 // Forward-shipping updates (Processing/Shipped/Out for Delivery/Delivered) must never pull an
 // order back out of a cancelled or post-delivery state — e.g. a late or duplicate DELIVERED
@@ -30,31 +31,6 @@ const isPastForwardShipping = (status) =>
 // restored. "RTO Initiated" / "RTO In Transit" are deliberately NOT here — the parcel is still
 // on its way back, so stock is only restored once it has actually returned ("RTO Delivered").
 const SHIPMENT_ENDED_STATUSES = ['CANCELLED', 'CANCELED', 'RTO DELIVERED', 'RTO_DELIVERED'];
-
-// Shiprocket reports most failures (low wallet balance, courier not serviceable, ...) inside an
-// HTTP 200 body, so a reply alone is not success — each step must be checked for its real result.
-const srErrorMessage = (err) => err.response?.data?.message || err.message;
-
-/** Returns { awbInfo } when an AWB was really assigned, otherwise { error }. */
-const readAwbResult = (data) => {
-    const awbInfo = data?.response?.data;
-    if (awbInfo?.awb_code) return { awbInfo };
-    return { error: awbInfo?.awb_assign_error || data?.message || 'Shiprocket did not assign an AWB' };
-};
-
-/** Pickup succeeded when Shiprocket confirms it (pickup_status 1) or says it is already queued. */
-const readPickupResult = (data) => {
-    if (data?.pickup_status === 1) return {};
-    return { error: data?.response?.data || data?.message || 'Shiprocket did not schedule the pickup' };
-};
-const isAlreadyInPickupQueue = (message) => /already in pickup queue/i.test(String(message || ''));
-
-/** Returns { labelUrl } when a label was really created, otherwise { error }. */
-const readLabelResult = (data, shipmentId) => {
-    if (data?.label_created === 1 && data.label_url) return { labelUrl: data.label_url };
-    const reason = data?.not_created?.[shipmentId] || data?.response || data?.message;
-    return { error: reason || 'Shiprocket did not generate the label' };
-};
 
 exports.checkServiceability = async (req, res) => {
     try {
@@ -162,20 +138,14 @@ exports.requestPickup = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Assign an AWB before requesting a pickup' });
         }
 
-        let data;
-        try {
-            data = await shiprocketService.requestPickup(shipmentId);
-            const { error } = readPickupResult(data);
-            if (error) {
-                if (order) {
-                    order.shiprocketResponses.push({ type: 'PICKUP_REQUEST_FAILED', data });
-                    await order.save();
-                }
-                return res.status(400).json({ success: false, message: `Pickup not scheduled: ${error}`, data });
+        // "Already scheduled" counts as success; any other refusal is reported to admin.
+        const { scheduled, error, data } = await requestPickupChecked(shiprocketService, shipmentId);
+        if (!scheduled) {
+            if (order) {
+                order.shiprocketResponses.push({ type: 'PICKUP_REQUEST_FAILED', data });
+                await order.save();
             }
-        } catch (pickupErr) {
-            if (!isAlreadyInPickupQueue(srErrorMessage(pickupErr))) throw pickupErr;
-            data = pickupErr.response?.data;
+            return res.status(400).json({ success: false, message: `Pickup not scheduled: ${error}`, data });
         }
 
         if (order) {
@@ -310,15 +280,11 @@ exports.processOrder = async (req, res) => {
 
         // Step 3: Request Pickup
         if (!failure && !order.pickupScheduled) {
-            let pickupData = null;
-            try {
-                pickupData = await shiprocketService.requestPickup(order.shipmentId);
-                const { error } = readPickupResult(pickupData);
-                if (error) failure = `Pickup not scheduled: ${error}`;
-            } catch (pickupErr) {
-                console.error('Pickup request failed:', pickupErr.response?.data || pickupErr.message);
-                pickupData = pickupErr.response?.data || { error: srErrorMessage(pickupErr) };
-                if (!isAlreadyInPickupQueue(srErrorMessage(pickupErr))) failure = `Pickup not scheduled: ${srErrorMessage(pickupErr)}`;
+            const pickup = await requestPickupChecked(shiprocketService, order.shipmentId);
+            const pickupData = pickup.data || (pickup.error ? { error: pickup.error } : null);
+            if (!pickup.scheduled) {
+                console.error('Pickup request failed:', pickup.error);
+                failure = `Pickup not scheduled: ${pickup.error}`;
             }
             results.pickup = pickupData;
             if (failure) {
@@ -542,6 +508,14 @@ exports.webhookReceiver = async (req, res) => {
         const channelRef = String(payload.order_id || payload.channel_order_id || '');
         if (channelRef.startsWith('EXC_')) {
             return require('./exchangeController').handleExchangeWebhook(req, res);
+        }
+        // Return pickups (RET_ ids, flagged is_return: 1) arrive at this same URL. They must never
+        // be handled as a forward order — e.g. a return "DELIVERED" to the warehouse is not an
+        // order delivery.
+        if (channelRef.startsWith('RET_') || Number(payload.is_return) === 1) {
+            const matched = await require('./returnController').handleReturnWebhook(payload);
+            if (!matched) console.log('No matching return found for webhook payload:', payload);
+            return res.status(200).json({ success: true });
         }
 
         // Shiprocket sends POST request to this endpoint

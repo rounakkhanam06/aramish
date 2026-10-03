@@ -1,8 +1,10 @@
+const mongoose = require('mongoose');
 const ReturnRequest = require('../Models/ReturnRequest');
 const Order = require('../Models/Order');
 const shiprocketService = require('../Router/shiprocketService');
-const { loadShippingDetails, toOrderItem, FALLBACK_EMAIL, FALLBACK_PHONE } = require('../utils/shiprocketPayload');
+const { loadShippingDetails, toOrderItem, toShiprocketDate, getReturnWarehouse, fallbackEmail, FALLBACK_PHONE } = require('../utils/shiprocketPayload');
 const { handleReturnRefund, getDeliveredAt } = require('../utils/orderHelper');
+const { srErrorMessage, readAwbResult, requestPickupChecked, PICKUP_BOOKED_OR_LATER } = require('../utils/shiprocketResults');
 
 // Builds the Shiprocket reverse-pickup order and attempts AWB assignment for a return
 // request, mutating the passed returnRequest document's shipment fields in place. Used both
@@ -10,26 +12,19 @@ const { handleReturnRefund, getDeliveredAt } = require('../utils/orderHelper');
 // outage on approval doesn't leave the return stuck with no way to (re)try the pickup.
 // Throws on failure — callers are responsible for recording the failure/retry state.
 const createReturnShipment = async (returnRequest, order) => {
+  // Fails clearly (admin sees it and can retry) instead of sending the parcel to a made-up address.
+  const warehouse = getReturnWarehouse();
   const { weight: totalWeight, hsnByProductId } = await loadShippingDetails(returnRequest.items);
 
   const cityState = shiprocketService.parseCityState(order.deliveryAddress.address);
 
-  // Get return shipping address from env or defaults
-  const returnShippingAddress = {
-    name: process.env.RETURN_SHIPPING_NAME || "Aramish Warehouse",
-    address: process.env.RETURN_SHIPPING_ADDRESS || "Warehouse 12, Sector 63",
-    address_2: process.env.RETURN_SHIPPING_ADDRESS_2 || "",
-    city: process.env.RETURN_SHIPPING_CITY || "Noida",
-    state: process.env.RETURN_SHIPPING_STATE || "Uttar Pradesh",
-    country: "India",
-    pincode: process.env.SHIPROCKET_PICKUP_PINCODE || "201301",
-    phone: process.env.RETURN_SHIPPING_PHONE || "9876543210",
-    email: process.env.RETURN_SHIPPING_EMAIL || "warehouse@aramish.com"
-  };
+  // Declared value of the parcel = the returned items' value (what the courier carries and
+  // insures), not the refund — the refund can be ₹0 when the order was paid with coins.
+  const itemsValue = returnRequest.items.reduce((sum, item) => sum + (Number(item.price) || 0) * (item.quantity || 1), 0);
 
   const returnPayload = {
     order_id: `RET_${returnRequest._id.toString()}`,
-    order_date: new Date(returnRequest.createdAt).toISOString().slice(0, 16).replace('T', ' '),
+    order_date: toShiprocketDate(returnRequest.createdAt),
     channel_id: "",
     pickup_customer_name: order.deliveryAddress.name || order.userId?.name || "Customer",
     pickup_last_name: "",
@@ -39,19 +34,19 @@ const createReturnShipment = async (returnRequest, order) => {
     pickup_state: cityState.state,
     pickup_country: "India",
     pickup_pincode: order.deliveryAddress.pincode,
-    pickup_email: order.userId?.email || FALLBACK_EMAIL,
+    pickup_email: order.userId?.email || fallbackEmail(),
     // The courier calls this number to collect the parcel — the address's contact, not the account's.
     pickup_phone: order.deliveryAddress.phone || order.userId?.phone || FALLBACK_PHONE,
-    shipping_customer_name: returnShippingAddress.name,
+    shipping_customer_name: warehouse.name,
     shipping_last_name: "",
-    shipping_address: returnShippingAddress.address,
-    shipping_address_2: returnShippingAddress.address_2,
-    shipping_city: returnShippingAddress.city,
-    shipping_state: returnShippingAddress.state,
+    shipping_address: warehouse.address,
+    shipping_address_2: warehouse.address_2,
+    shipping_city: warehouse.city,
+    shipping_state: warehouse.state,
     shipping_country: "India",
-    shipping_pincode: returnShippingAddress.pincode,
-    shipping_phone: returnShippingAddress.phone,
-    shipping_email: returnShippingAddress.email,
+    shipping_pincode: warehouse.pincode,
+    shipping_phone: warehouse.phone,
+    shipping_email: warehouse.email,
     order_items: returnRequest.items.map(item => toOrderItem({
       name: item.name,
       sku: item.productId ? item.productId.toString() : "PRODUCT",
@@ -60,7 +55,7 @@ const createReturnShipment = async (returnRequest, order) => {
       productId: item.productId
     }, hsnByProductId)),
     payment_method: "Prepaid",
-    sub_total: returnRequest.refundAmount,
+    sub_total: Math.round(itemsValue * 100) / 100 || returnRequest.refundAmount,
     length: 10,
     breadth: 10,
     height: 10,
@@ -77,29 +72,42 @@ const createReturnShipment = async (returnRequest, order) => {
   returnRequest.shipmentStatus = 'Created';
 
   if (srResponse.shipment_id) {
-    // The return order exists in Shiprocket even if the AWB fails (e.g. low wallet balance) —
-    // record why, so admin can see it and assign the AWB from the Shiprocket panel.
-    let awbError = null;
-    try {
-      const awbResponse = await shiprocketService.assignAWB(srResponse.shipment_id);
-      const data = awbResponse?.response?.data;
-      if (data?.awb_code) {
-        returnRequest.awbCode = data.awb_code;
-        returnRequest.courierName = data.courier_name;
-      } else {
-        awbError = data?.awb_assign_error || awbResponse?.message || 'Shiprocket did not assign an AWB';
-      }
-    } catch (awbErr) {
-      awbError = awbErr.response?.data?.message || awbErr.message;
-    }
-    if (awbError) {
-      console.error("Failed to automatically assign return AWB:", awbError);
-      returnRequest.shipmentErrors.push({
-        error: `Return pickup AWB not assigned: ${awbError}. Assign it from the Shiprocket panel (Returns).`,
-        timestamp: new Date()
-      });
-    }
+    await bookReturnPickup(returnRequest);
   }
+};
+
+// Books the courier for a return whose Shiprocket return order already exists. Shiprocket does
+// not do this by itself: the AWB (courier) is assigned first, then the pickup from the customer
+// is requested — without the second call no courier ever comes. Each step is skipped when it
+// is already done, so "Retry" from admin simply continues from wherever it stopped (it never
+// re-creates the return order). A failure is recorded for admin and returns false.
+const bookReturnPickup = async (returnRequest) => {
+  const fail = (message) => {
+    console.error('Return pickup not booked:', message);
+    returnRequest.shipmentErrors.push({ error: message, timestamp: new Date() });
+    return false;
+  };
+
+  if (!returnRequest.awbCode) {
+    let awbResponse;
+    try {
+      awbResponse = await shiprocketService.assignAWB(returnRequest.shiprocketReturnShipmentId, null, { isReturn: true });
+    } catch (awbErr) {
+      return fail(`Return pickup AWB not assigned: ${srErrorMessage(awbErr)}`);
+    }
+    const { awbInfo, error } = readAwbResult(awbResponse);
+    if (error) return fail(`Return pickup AWB not assigned: ${error}`);
+    returnRequest.awbCode = awbInfo.awb_code;
+    returnRequest.courierName = awbInfo.courier_name;
+  }
+
+  if (!returnRequest.pickupScheduled) {
+    const { scheduled, error } = await requestPickupChecked(shiprocketService, returnRequest.shiprocketReturnShipmentId);
+    if (!scheduled) return fail(`Courier assigned (AWB ${returnRequest.awbCode}) but pickup not scheduled: ${error}`);
+    returnRequest.pickupScheduled = true;
+    if (returnRequest.status === 'Approved') returnRequest.status = 'Pick-up Scheduled';
+  }
+  return true;
 };
 
 // Most the customer can get back for `returnItems` (prices taken from the order, never from the
@@ -634,6 +642,65 @@ exports.getReturnByOrderId = async (req, res) => {
   }
 };
 
+// Shiprocket tracking statuses that mean the return pickup did not / will not happen.
+const RETURN_PICKUP_PROBLEM = /CANCEL|LOST|DAMAGED|DESTROYED|PICKUP EXCEPTION|PICKUP FAILED|UNDELIVERED|RTO/;
+
+/**
+ * Shiprocket tracking update for a return shipment (sent to the same webhook as orders, with
+ * `is_return: 1` and our `RET_<id>` order id). Records the courier/AWB, moves the return to
+ * "Pick-up Scheduled" once the courier pickup is booked and to "Received" once the parcel has
+ * been delivered back to the warehouse. The refund itself stays a manual admin step (after the
+ * item is checked). Problems (pickup cancelled, lost, ...) are recorded for admin.
+ * Returns true when a return matched the update.
+ */
+exports.handleReturnWebhook = async (payload) => {
+  const ref = String(payload.order_id || payload.channel_order_id || '');
+  const awb = payload.awb || payload.awb_code;
+  let returnRequest = null;
+
+  if (ref.startsWith('RET_')) {
+    const id = ref.slice(4);
+    if (mongoose.Types.ObjectId.isValid(id)) returnRequest = await ReturnRequest.findById(id);
+  }
+  if (!returnRequest && payload.sr_order_id) {
+    returnRequest = await ReturnRequest.findOne({ shiprocketReturnOrderId: String(payload.sr_order_id) });
+  }
+  if (!returnRequest && awb) {
+    returnRequest = await ReturnRequest.findOne({ awbCode: String(awb) });
+  }
+  if (!returnRequest) return false;
+
+  const srStatus = String(payload.current_status || payload.shipment_status || payload.status || '').toUpperCase().replace(/_/g, ' ').trim();
+
+  // An AWB assigned straight from the Shiprocket panel is only learnt from these updates.
+  if (awb && !returnRequest.awbCode) returnRequest.awbCode = String(awb);
+  if (payload.courier_name && !returnRequest.courierName) returnRequest.courierName = payload.courier_name;
+
+  // Status moves are made with a conditional update, so an admin changing the same return at
+  // the same moment always wins and nothing is moved twice.
+  const moveStatus = async (from, to) => {
+    if (!from.includes(returnRequest.status)) return;
+    const moved = await ReturnRequest.updateOne({ _id: returnRequest._id, status: returnRequest.status }, { $set: { status: to } });
+    if (moved.modifiedCount === 1) returnRequest.status = to;
+  };
+
+  if (srStatus === 'DELIVERED' || srStatus === 'RETURN DELIVERED') {
+    returnRequest.pickupScheduled = true;
+    await moveStatus(['Approved', 'Pick-up Scheduled'], 'Received');
+  } else if (RETURN_PICKUP_PROBLEM.test(srStatus)) {
+    returnRequest.shipmentErrors.push({ error: `Shiprocket reports the return shipment as "${srStatus}". Check it in the Shiprocket panel.`, timestamp: new Date() });
+  } else if (PICKUP_BOOKED_OR_LATER.test(srStatus)) {
+    returnRequest.pickupScheduled = true;
+    await moveStatus(['Approved'], 'Pick-up Scheduled');
+  }
+
+  // Save only the shipment fields; the status was already written by moveStatus above.
+  await ReturnRequest.updateOne({ _id: returnRequest._id }, {
+    $set: { awbCode: returnRequest.awbCode, courierName: returnRequest.courierName, pickupScheduled: returnRequest.pickupScheduled, shipmentErrors: returnRequest.shipmentErrors }
+  });
+  return true;
+};
+
 // @desc    Retry Shiprocket reverse-pickup shipment creation for an Approved return whose
 //          initial shipment creation failed (mirrors ExchangeRequest's retry endpoint)
 // @route   POST /returns/admin/:id/retry-shipment
@@ -653,8 +720,31 @@ exports.retryReturnShipment = async (req, res) => {
       return res.status(409).json({ success: false, message: 'A retry attempt is already in progress for this return.' });
     }
 
-    if (returnRequest.shipmentStatus === 'Created') {
-      return res.status(400).json({ success: false, message: 'Shipment has already been created for this return. Cannot retry.' });
+    if (returnRequest.awbCode && returnRequest.pickupScheduled) {
+      return res.status(400).json({ success: false, message: `Return pickup is already booked (AWB ${returnRequest.awbCode}).` });
+    }
+
+    // The return order already exists in Shiprocket and only the courier (AWB) and/or the pickup
+    // request are missing — e.g. the wallet was low. Continue from there; never create a second
+    // return order.
+    if (returnRequest.shiprocketReturnShipmentId) {
+      returnRequest.shipmentRetryInProgress = true;
+      await returnRequest.save();
+      try {
+        const assigned = await bookReturnPickup(returnRequest);
+        returnRequest.lastShipmentRetryAt = new Date();
+        if (assigned) returnRequest.shipmentStatus = 'Created';
+        return res.status(assigned ? 200 : 502).json({
+          success: assigned,
+          message: assigned
+            ? `Return pickup scheduled with ${returnRequest.courierName || 'courier'} (AWB ${returnRequest.awbCode})`
+            : returnRequest.shipmentErrors[returnRequest.shipmentErrors.length - 1].error,
+          returnRequest
+        });
+      } finally {
+        returnRequest.shipmentRetryInProgress = false;
+        await returnRequest.save();
+      }
     }
 
     if (returnRequest.shipmentRetryCount >= 3) {

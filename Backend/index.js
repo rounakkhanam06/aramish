@@ -84,6 +84,10 @@ connectDB().then(async () => {
 
   server.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
+    const missingWarehouse = require('./utils/shiprocketPayload').missingReturnWarehouseSettings();
+    if (missingWarehouse.length) {
+      console.warn(`⚠️ Return warehouse address is not configured (missing ${missingWarehouse.join(', ')} in .env). Return and exchange pickups will fail until these are set.`);
+    }
   });
 
   // Graceful shutdown

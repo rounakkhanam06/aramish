@@ -52,13 +52,13 @@ const mockRes = () => {
   res.json = (body) => { res.body = body; return res; };
   return res;
 };
-const checkout = async (user, product, { paymentMethod = 'COD', redeemRefundWallet = false } = {}) => {
+const checkout = async (user, product, { paymentMethod = 'COD', redeemRefundWallet = false, redeemWallet = false } = {}) => {
   const res = mockRes();
   await createOrder({
     user: { _id: user._id },
     body: {
       items: [{ productId: product._id.toString(), name: product.name, quantity: 1 }],
-      total: 1, deliveryAddress: ADDRESS, paymentMethod, redeemRefundWallet,
+      total: 1, deliveryAddress: ADDRESS, paymentMethod, redeemRefundWallet, redeemWallet,
       deliveryCharge: 0 // a client-sent charge must be ignored
     }
   }, res);
@@ -77,6 +77,36 @@ beforeEach(async () => {
 });
 
 describe('Order sent to Shiprocket at checkout', () => {
+  test('COD amount is what the customer still owes after coins', async () => {
+    const user = await makeUser({ walletBalance: 1000 });
+    const product = await makeProduct();
+
+    const res = await checkout(user, product, { redeemWallet: true });
+
+    expect(res.statusCode).toBe(201);
+    const order = await Order.findById(res.body.order._id);
+    // ₹1,000 product + ₹80 COD delivery − ₹250 coins (25% of the ₹1,000 product value)
+    expect(order.walletUsed).toBe(250);
+    expect(order.total).toBe(830);
+    const payload = sentToShiprocket();
+    expect(payload.payment_method).toBe('COD');
+    expect(payload.sub_total).toBe(830); // the courier collects ₹830, not ₹1,080
+  });
+
+  test('coins and Refund Wallet together: courier collects only the remainder', async () => {
+    const user = await makeUser({ walletBalance: 1000, refundWalletBalance: 300 });
+    const product = await makeProduct();
+
+    const res = await checkout(user, product, { redeemWallet: true, redeemRefundWallet: true });
+
+    expect(res.statusCode).toBe(201);
+    const order = await Order.findById(res.body.order._id);
+    expect(order.walletUsed).toBe(250);
+    expect(order.refundWalletUsed).toBe(300);
+    expect(order.total).toBe(530);
+    expect(sentToShiprocket().sub_total).toBe(530);
+  });
+
   test('COD amount is what the customer still owes after Refund Wallet money', async () => {
     const user = await makeUser({ refundWalletBalance: 300 });
     const product = await makeProduct();
@@ -117,6 +147,29 @@ describe('Order sent to Shiprocket at checkout', () => {
     expect(payload.billing_phone).toBe('7049380550');
     expect(payload.order_items[0].hsn).toBe('6403');
     expect(payload.weight).toBe(0.8);
+  });
+
+  test('a customer without an email gets the store inbox, never a placeholder on another domain', async () => {
+    const savedEnv = { ...process.env };
+    try {
+      delete process.env.SHIPROCKET_FALLBACK_EMAIL;
+      process.env.RETURN_SHIPPING_EMAIL = 'store@example.com';
+      const product = await makeProduct();
+
+      await checkout(await makeUser(), product);
+      expect(sentToShiprocket().billing_email).toBe('store@example.com');
+
+      shiprocketService.createShiprocketOrder.mockClear();
+      await checkout(await makeUser({ email: 'arshia@example.com' }), await makeProduct());
+      expect(sentToShiprocket().billing_email).toBe('arshia@example.com');
+
+      shiprocketService.createShiprocketOrder.mockClear();
+      delete process.env.RETURN_SHIPPING_EMAIL;
+      await checkout(await makeUser(), await makeProduct());
+      expect(sentToShiprocket().billing_email).toBe('aramishshoes@gmail.com');
+    } finally {
+      process.env = savedEnv;
+    }
   });
 
   test('a product without an HSN code is sent without one (no made-up code)', async () => {
@@ -214,6 +267,15 @@ describe('RTO (parcel returned to the warehouse)', () => {
 });
 
 describe('Return pickup AWB failure', () => {
+  const env = { ...process.env };
+  beforeEach(() => {
+    Object.assign(process.env, {
+      RETURN_SHIPPING_ADDRESS: 'Khoja Haveli, Agra', RETURN_SHIPPING_CITY: 'Agra', RETURN_SHIPPING_STATE: 'Uttar Pradesh',
+      RETURN_SHIPPING_PHONE: '8650209559', SHIPROCKET_PICKUP_PINCODE: '282010'
+    });
+  });
+  afterEach(() => { process.env = { ...env }; });
+
   test('is recorded on the return so admin can see why', async () => {
     const { updateReturnStatus } = require('../Controllers/returnController');
     const user = await makeUser();
