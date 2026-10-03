@@ -10,6 +10,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { getImageUrl } from '../../../utils/imageHelper';
+import { formatDate } from '../../../utils/date';
 
 const CustomerDetail = () => {
   const { userId } = useParams();
@@ -244,7 +245,7 @@ const CustomerDetail = () => {
                     </span>
                  </div>
                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
-                   Customer ID: #{userId.slice(-6).toUpperCase()} • Member since {new Date(customer.createdAt).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                   Customer ID: #{userId.slice(-6).toUpperCase()} • Member since {formatDate(customer.createdAt)}
                  </p>
               </div>
            </div>

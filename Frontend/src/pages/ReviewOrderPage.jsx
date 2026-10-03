@@ -53,6 +53,7 @@ export default function ReviewOrderPage() {
   const [deliveryCharge, setDeliveryCharge] = useState(0);
   const [etd, setEtd] = useState('');
   const [isEstimatingDelivery, setIsEstimatingDelivery] = useState(false);
+  const [deliveryError, setDeliveryError] = useState('');
   const isAnyModalOpen = isAddressModalOpen || Boolean(feeInfoModal);
 
   useEffect(() => {
@@ -172,14 +173,18 @@ export default function ReviewOrderPage() {
           if (data.success) {
             setDeliveryCharge(data.deliveryCharge);
             setEtd(data.etd);
+            setDeliveryError('');
           } else {
+            // Not deliverable / quote failed: never show it as free delivery.
             setDeliveryCharge(0);
             setEtd('');
+            setDeliveryError(data.message || 'Could not calculate the delivery charge. Please try again.');
           }
         } catch (err) {
           console.error("Error estimating shipping:", err);
           setDeliveryCharge(0);
           setEtd('');
+          setDeliveryError('Could not calculate the delivery charge. Please check your connection and try again.');
         } finally {
           setIsEstimatingDelivery(false);
         }
@@ -346,7 +351,17 @@ export default function ReviewOrderPage() {
       toast.info("Please add a delivery address before placing order");
       return;
     }
-    
+
+    // Don't take a payment until the delivery charge is known.
+    if (isEstimatingDelivery) {
+      toast.info("Calculating delivery charge, please wait a moment");
+      return;
+    }
+    if (deliveryError) {
+      toast.error(deliveryError);
+      return;
+    }
+
     setIsPlacingOrder(true);
     
     if (paymentMethod === 'ONLINE') {
@@ -909,12 +924,17 @@ export default function ReviewOrderPage() {
               </span>
               {isEstimatingDelivery ? (
                 <span className="text-slate-400 font-medium">Calculating...</span>
+              ) : deliveryError ? (
+                <span className="text-red-600 font-bold">Unavailable</span>
               ) : (
                 <span className={deliveryCharge > 0 ? "text-slate-800" : "text-emerald-600 font-bold"}>
                   {deliveryCharge > 0 ? `₹${Number(deliveryCharge).toFixed(2)}` : 'FREE'}
                 </span>
               )}
             </div>
+            {!isEstimatingDelivery && deliveryError && (
+              <p className="text-[11px] text-red-600 font-semibold leading-snug">{deliveryError}</p>
+            )}
             {codCharge > 0 && (
               <div className="flex justify-between items-center">
                 <span>COD Charge</span>

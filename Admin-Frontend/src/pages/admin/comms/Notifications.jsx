@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '../../../utils/toast';
+import { formatDateTime } from '../../../utils/date';
 
 const Notifications = () => {
   const [history, setHistory] = useState([]);
@@ -347,7 +348,7 @@ const Notifications = () => {
                     )}
                   </td>
                   <td className="px-6 py-5 font-bold text-slate-500 font-roboto text-xs uppercase">
-                    {new Date(item.createdAt || item.sentAt).toLocaleString()}
+                    {formatDateTime(item.createdAt || item.sentAt)}
                   </td>
                   <td className="px-6 py-5">
                     <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest ${item.status === 'Delivered' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>

@@ -10,6 +10,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import OptimizedImage from '../../../components/common/OptimizedImage';
+import { formatDate, formatDateTime } from '../../../utils/date';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -169,11 +170,6 @@ const Returns = () => {
   const getReturnId = (item) => {
     const id = item._id;
     return id.substring(id.length - 6).toUpperCase();
-  };
-
-  const formatDate = (d) => {
-    if (!d) return 'N/A';
-    return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
   const StatusBadge = ({ status }) => {
@@ -609,6 +605,21 @@ const Returns = () => {
                               </div>
                             </>
                           )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Shiprocket errors (e.g. pickup AWB not assigned because of a low wallet balance) */}
+                    {selectedReturn.shipmentErrors && selectedReturn.shipmentErrors.length > 0 && !selectedReturn.awbCode && (
+                      <div className="bg-red-50 rounded-2xl p-4 border border-red-200">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-red-600 mb-2">Return pickup problem</p>
+                        <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                          {selectedReturn.shipmentErrors.slice(-3).reverse().map((err, i) => (
+                            <div key={i} className="text-[11px] text-red-700 border-b border-red-100 pb-1.5 last:border-0 last:pb-0">
+                              {err.error}
+                              <p className="text-[9px] text-red-400 font-mono mt-0.5">{formatDateTime(err.timestamp)}</p>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}

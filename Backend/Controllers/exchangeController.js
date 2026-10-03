@@ -10,6 +10,7 @@ const { resolveVariantPrice } = require('../utils/priceHelper');
 const { getDeliveredAt, refundOnlinePayment } = require('../utils/orderHelper');
 const { verifyWebhookToken } = require('../utils/shiprocketWebhookAuth');
 const { isRazorpayConfigured, verifyAndCapturePayment } = require('../utils/razorpayService');
+const { loadShippingDetails, toOrderItem } = require('../utils/shiprocketPayload');
 
 // Verifies (and captures) a Razorpay payment covering `expectedAmount` (rupees) — the same check
 // checkout uses, applied to exchange price-difference payments.
@@ -119,9 +120,38 @@ const releaseReservedStock = async (exchange) => {
   }
 };
 
+// HSN codes (set per product in admin) for the old and the replacement item of an exchange.
+const exchangeHsnCodes = async (exchange) => {
+  const items = [exchange.originalItem, exchange.requestedVariant].filter(i => i && i.productId);
+  return (await loadShippingDetails(items)).hsnByProductId;
+};
+
+// Assigns the AWB for one exchange leg. Shiprocket reports most failures (e.g. a low wallet
+// balance) inside a normal reply, so a missing awb_code is recorded as a shipment error that
+// admin can see, instead of being silently ignored.
+const assignExchangeLegAwb = async (exchange, leg, shipmentId) => {
+  let error = null;
+  try {
+    const awbResp = await shiprocketService.assignAWB(shipmentId);
+    const awbData = awbResp?.response?.data;
+    if (awbData?.awb_code) {
+      exchange[leg].awb = awbData.awb_code;
+      exchange[leg].trackingUrl = `https://shiprocket.co/tracking/${awbData.awb_code}`;
+      exchange[leg].status = 'AWB Assigned';
+      if (leg === 'reverse' || !exchange.courierName) exchange.courierName = awbData.courier_name || null;
+      return;
+    }
+    error = awbData?.awb_assign_error || awbResp?.message || 'Shiprocket did not assign an AWB';
+  } catch (awbErr) {
+    error = awbErr.response?.data?.message || awbErr.message;
+  }
+  console.error(`Exchange ${leg} AWB assignment failed:`, error);
+  exchange.shipmentErrors.push({ leg, error: `AWB not assigned: ${error}. Assign it from the Shiprocket panel.`, timestamp: new Date() });
+};
+
 // Builds the Shiprocket reverse-shipment payload (pickup of the old item). Priced at the
 // original item's value, since that's what's being returned.
-const buildReversePayload = (exchange, originalOrder, cityState) => ({
+const buildReversePayload = (exchange, originalOrder, cityState, hsnByProductId = {}) => ({
   order_id: `EXC_REV_${exchange._id.toString()}`,
   order_date: new Date().toISOString().slice(0, 16).replace('T', ' '),
   channel_id: '',
@@ -145,15 +175,13 @@ const buildReversePayload = (exchange, originalOrder, cityState) => ({
   shipping_pincode: process.env.SHIPROCKET_PICKUP_PINCODE || '201301',
   shipping_phone: process.env.RETURN_SHIPPING_PHONE || '9876543210',
   shipping_email: process.env.RETURN_SHIPPING_EMAIL || 'warehouse@aramish.com',
-  order_items: [{
+  order_items: [toOrderItem({
     name: exchange.originalItem.name,
     sku: exchange.originalItem.variationSku || exchange.originalItem.productId.toString(),
     units: 1,
-    selling_price: exchange.originalItem.price,
-    discount: 0,
-    tax: 0,
-    hsn: 441122
-  }],
+    price: exchange.originalItem.price,
+    productId: exchange.originalItem.productId
+  }, hsnByProductId)],
   payment_method: 'Prepaid',
   sub_total: exchange.originalItem.price,
   length: 10, breadth: 10, height: 10, weight: 0.5
@@ -163,7 +191,7 @@ const buildReversePayload = (exchange, originalOrder, cityState) => ({
 // replacement's actual value. If the price difference is being collected via COD, the courier
 // collects only that delta on delivery — the item itself was already paid for as part of the
 // original order plus (if Online) the difference charge.
-const buildForwardPayload = (exchange, originalOrder, cityState) => {
+const buildForwardPayload = (exchange, originalOrder, cityState, hsnByProductId = {}) => {
   const isCodDifference = exchange.paymentMethod === 'COD' && exchange.additionalAmount > 0;
   return {
     order_id: `EXC_FWD_${exchange._id.toString()}`,
@@ -190,15 +218,13 @@ const buildForwardPayload = (exchange, originalOrder, cityState) => {
     shipping_country: 'India',
     shipping_email: originalOrder.userId?.email || 'customer@aramish.com',
     shipping_phone: originalOrder.deliveryAddress.phone || originalOrder.userId?.phone || '9999999999',
-    order_items: [{
+    order_items: [toOrderItem({
       name: `${exchange.requestedVariant.name || exchange.originalItem.name} (${exchange.requestedVariant.color}/${exchange.requestedVariant.size})`,
       sku: exchange.requestedVariant.sku,
       units: 1,
-      selling_price: exchange.requestedVariant.price,
-      discount: 0,
-      tax: 0,
-      hsn: 441122
-    }],
+      price: exchange.requestedVariant.price,
+      productId: exchange.requestedVariant.productId || exchange.originalItem.productId
+    }, hsnByProductId)],
     payment_method: isCodDifference ? 'COD' : 'Prepaid',
     sub_total: isCodDifference ? exchange.additionalAmount : exchange.requestedVariant.price,
     length: 10, breadth: 10, height: 10, weight: 0.5
@@ -573,7 +599,7 @@ exports.updateExchangeStatus = async (req, res) => {
 
         // ── Create Reverse Shipment (pickup old item) ──────────────────────────
         try {
-          const reversePayload = buildReversePayload(exchange, originalOrder, cityState);
+          const reversePayload = buildReversePayload(exchange, originalOrder, cityState, await exchangeHsnCodes(exchange));
 
           const reverseResp = await shiprocketService.createShiprocketReturnOrder(reversePayload);
           exchange.reverse = {
@@ -587,18 +613,7 @@ exports.updateExchangeStatus = async (req, res) => {
           };
 
           if (reverseResp?.shipment_id) {
-            try {
-              const awbResp = await shiprocketService.assignAWB(reverseResp.shipment_id);
-              const awbData = awbResp?.response?.data;
-              if (awbData?.awb_code) {
-                exchange.reverse.awb = awbData.awb_code;
-                exchange.reverse.trackingUrl = `https://shiprocket.co/tracking/${awbData.awb_code}`;
-                exchange.reverse.status = 'AWB Assigned';
-                exchange.courierName = awbData.courier_name || null;
-              }
-            } catch (awbErr) {
-              console.error('Exchange reverse AWB assignment failed:', awbErr.message);
-            }
+            await assignExchangeLegAwb(exchange, 'reverse', reverseResp.shipment_id);
           }
         } catch (reverseErr) {
           console.error('Exchange reverse shipment creation failed:', reverseErr.message);
@@ -614,7 +629,7 @@ exports.updateExchangeStatus = async (req, res) => {
 
         // ── Create Forward Shipment (deliver replacement) ──────────────────────
         try {
-          const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState);
+          const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState, await exchangeHsnCodes(exchange));
 
           const forwardResp = await shiprocketService.createExchangeForwardOrder(forwardPayload);
           exchange.forward = {
@@ -628,18 +643,7 @@ exports.updateExchangeStatus = async (req, res) => {
           };
 
           if (forwardResp?.shipment_id) {
-            try {
-              const awbResp = await shiprocketService.assignAWB(forwardResp.shipment_id);
-              const awbData = awbResp?.response?.data;
-              if (awbData?.awb_code) {
-                exchange.forward.awb = awbData.awb_code;
-                exchange.forward.trackingUrl = `https://shiprocket.co/tracking/${awbData.awb_code}`;
-                exchange.forward.status = 'AWB Assigned';
-                if (!exchange.courierName) exchange.courierName = awbData.courier_name || null;
-              }
-            } catch (awbErr) {
-              console.error('Exchange forward AWB assignment failed:', awbErr.message);
-            }
+            await assignExchangeLegAwb(exchange, 'forward', forwardResp.shipment_id);
           }
         } catch (forwardErr) {
           console.error('Exchange forward shipment creation failed:', forwardErr.message);
@@ -925,7 +929,7 @@ exports.retryExchangeShipment = async (req, res) => {
 
       if (leg === 'reverse') {
         // Create Reverse Shipment
-        const reversePayload = buildReversePayload(exchange, originalOrder, cityState);
+        const reversePayload = buildReversePayload(exchange, originalOrder, cityState, await exchangeHsnCodes(exchange));
 
         const reverseResp = await shiprocketService.createShiprocketReturnOrder(reversePayload);
         exchange.reverse = {
@@ -939,22 +943,11 @@ exports.retryExchangeShipment = async (req, res) => {
         };
 
         if (reverseResp?.shipment_id) {
-          try {
-            const awbResp = await shiprocketService.assignAWB(reverseResp.shipment_id);
-            const awbData = awbResp?.response?.data;
-            if (awbData?.awb_code) {
-              exchange.reverse.awb = awbData.awb_code;
-              exchange.reverse.trackingUrl = `https://shiprocket.co/tracking/${awbData.awb_code}`;
-              exchange.reverse.status = 'AWB Assigned';
-              exchange.courierName = awbData.courier_name || null;
-            }
-          } catch (awbErr) {
-            console.error('Exchange reverse AWB assignment failed:', awbErr.message);
-          }
+          await assignExchangeLegAwb(exchange, 'reverse', reverseResp.shipment_id);
         }
       } else {
         // Create Forward Shipment
-        const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState);
+        const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState, await exchangeHsnCodes(exchange));
 
         const forwardResp = await shiprocketService.createExchangeForwardOrder(forwardPayload);
         exchange.forward = {
@@ -968,18 +961,7 @@ exports.retryExchangeShipment = async (req, res) => {
         };
 
         if (forwardResp?.shipment_id) {
-          try {
-            const awbResp = await shiprocketService.assignAWB(forwardResp.shipment_id);
-            const awbData = awbResp?.response?.data;
-            if (awbData?.awb_code) {
-              exchange.forward.awb = awbData.awb_code;
-              exchange.forward.trackingUrl = `https://shiprocket.co/tracking/${awbData.awb_code}`;
-              exchange.forward.status = 'AWB Assigned';
-              if (!exchange.courierName) exchange.courierName = awbData.courier_name || null;
-            }
-          } catch (awbErr) {
-            console.error('Exchange forward AWB assignment failed:', awbErr.message);
-          }
+          await assignExchangeLegAwb(exchange, 'forward', forwardResp.shipment_id);
         }
       }
 

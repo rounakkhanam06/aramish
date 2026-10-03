@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { formatDate } from '../../../utils/date';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -309,7 +310,7 @@ const ReferralProgram = () => {
                       )}
                     </td>
                     <td className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-tight">
-                      {new Date(ref.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {formatDate(ref.createdAt)}
                     </td>
                   </motion.tr>
                 );

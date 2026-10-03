@@ -7,6 +7,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '../../../utils/toast';
 import { getImageUrl } from '../../../utils/imageHelper';
+import { formatDate } from '../../../utils/date';
 
 const ReviewModeration = () => {
   const [activeTab, setActiveTab] = useState('All'); // 'All', 'Pending', 'Approved', 'Flagged'/'Rejected'
@@ -338,7 +339,7 @@ const ReviewModeration = () => {
                               {reel.productId?.name || 'Unknown Product'}
                               <span className="mx-1">•</span>
                               <Calendar size={12} />
-                              {new Date(reel.createdAt).toLocaleDateString()}
+                              {formatDate(reel.createdAt)}
                            </div>
                         </div>
                         <div className="flex gap-1">

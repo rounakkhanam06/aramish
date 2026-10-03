@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '../../utils/toast';
+import { formatDate } from '../../utils/date';
 
 const MOCK_USERS = [
   { id: 'USR001', name: 'Rahul Sharma', email: 'rahul@example.com', phone: '+91 98765 43210', joined: '2026-05-01', totalSpent: '₹45,200', orders: 12, status: 'Active' },
@@ -89,7 +90,7 @@ const Users = () => {
           phone: u.phone || 'N/A',
           // en-CA gives YYYY-MM-DD in the browser's local timezone (unlike toISOString,
           // which is always UTC and can show the wrong calendar day for IST admins).
-          joined: new Date(u.createdAt).toLocaleDateString('en-CA'),
+          joined: formatDate(u.createdAt),
           totalSpent: `₹${(u.totalSpent || 0).toLocaleString('en-IN')}`,
           orders: u.ordersCount || 0,
           status: u.derivedStatus || 'Active',
@@ -332,7 +333,7 @@ const Users = () => {
         const csvContent = [
           headers.join(','),
           ...data.users.map(u => {
-            const joined = new Date(u.createdAt).toLocaleDateString('en-CA');
+            const joined = formatDate(u.createdAt);
             const spent = u.totalSpent || 0;
             const walletBal = u.walletBalance || 0;
             const orders = u.ordersCount || 0;

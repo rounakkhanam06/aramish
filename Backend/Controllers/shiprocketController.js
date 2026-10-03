@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const { handleOrderCancellationRefunds } = require('../utils/orderHelper');
 const { processDeliveredOrderRewards } = require('../utils/walletService');
 const { verifyWebhookToken } = require('../utils/shiprocketWebhookAuth');
+const { loadShippingDetails, buildShiprocketOrderPayload, cheapestCourier } = require('../utils/shiprocketPayload');
 
 // Forward-shipping updates (Processing/Shipped/Out for Delivery/Delivered) must never pull an
 // order back out of a cancelled or post-delivery state — e.g. a late or duplicate DELIVERED
@@ -25,6 +26,36 @@ const keepFinalStatus = (currentStatus, mappedStatus) =>
 const isPastForwardShipping = (status) =>
     status === 'Delivered' || (status !== 'Cancelled' && FINAL_OR_POST_DELIVERY_STATUSES.includes(status));
 
+// Shipment states that end the forward delivery: the order is cancelled, refunded and its stock
+// restored. "RTO Initiated" / "RTO In Transit" are deliberately NOT here — the parcel is still
+// on its way back, so stock is only restored once it has actually returned ("RTO Delivered").
+const SHIPMENT_ENDED_STATUSES = ['CANCELLED', 'CANCELED', 'RTO DELIVERED', 'RTO_DELIVERED'];
+
+// Shiprocket reports most failures (low wallet balance, courier not serviceable, ...) inside an
+// HTTP 200 body, so a reply alone is not success — each step must be checked for its real result.
+const srErrorMessage = (err) => err.response?.data?.message || err.message;
+
+/** Returns { awbInfo } when an AWB was really assigned, otherwise { error }. */
+const readAwbResult = (data) => {
+    const awbInfo = data?.response?.data;
+    if (awbInfo?.awb_code) return { awbInfo };
+    return { error: awbInfo?.awb_assign_error || data?.message || 'Shiprocket did not assign an AWB' };
+};
+
+/** Pickup succeeded when Shiprocket confirms it (pickup_status 1) or says it is already queued. */
+const readPickupResult = (data) => {
+    if (data?.pickup_status === 1) return {};
+    return { error: data?.response?.data || data?.message || 'Shiprocket did not schedule the pickup' };
+};
+const isAlreadyInPickupQueue = (message) => /already in pickup queue/i.test(String(message || ''));
+
+/** Returns { labelUrl } when a label was really created, otherwise { error }. */
+const readLabelResult = (data, shipmentId) => {
+    if (data?.label_created === 1 && data.label_url) return { labelUrl: data.label_url };
+    const reason = data?.not_created?.[shipmentId] || data?.response || data?.message;
+    return { error: reason || 'Shiprocket did not generate the label' };
+};
+
 exports.checkServiceability = async (req, res) => {
     try {
         const { pickupPincode, deliveryPincode, weight, cod } = req.body;
@@ -40,18 +71,19 @@ exports.estimateShipping = async (req, res) => {
         const { deliveryPincode, weight, cod } = req.body;
         console.log(`[ESTIMATE_API] Pincode: ${deliveryPincode}, Weight: ${weight}, COD: ${cod}`);
         const pickupPincode = process.env.SHIPROCKET_PICKUP_PINCODE || '201301';
-        const data = await shiprocketService.checkServiceability(pickupPincode, deliveryPincode, weight || 0.5, cod || 0);
-        
-        let minFreight = 0;
-        let etd = '';
-        if (data && data.data && data.data.available_courier_companies && data.data.available_courier_companies.length > 0) {
-            const couriers = data.data.available_courier_companies;
-            const calculateTotalFreight = (c) => cod ? (c.freight_charge + (c.cod_charges || 0)) : c.freight_charge;
-            minFreight = Math.min(...couriers.map(calculateTotalFreight));
-            const bestCourier = couriers.find(c => calculateTotalFreight(c) === minFreight);
-            etd = bestCourier ? bestCourier.etd : '';
+        let data;
+        try {
+            data = await shiprocketService.checkServiceability(pickupPincode, deliveryPincode, weight || 0.5, cod || 0);
+        } catch (svcErr) {
+            return res.status(503).json({ success: false, message: 'Could not calculate the delivery charge right now. Please try again in a few minutes.' });
         }
-        res.status(200).json({ success: true, deliveryCharge: minFreight, etd });
+
+        // Same rule checkout charges by. No courier means no delivery — never "free delivery".
+        const best = cheapestCourier(data?.data?.available_courier_companies, Number(cod) === 1);
+        if (!best) {
+            return res.status(400).json({ success: false, message: `Delivery is not available to pincode ${deliveryPincode}${Number(cod) === 1 ? ' with Cash on Delivery' : ''}.` });
+        }
+        res.status(200).json({ success: true, deliveryCharge: best.charge, etd: best.courier.etd || '' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -75,32 +107,40 @@ exports.assignAWB = async (req, res) => {
         if (!shipmentId) return res.status(400).json({ success: false, message: 'shipmentId is required' });
 
         const data = await shiprocketService.assignAWB(shipmentId, courierId);
+        const { awbInfo, error } = readAwbResult(data);
 
-        if (order && data && data.response && data.response.data) {
-            const awbData = data.response.data;
-            if (awbData.awb_code) order.awbCode = awbData.awb_code;
-            if (awbData.courier_name) order.courierName = awbData.courier_name;
+        if (error) {
+            if (order) {
+                order.shiprocketResponses.push({ type: 'AWB_ASSIGN_FAILED', data: data?.response?.data || data });
+                await order.save();
+            }
+            return res.status(400).json({ success: false, message: `AWB not assigned: ${error}`, data });
+        }
+
+        if (order) {
+            order.awbCode = awbInfo.awb_code;
+            if (awbInfo.courier_name) order.courierName = awbInfo.courier_name;
             order.shipmentStatus = 'AWB Assigned';
-            order.shiprocketResponses.push({ type: 'AWB_ASSIGN', data: awbData });
+            order.shiprocketResponses.push({ type: 'AWB_ASSIGN', data: awbInfo });
             order.trackingHistory.push({
                 status: 'AWB Assigned',
                 timestamp: new Date(),
-                activity: `AWB ${awbData.awb_code || ''} assigned via ${awbData.courier_name || 'courier'}`,
+                activity: `AWB ${awbInfo.awb_code} assigned via ${awbInfo.courier_name || 'courier'}`,
                 location: ''
             });
             await order.save();
-        } else if (!order && data && data.response && data.response.data && data.response.data.awb_code) {
+        } else {
             // Fallback: update by shipmentId directly
             await Order.findOneAndUpdate(
                 { shipmentId: String(shipmentId) },
-                { awbCode: data.response.data.awb_code, courierName: data.response.data.courier_name, shipmentStatus: 'AWB Assigned' }
+                { awbCode: awbInfo.awb_code, courierName: awbInfo.courier_name, shipmentStatus: 'AWB Assigned' }
             );
         }
 
         res.status(200).json({ success: true, data, order });
     } catch (error) {
         console.error('Error assigning AWB:', error.response?.data || error.message);
-        res.status(500).json({ success: false, message: error.response?.data?.message || error.message });
+        res.status(500).json({ success: false, message: `AWB not assigned: ${srErrorMessage(error)}` });
     }
 };
 
@@ -118,8 +158,25 @@ exports.requestPickup = async (req, res) => {
         }
 
         if (!shipmentId) return res.status(400).json({ success: false, message: 'shipmentId is required' });
+        if (order && !order.awbCode) {
+            return res.status(400).json({ success: false, message: 'Assign an AWB before requesting a pickup' });
+        }
 
-        const data = await shiprocketService.requestPickup(shipmentId);
+        let data;
+        try {
+            data = await shiprocketService.requestPickup(shipmentId);
+            const { error } = readPickupResult(data);
+            if (error) {
+                if (order) {
+                    order.shiprocketResponses.push({ type: 'PICKUP_REQUEST_FAILED', data });
+                    await order.save();
+                }
+                return res.status(400).json({ success: false, message: `Pickup not scheduled: ${error}`, data });
+            }
+        } catch (pickupErr) {
+            if (!isAlreadyInPickupQueue(srErrorMessage(pickupErr))) throw pickupErr;
+            data = pickupErr.response?.data;
+        }
 
         if (order) {
             order.pickupScheduled = true;
@@ -137,7 +194,7 @@ exports.requestPickup = async (req, res) => {
         res.status(200).json({ success: true, data, order });
     } catch (error) {
         console.error('Error requesting pickup:', error.response?.data || error.message);
-        res.status(500).json({ success: false, message: error.response?.data?.message || error.message });
+        res.status(500).json({ success: false, message: `Pickup not scheduled: ${srErrorMessage(error)}` });
     }
 };
 
@@ -157,6 +214,15 @@ exports.generateLabel = async (req, res) => {
         if (!shipmentId) return res.status(400).json({ success: false, message: 'shipmentId is required' });
 
         const data = await shiprocketService.generateLabel(shipmentId);
+        const { error } = readLabelResult(data, shipmentId);
+
+        if (error) {
+            if (order) {
+                order.shiprocketResponses.push({ type: 'LABEL_FAILED', data });
+                await order.save();
+            }
+            return res.status(400).json({ success: false, message: `Label not generated: ${error}`, data });
+        }
 
         if (order) {
             order.shiprocketResponses.push({ type: 'LABEL_GENERATED', data });
@@ -172,7 +238,7 @@ exports.generateLabel = async (req, res) => {
         res.status(200).json({ success: true, data, order });
     } catch (error) {
         console.error('Error generating label:', error.response?.data || error.message);
-        res.status(500).json({ success: false, message: error.response?.data?.message || error.message });
+        res.status(500).json({ success: false, message: `Label not generated: ${srErrorMessage(error)}` });
     }
 };
 
@@ -191,52 +257,73 @@ exports.processOrder = async (req, res) => {
         const results = { awb: null, pickup: null, label: null };
         let finalCourierId = courierId;
 
-        // Step 1: If no courier ID provided, find recommended courier from serviceability
-        if (!finalCourierId) {
+        // Step 1: If no courier ID provided, pick the cheapest courier for the order's real
+        // weight — the same courier the customer's delivery charge was priced on at checkout.
+        if (!finalCourierId && !order.awbCode) {
             try {
-                const isCod = order.paymentMethod === 'COD' ? 1 : 0;
+                const isCod = order.paymentMethod === 'COD' && Number(order.total) > 0;
                 const pickupPincode = process.env.SHIPROCKET_PICKUP_PINCODE || '201301';
-                const svcData = await shiprocketService.checkServiceability(pickupPincode, order.deliveryAddress.pincode, 0.5, isCod);
-                if (svcData && svcData.data && svcData.data.recommended_courier_company_id) {
-                    finalCourierId = svcData.data.recommended_courier_company_id;
+                const { weight } = await loadShippingDetails(order.items);
+                const svcData = await shiprocketService.checkServiceability(pickupPincode, order.deliveryAddress.pincode, weight, isCod ? 1 : 0);
+                const best = cheapestCourier(svcData?.data?.available_courier_companies, isCod);
+                if (best && best.courier.courier_company_id) {
+                    finalCourierId = best.courier.courier_company_id;
                 }
             } catch (svcErr) {
                 console.error('Could not auto-select courier, will let Shiprocket decide:', svcErr.message);
             }
         }
 
+        // Each step needs the previous one to have really succeeded (no AWB → no pickup → no
+        // label), and only a confirmed success updates the shipment status and timeline.
+        let failure = null;
+
         // Step 2: Assign AWB
         if (!order.awbCode) {
             try {
                 const awbData = await shiprocketService.assignAWB(order.shipmentId, finalCourierId);
                 results.awb = awbData;
-
-                if (awbData && awbData.response && awbData.response.data) {
-                    const awbInfo = awbData.response.data;
-                    if (awbInfo.awb_code) order.awbCode = awbInfo.awb_code;
+                const { awbInfo, error } = readAwbResult(awbData);
+                if (error) {
+                    failure = `AWB not assigned: ${error}`;
+                    order.shiprocketResponses.push({ type: 'AWB_ASSIGN_FAILED', data: awbData?.response?.data || awbData });
+                } else {
+                    order.awbCode = awbInfo.awb_code;
                     if (awbInfo.courier_name) order.courierName = awbInfo.courier_name;
                     order.shipmentStatus = 'AWB Assigned';
                     order.shiprocketResponses.push({ type: 'AWB_ASSIGN', data: awbInfo });
                     order.trackingHistory.push({
                         status: 'AWB Assigned',
                         timestamp: new Date(),
-                        activity: `AWB ${awbInfo.awb_code || ''} assigned via ${awbInfo.courier_name || 'courier'}`,
+                        activity: `AWB ${awbInfo.awb_code} assigned via ${awbInfo.courier_name || 'courier'}`,
                         location: ''
                     });
                 }
             } catch (awbErr) {
                 console.error('AWB assignment failed:', awbErr.response?.data || awbErr.message);
-                results.awb = { error: awbErr.response?.data?.message || awbErr.message };
+                failure = `AWB not assigned: ${srErrorMessage(awbErr)}`;
+                results.awb = { error: srErrorMessage(awbErr) };
             }
         } else {
             results.awb = { skipped: true, message: 'AWB already assigned', awbCode: order.awbCode };
         }
 
         // Step 3: Request Pickup
-        if (!order.pickupScheduled) {
+        if (!failure && !order.pickupScheduled) {
+            let pickupData = null;
             try {
-                const pickupData = await shiprocketService.requestPickup(order.shipmentId);
-                results.pickup = pickupData;
+                pickupData = await shiprocketService.requestPickup(order.shipmentId);
+                const { error } = readPickupResult(pickupData);
+                if (error) failure = `Pickup not scheduled: ${error}`;
+            } catch (pickupErr) {
+                console.error('Pickup request failed:', pickupErr.response?.data || pickupErr.message);
+                pickupData = pickupErr.response?.data || { error: srErrorMessage(pickupErr) };
+                if (!isAlreadyInPickupQueue(srErrorMessage(pickupErr))) failure = `Pickup not scheduled: ${srErrorMessage(pickupErr)}`;
+            }
+            results.pickup = pickupData;
+            if (failure) {
+                order.shiprocketResponses.push({ type: 'PICKUP_REQUEST_FAILED', data: pickupData });
+            } else {
                 order.pickupScheduled = true;
                 order.shipmentStatus = 'Pickup Scheduled';
                 order.shiprocketResponses.push({ type: 'PICKUP_REQUEST', data: pickupData });
@@ -246,35 +333,41 @@ exports.processOrder = async (req, res) => {
                     activity: 'Pickup has been scheduled with courier partner',
                     location: ''
                 });
-            } catch (pickupErr) {
-                console.error('Pickup request failed:', pickupErr.response?.data || pickupErr.message);
-                results.pickup = { error: pickupErr.response?.data?.message || pickupErr.message };
             }
-        } else {
+        } else if (order.pickupScheduled) {
             results.pickup = { skipped: true, message: 'Pickup already scheduled' };
         }
 
         // Step 4: Generate Label
-        try {
-            const labelData = await shiprocketService.generateLabel(order.shipmentId);
-            results.label = labelData;
-            order.shiprocketResponses.push({ type: 'LABEL_GENERATED', data: labelData });
-            order.trackingHistory.push({
-                status: 'Label Generated',
-                timestamp: new Date(),
-                activity: 'Shipping label has been generated',
-                location: ''
-            });
-        } catch (labelErr) {
-            console.error('Label generation failed:', labelErr.response?.data || labelErr.message);
-            results.label = { error: labelErr.response?.data?.message || labelErr.message };
+        if (!failure) {
+            try {
+                const labelData = await shiprocketService.generateLabel(order.shipmentId);
+                results.label = labelData;
+                const { error } = readLabelResult(labelData, order.shipmentId);
+                if (error) {
+                    failure = `Label not generated: ${error}`;
+                    order.shiprocketResponses.push({ type: 'LABEL_FAILED', data: labelData });
+                } else {
+                    order.shiprocketResponses.push({ type: 'LABEL_GENERATED', data: labelData });
+                    order.trackingHistory.push({
+                        status: 'Label Generated',
+                        timestamp: new Date(),
+                        activity: 'Shipping label has been generated',
+                        location: ''
+                    });
+                }
+            } catch (labelErr) {
+                console.error('Label generation failed:', labelErr.response?.data || labelErr.message);
+                failure = `Label not generated: ${srErrorMessage(labelErr)}`;
+                results.label = { error: srErrorMessage(labelErr) };
+            }
         }
 
         await order.save();
 
-        res.status(200).json({
-            success: true,
-            message: 'Order processed successfully',
+        res.status(failure ? 400 : 200).json({
+            success: !failure,
+            message: failure || 'Order processed: AWB assigned, pickup scheduled and label generated',
             order: {
                 _id: order._id,
                 status: order.status,
@@ -308,22 +401,8 @@ exports.cancelShiprocketOrder = async (req, res) => {
         // Cancel on Shiprocket if shiprocketOrderId exists
         let srCancelData = null;
         if (order.shiprocketOrderId) {
-            try {
-                const token = await shiprocketService.getShiprocketToken();
-                if (token) {
-                    const axios = require('axios');
-                    const SHIPROCKET_API_BASE = process.env.SHIPROCKET_API_BASE || 'https://apiv2.shiprocket.in';
-                    const cancelRes = await axios.post(`${SHIPROCKET_API_BASE}/v1/external/orders/cancel`, {
-                        ids: [order.shiprocketOrderId]
-                    }, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    srCancelData = cancelRes.data;
-                }
-            } catch (srErr) {
-                console.error('Shiprocket cancel failed:', srErr.response?.data || srErr.message);
-                srCancelData = { error: srErr.response?.data?.message || srErr.message };
-            }
+            srCancelData = await shiprocketService.cancelShiprocketOrder(order.shiprocketOrderId)
+                || { error: 'Shiprocket cancel failed — cancel it in the Shiprocket panel too' };
         }
 
         // Restore stock & coupon usage, claw back any reward, process the online payment
@@ -383,7 +462,7 @@ exports.syncOrderStatus = async (req, res) => {
                     mappedStatus = 'Out for Delivery';
                 } else if (srStatus === 'DELIVERED') {
                     mappedStatus = 'Delivered';
-                } else if (['CANCELLED', 'RTO INITIATED', 'RTO DELIVERED'].includes(srStatus) && !isPastForwardShipping(order.status)) {
+                } else if (SHIPMENT_ENDED_STATUSES.includes(srStatus) && !isPastForwardShipping(order.status)) {
                     mappedStatus = 'Cancelled';
                 }
                 mappedStatus = keepFinalStatus(order.status, mappedStatus);
@@ -508,7 +587,7 @@ exports.webhookReceiver = async (req, res) => {
                 mappedStatus = 'Out for Delivery';
             } else if (srStatus === 'DELIVERED') {
                 mappedStatus = 'Delivered';
-            } else if (['CANCELLED', 'RTO INITIATED', 'RTO DELIVERED', 'RTO_INITIATED', 'RTO_DELIVERED', 'CANCELED'].includes(srStatus)) {
+            } else if (SHIPMENT_ENDED_STATUSES.includes(srStatus)) {
                 if (isPastForwardShipping(order.status)) {
                     // A late cancel/RTO for a shipment that already reached the customer (or
                     // already went through a return/exchange) must not refund/restock again.
@@ -561,15 +640,17 @@ exports.webhookReceiver = async (req, res) => {
 
             await order.populate('userId');
 
-            // Send SMS via SMS India Hub
-            if (order.userId && order.userId.phone) {
+            // Send SMS via SMS India Hub — to the phone on the delivery address (the person
+            // receiving the parcel), falling back to the account phone.
+            const smsPhone = (order.deliveryAddress && order.deliveryAddress.phone) || (order.userId && order.userId.phone);
+            if (smsPhone) {
                 try {
                     const smsApiKey = process.env.SMS_INDIA_HUB_API_KEY || process.env.SMS_API_KEY;
                     if (!smsApiKey) {
                         console.warn('⚠️ SMS API key is not configured in environment. Skipping status update SMS.');
                     } else {
                         const axios = require('axios');
-                        let phone = order.userId.phone.toString().replace(/\D/g, '');
+                        let phone = smsPhone.toString().replace(/\D/g, '');
                         if (phone.length === 10) phone = '91' + phone;
 
                         const msg = `Dear Customer, your Aramish order tracking update: Status is now ${currentStatus || mappedStatus}.`;
@@ -631,85 +712,34 @@ exports.createShiprocketOrderForExisting = async (req, res) => {
         if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
         if (order.shipmentId) return res.status(400).json({ success: false, message: 'Shiprocket order already created' });
 
-        const Product = require('../Models/Product');
         const User = require('../Models/User');
 
         const user = await User.findById(order.userId);
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        // Calculate total order weight based on products
-        let totalOrderWeight = 0;
-        for (const item of order.items) {
-            if (item.productId) {
-                const product = await Product.findById(item.productId);
-                const productWeight = (product && product.shippingSpecs && product.shippingSpecs.weight) ? product.shippingSpecs.weight : 0.5;
-                totalOrderWeight += (productWeight * (item.quantity || 1));
-            }
-        }
-
-        const cityState = shiprocketService.parseCityState(order.deliveryAddress.address);
-
-        const shiprocketOrderData = {
-            order_id: `ORD_${order._id}`,
-            order_date: new Date(order.createdAt).toISOString().slice(0, 16).replace('T', ' '),
-            pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION || 'Primary',
-            billing_customer_name: user.name || order.deliveryAddress.name || 'Customer',
-            billing_last_name: '',
-            billing_address: order.deliveryAddress.address,
-            billing_city: cityState.city,
-            billing_pincode: order.deliveryAddress.pincode,
-            billing_state: cityState.state,
-            billing_country: 'India',
-            billing_email: user.email || 'customer@aramish.com',
-            billing_phone: user.phone || '9876543210',
-            shipping_is_billing: true,
-            order_items: order.items.map(item => ({
-                name: item.name,
-                sku: item.productId.toString(),
-                units: item.quantity || 1,
-                selling_price: item.price,
-                discount: 0,
-                tax: 0,
-                hsn: 441122
-            })),
-            payment_method: order.paymentMethod === 'COD' ? 'COD' : 'Prepaid',
-            sub_total: order.total,
-            length: 10,
-            breadth: 10,
-            height: 10,
-            weight: totalOrderWeight || 0.5
-        };
+        const { weight, hsnByProductId } = await loadShippingDetails(order.items);
+        const shiprocketOrderData = buildShiprocketOrderPayload(order, user, { weight, hsnByProductId });
 
         const srResponse = await shiprocketService.createShiprocketOrder(shiprocketOrderData);
-        
-        if (srResponse) {
-            order.shiprocketResponses.push({ type: 'CREATE_ORDER_RETRY', data: srResponse });
-            if (srResponse.order_id) {
-                order.shiprocketOrderId = srResponse.order_id;
-                order.shipmentId = srResponse.shipment_id;
-            }
+        if (!srResponse || !srResponse.order_id) {
+            order.shiprocketResponses.push({ type: 'CREATE_ORDER_RETRY_FAILED', data: srResponse || null });
+            await order.save();
+            const reason = srResponse?.message || 'Shiprocket did not return an order id';
+            return res.status(400).json({ success: false, message: `Shiprocket order not created: ${reason}` });
         }
+        order.shiprocketResponses.push({ type: 'CREATE_ORDER_RETRY', data: srResponse });
+        order.shiprocketOrderId = srResponse.order_id;
+        order.shipmentId = srResponse.shipment_id;
 
-        // Fetch delivery charges (serviceability) and store it
+        // Refresh the delivery estimate only. The delivery charge is part of the total the
+        // customer already agreed to, so it is never rewritten here.
         try {
+            const isCod = order.paymentMethod === 'COD' && Number(order.total) > 0;
             const pickupPincode = process.env.SHIPROCKET_PICKUP_PINCODE || '201301';
-            const serviceResponse = await shiprocketService.checkServiceability(pickupPincode, order.deliveryAddress.pincode, totalOrderWeight || 0.5, order.paymentMethod === 'COD' ? 1 : 0);
+            const serviceResponse = await shiprocketService.checkServiceability(pickupPincode, order.deliveryAddress.pincode, weight, isCod ? 1 : 0);
             order.shiprocketResponses.push({ type: 'SERVICEABILITY', data: serviceResponse });
-            
-            if (serviceResponse && serviceResponse.data && serviceResponse.data.available_courier_companies) {
-                const couriers = serviceResponse.data.available_courier_companies;
-                if (couriers.length > 0) {
-                    const isCod = order.paymentMethod === 'COD';
-                    const calculateTotalFreight = (c) => isCod ? (c.freight_charge + (c.cod_charges || 0)) : c.freight_charge;
-                    const minFreight = Math.min(...couriers.map(calculateTotalFreight));
-                    order.deliveryCharge = minFreight;
-                    
-                    const bestCourier = couriers.find(c => calculateTotalFreight(c) === minFreight);
-                    if (bestCourier && bestCourier.etd) {
-                        order.etd = bestCourier.etd;
-                    }
-                }
-            }
+            const best = cheapestCourier(serviceResponse?.data?.available_courier_companies, isCod);
+            if (best && best.courier.etd) order.etd = best.courier.etd;
         } catch (svcErr) {
             console.error('Serviceability check failed:', svcErr.message);
         }

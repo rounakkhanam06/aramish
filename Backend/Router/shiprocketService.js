@@ -49,14 +49,33 @@ const getShiprocketToken = async () => {
     }
 };
 
+/**
+ * Runs a Shiprocket API call with the cached login token. If Shiprocket rejects the token
+ * (401 — it expired early, or the password was changed), the cached token is dropped and the
+ * call is retried once with a fresh login, instead of failing every call until it expires.
+ */
+const withToken = async (send) => {
+    const token = await getShiprocketToken();
+    if (!token) throw new Error('Shiprocket authentication failed');
+    try {
+        return await send(token);
+    } catch (error) {
+        if (error.response?.status !== 401) throw error;
+        if (shiprocketToken === token) {
+            shiprocketToken = null;
+            tokenExpiry = null;
+        }
+        const freshToken = await getShiprocketToken();
+        if (!freshToken) throw error;
+        return send(freshToken);
+    }
+};
+
 const createShiprocketOrder = async (orderData) => {
     try {
-        const token = await getShiprocketToken();
-        if (!token) throw new Error('Shiprocket authentication failed');
-
-        const response = await axios.post(`${SHIPROCKET_API_BASE}/v1/external/orders/create/adhoc`, orderData, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await withToken((token) => axios.post(`${SHIPROCKET_API_BASE}/v1/external/orders/create/adhoc`, orderData, {
+                headers: { Authorization: `Bearer ${token}` }
+            }));
         return response.data;
     } catch (error) {
         console.error('Error creating Shiprocket order:', error.response?.data || error.message);
@@ -66,18 +85,15 @@ const createShiprocketOrder = async (orderData) => {
 
 const checkServiceability = async (pickupPincode, deliveryPincode, weight, cod = 0) => {
     try {
-        const token = await getShiprocketToken();
-        if (!token) throw new Error('Shiprocket authentication failed');
-
-        const response = await axios.get(`${SHIPROCKET_API_BASE}/v1/external/courier/serviceability`, {
-            params: {
-                pickup_postcode: pickupPincode,
-                delivery_postcode: deliveryPincode,
-                weight: weight,
-                cod: cod
-            },
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await withToken((token) => axios.get(`${SHIPROCKET_API_BASE}/v1/external/courier/serviceability`, {
+                params: {
+                    pickup_postcode: pickupPincode,
+                    delivery_postcode: deliveryPincode,
+                    weight: weight,
+                    cod: cod
+                },
+                headers: { Authorization: `Bearer ${token}` }
+            }));
         return response.data;
     } catch (error) {
          console.error('Error checking serviceability:', error.response?.data || error.message);
@@ -87,20 +103,17 @@ const checkServiceability = async (pickupPincode, deliveryPincode, weight, cod =
 
 const assignAWB = async (shipmentId, courierId = null) => {
     try {
-        const token = await getShiprocketToken();
-        if (!token) throw new Error('Shiprocket authentication failed');
-
         const payload = {
             shipment_id: shipmentId
         };
-        
+
         if (courierId) {
             payload.courier_id = courierId;
         }
 
-        const response = await axios.post(`${SHIPROCKET_API_BASE}/v1/external/courier/assign/awb`, payload, {
+        const response = await withToken((token) => axios.post(`${SHIPROCKET_API_BASE}/v1/external/courier/assign/awb`, payload, {
             headers: { Authorization: `Bearer ${token}` }
-        });
+        }));
         return response.data;
     } catch (error) {
         console.error('Error assigning AWB:', error.response?.data || error.message);
@@ -110,14 +123,11 @@ const assignAWB = async (shipmentId, courierId = null) => {
 
 const requestPickup = async (shipmentId) => {
     try {
-        const token = await getShiprocketToken();
-        if (!token) throw new Error('Shiprocket authentication failed');
-
-        const response = await axios.post(`${SHIPROCKET_API_BASE}/v1/external/courier/generate/pickup`, {
-            shipment_id: [shipmentId]
-        }, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await withToken((token) => axios.post(`${SHIPROCKET_API_BASE}/v1/external/courier/generate/pickup`, {
+                shipment_id: [shipmentId]
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            }));
         return response.data;
     } catch (error) {
         console.error('Error requesting pickup:', error.response?.data || error.message);
@@ -127,14 +137,11 @@ const requestPickup = async (shipmentId) => {
 
 const generateLabel = async (shipmentId) => {
     try {
-        const token = await getShiprocketToken();
-        if (!token) throw new Error('Shiprocket authentication failed');
-
-        const response = await axios.post(`${SHIPROCKET_API_BASE}/v1/external/courier/generate/label`, {
-            shipment_id: [shipmentId]
-        }, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await withToken((token) => axios.post(`${SHIPROCKET_API_BASE}/v1/external/courier/generate/label`, {
+                shipment_id: [shipmentId]
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            }));
         return response.data;
     } catch (error) {
         console.error('Error generating label:', error.response?.data || error.message);
@@ -144,12 +151,9 @@ const generateLabel = async (shipmentId) => {
 
 const trackAWB = async (awbCode) => {
     try {
-        const token = await getShiprocketToken();
-        if (!token) throw new Error('Shiprocket authentication failed');
-
-        const response = await axios.get(`${SHIPROCKET_API_BASE}/v1/external/courier/track/awb/${awbCode}`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await withToken((token) => axios.get(`${SHIPROCKET_API_BASE}/v1/external/courier/track/awb/${awbCode}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            }));
         return response.data;
     } catch (error) {
         console.error('Error tracking AWB:', error.response?.data || error.message);
@@ -217,12 +221,9 @@ const parseCityState = (address) => {
 
 const createShiprocketReturnOrder = async (returnData) => {
     try {
-        const token = await getShiprocketToken();
-        if (!token) throw new Error('Shiprocket authentication failed');
-
-        const response = await axios.post(`${SHIPROCKET_API_BASE}/v1/external/orders/create/return`, returnData, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await withToken((token) => axios.post(`${SHIPROCKET_API_BASE}/v1/external/orders/create/return`, returnData, {
+                headers: { Authorization: `Bearer ${token}` }
+            }));
         return response.data;
     } catch (error) {
         console.error('Error creating Shiprocket return order:', error.response?.data || error.message);
@@ -232,12 +233,9 @@ const createShiprocketReturnOrder = async (returnData) => {
 
 const createExchangeForwardOrder = async (orderData) => {
     try {
-        const token = await getShiprocketToken();
-        if (!token) throw new Error('Shiprocket authentication failed');
-
-        const response = await axios.post(`${SHIPROCKET_API_BASE}/v1/external/orders/create/adhoc`, orderData, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await withToken((token) => axios.post(`${SHIPROCKET_API_BASE}/v1/external/orders/create/adhoc`, orderData, {
+                headers: { Authorization: `Bearer ${token}` }
+            }));
         return response.data;
     } catch (error) {
         console.error('Error creating Shiprocket exchange forward order:', error.response?.data || error.message);
@@ -247,14 +245,11 @@ const createExchangeForwardOrder = async (orderData) => {
 
 const cancelShiprocketOrder = async (shiprocketOrderId) => {
     try {
-        const token = await getShiprocketToken();
-        if (!token) throw new Error('Shiprocket authentication failed');
-
-        const response = await axios.post(`${SHIPROCKET_API_BASE}/v1/external/orders/cancel`, {
-            ids: [shiprocketOrderId]
-        }, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await withToken((token) => axios.post(`${SHIPROCKET_API_BASE}/v1/external/orders/cancel`, {
+                ids: [shiprocketOrderId]
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            }));
         return response.data;
     } catch (error) {
         console.error('Error cancelling Shiprocket order:', error.response?.data || error.message);

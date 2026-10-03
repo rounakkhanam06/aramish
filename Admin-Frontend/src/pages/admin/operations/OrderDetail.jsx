@@ -10,6 +10,7 @@ import {
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import OptimizedImage from '../../../components/common/OptimizedImage';
+import { formatDateTime } from '../../../utils/date';
 
 const StatusBadge = ({ status }) => {
   const styles = {
@@ -187,7 +188,7 @@ const OrderDetail = () => {
         window.open(data.data.label_url, '_blank');
         toast.success('Label generated!');
       } else {
-        toast.error('Label not ready or failed to generate');
+        toast.error(data.message || 'Label not ready or failed to generate');
       }
     } catch (err) {
       toast.error('Error generating label');
@@ -251,14 +252,15 @@ const OrderDetail = () => {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        toast.success('Order processed! AWB + Pickup + Label done.');
-        fetchOrderDetail();
+        toast.success(data.message || 'Order processed! AWB + Pickup + Label done.');
         if (data.results?.label?.label_url) {
           window.open(data.results.label.label_url, '_blank');
         }
       } else {
-        toast.error(data.message || 'Failed to process order');
+        toast.error(data.message || 'Failed to process order', { duration: 8000 });
       }
+      // A step can succeed before a later one fails (e.g. AWB assigned, pickup refused).
+      fetchOrderDetail();
     } catch (err) {
       toast.error('Error processing order');
     } finally {
@@ -355,14 +357,14 @@ const OrderDetail = () => {
     if (order.trackingHistory && order.trackingHistory.length > 0) {
       return order.trackingHistory.map(entry => ({
         status: entry.activity || entry.status,
-        date: new Date(entry.timestamp).toLocaleString(),
+        date: formatDateTime(entry.timestamp),
         desc: entry.location || 'Activity tracked',
         completed: true
       }));
     }
 
     const steps = [
-      { status: 'Pending', date: new Date(order.createdAt).toLocaleString(), desc: 'Order placed by customer', completed: true },
+      { status: 'Pending', date: formatDateTime(order.createdAt), desc: 'Order placed by customer', completed: true },
       { status: 'Processing', date: ['Processing', 'Shipped', 'Out for Delivery', 'Delivered'].includes(order.status) ? 'Updated' : 'Pending', desc: 'Order confirmed & is being prepared', completed: ['Processing', 'Shipped', 'Out for Delivery', 'Delivered'].includes(order.status) },
       { status: 'Shipped', date: ['Shipped', 'Out for Delivery', 'Delivered'].includes(order.status) ? 'Updated' : 'Pending', desc: 'Awaiting courier scan or shipped', completed: ['Shipped', 'Out for Delivery', 'Delivered'].includes(order.status) },
       { status: 'Out for Delivery', date: ['Out for Delivery', 'Delivered'].includes(order.status) ? 'Updated' : 'Pending', desc: 'Delivery partner is on the way', completed: ['Out for Delivery', 'Delivered'].includes(order.status) },
@@ -391,7 +393,7 @@ const OrderDetail = () => {
                  <h1 className="text-2xl font-black text-slate-900 font-montserrat uppercase tracking-tight">Order #{order._id.substring(order._id.length - 8).toUpperCase()}</h1>
                  <StatusBadge status={order.status} />
               </div>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Placed on {new Date(order.createdAt).toLocaleString()}</p>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Placed on {formatDateTime(order.createdAt)}</p>
            </div>
         </div>
         <div className="flex gap-3 no-print">

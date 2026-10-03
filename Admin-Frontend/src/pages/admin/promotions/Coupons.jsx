@@ -7,6 +7,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '../../../utils/toast';
 import ConfirmModal from '../../../components/ConfirmModal';
+import { formatDate } from '../../../utils/date';
 
 const Coupons = () => {
   const [coupons, setCoupons] = useState([]);
@@ -213,7 +214,7 @@ const Coupons = () => {
       c.type,
       c.type === 'Percentage' ? `${c.value}%` : `INR ${c.value}`,
       c.minOrder || 0,
-      new Date(c.expiry).toLocaleDateString(),
+      formatDate(c.expiry),
       c.usageLimit || 1,
       c.status,
       c.usage || 0
@@ -387,7 +388,7 @@ const Coupons = () => {
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-bold">
                         <Calendar size={12} className="text-slate-300" />
-                        {new Date(coupon.expiry).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                        {formatDate(coupon.expiry)}
                       </div>
                     </td>
                     <td className="px-6 py-5">

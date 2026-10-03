@@ -5,7 +5,8 @@ jest.mock('../Router/firebaseAdmin', () => ({
   sendNotificationToAdmins: jest.fn()
 }));
 jest.mock('../Router/shiprocketService', () => ({
-  checkServiceability: jest.fn().mockResolvedValue({ data: { available_courier_companies: [] } }),
+  // A ₹0 courier keeps these money tests free of delivery charges (no courier = not deliverable).
+  checkServiceability: jest.fn().mockResolvedValue({ data: { available_courier_companies: [{ courier_company_id: 1, freight_charge: 0, cod_charges: 0, etd: '3 days' }] } }),
   createShiprocketOrder: jest.fn().mockResolvedValue(null),
   parseCityState: () => ({ city: 'Indore', state: 'MP' }),
   trackAWB: jest.fn()

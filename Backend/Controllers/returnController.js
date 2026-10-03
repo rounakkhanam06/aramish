@@ -1,7 +1,7 @@
 const ReturnRequest = require('../Models/ReturnRequest');
 const Order = require('../Models/Order');
-const Product = require('../Models/Product');
 const shiprocketService = require('../Router/shiprocketService');
+const { loadShippingDetails, toOrderItem, FALLBACK_EMAIL, FALLBACK_PHONE } = require('../utils/shiprocketPayload');
 const { handleReturnRefund, getDeliveredAt } = require('../utils/orderHelper');
 
 // Builds the Shiprocket reverse-pickup order and attempts AWB assignment for a return
@@ -10,13 +10,7 @@ const { handleReturnRefund, getDeliveredAt } = require('../utils/orderHelper');
 // outage on approval doesn't leave the return stuck with no way to (re)try the pickup.
 // Throws on failure — callers are responsible for recording the failure/retry state.
 const createReturnShipment = async (returnRequest, order) => {
-  // Calculate weight
-  let totalWeight = 0;
-  for (const item of returnRequest.items) {
-    const product = await Product.findById(item.productId);
-    const w = (product && product.shippingSpecs && product.shippingSpecs.weight) ? product.shippingSpecs.weight : 0.5;
-    totalWeight += (w * item.quantity);
-  }
+  const { weight: totalWeight, hsnByProductId } = await loadShippingDetails(returnRequest.items);
 
   const cityState = shiprocketService.parseCityState(order.deliveryAddress.address);
 
@@ -45,8 +39,9 @@ const createReturnShipment = async (returnRequest, order) => {
     pickup_state: cityState.state,
     pickup_country: "India",
     pickup_pincode: order.deliveryAddress.pincode,
-    pickup_email: order.userId?.email || "customer@aramish.com",
-    pickup_phone: order.userId?.phone || "9876543210",
+    pickup_email: order.userId?.email || FALLBACK_EMAIL,
+    // The courier calls this number to collect the parcel — the address's contact, not the account's.
+    pickup_phone: order.deliveryAddress.phone || order.userId?.phone || FALLBACK_PHONE,
     shipping_customer_name: returnShippingAddress.name,
     shipping_last_name: "",
     shipping_address: returnShippingAddress.address,
@@ -57,15 +52,13 @@ const createReturnShipment = async (returnRequest, order) => {
     shipping_pincode: returnShippingAddress.pincode,
     shipping_phone: returnShippingAddress.phone,
     shipping_email: returnShippingAddress.email,
-    order_items: returnRequest.items.map(item => ({
+    order_items: returnRequest.items.map(item => toOrderItem({
       name: item.name,
       sku: item.productId ? item.productId.toString() : "PRODUCT",
       units: item.quantity,
-      selling_price: item.price,
-      discount: 0,
-      tax: 0,
-      hsn: 441122
-    })),
+      price: item.price,
+      productId: item.productId
+    }, hsnByProductId)),
     payment_method: "Prepaid",
     sub_total: returnRequest.refundAmount,
     length: 10,
@@ -84,15 +77,27 @@ const createReturnShipment = async (returnRequest, order) => {
   returnRequest.shipmentStatus = 'Created';
 
   if (srResponse.shipment_id) {
+    // The return order exists in Shiprocket even if the AWB fails (e.g. low wallet balance) —
+    // record why, so admin can see it and assign the AWB from the Shiprocket panel.
+    let awbError = null;
     try {
       const awbResponse = await shiprocketService.assignAWB(srResponse.shipment_id);
-      if (awbResponse && awbResponse.response && awbResponse.response.data) {
-        const data = awbResponse.response.data;
+      const data = awbResponse?.response?.data;
+      if (data?.awb_code) {
         returnRequest.awbCode = data.awb_code;
         returnRequest.courierName = data.courier_name;
+      } else {
+        awbError = data?.awb_assign_error || awbResponse?.message || 'Shiprocket did not assign an AWB';
       }
     } catch (awbErr) {
-      console.error("Failed to automatically assign return AWB:", awbErr.message);
+      awbError = awbErr.response?.data?.message || awbErr.message;
+    }
+    if (awbError) {
+      console.error("Failed to automatically assign return AWB:", awbError);
+      returnRequest.shipmentErrors.push({
+        error: `Return pickup AWB not assigned: ${awbError}. Assign it from the Shiprocket panel (Returns).`,
+        timestamp: new Date()
+      });
     }
   }
 };

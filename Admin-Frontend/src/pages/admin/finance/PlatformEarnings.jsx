@@ -8,6 +8,7 @@ import {
 } from 'recharts';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { formatDateTime } from '../../../utils/date';
 
 const EarningStat = ({ title, value, sub, icon: Icon, color, bg }) => (
   <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
@@ -225,7 +226,7 @@ const PlatformEarnings = () => {
         <div class="header">
           <div>
             <div class="title">Aramish Store Earnings Report</div>
-            <div class="subtitle">Generated on ${new Date().toLocaleString()}</div>
+            <div class="subtitle">Generated on ${formatDateTime(new Date())}</div>
           </div>
           <div class="range-badge">Filter: ${rangeLabel}</div>
         </div>

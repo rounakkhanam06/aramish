@@ -9,6 +9,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import OptimizedImage from '../../components/common/OptimizedImage';
+import { formatDateTime } from '../../utils/date';
 
 const StatusBadge = ({ status }) => {
   const styles = {
@@ -350,7 +351,7 @@ const Orders = () => {
     const headers = ['Order ID', 'Customer', 'Email', 'Total Amount', 'Status', 'Payment Method', 'Payment Status', 'Date'];
     const csvContent = [
       headers.join(','),
-      ...orders.map(o => `"${o._id}","${o.userId?.name || 'Guest'}","${o.userId?.email || ''}",${o.total},"${o.status}","${o.paymentMethod}","${o.paymentStatus}","${new Date(o.createdAt).toLocaleString()}"`)
+      ...orders.map(o => `"${o._id}","${o.userId?.name || 'Guest'}","${o.userId?.email || ''}",${o.total},"${o.status}","${o.paymentMethod}","${o.paymentStatus}","${formatDateTime(o.createdAt)}"`)
     ].join('\n');
 
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -524,7 +525,7 @@ const Orders = () => {
                         <td className="px-6 py-5">
                           <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-bold">
                             <Calendar size={12} className="text-slate-300" />
-                            {new Date(order.createdAt).toLocaleString()}
+                            {formatDateTime(order.createdAt)}
                           </div>
                         </td>
                         <td className="px-6 py-5 text-right relative">
@@ -781,7 +782,7 @@ const Orders = () => {
                               <p className="font-bold text-slate-700">{entry.activity || entry.status}</p>
                               <p className="text-slate-400 text-[10px]">
                                 {entry.location && `${entry.location} · `}
-                                {new Date(entry.timestamp).toLocaleString()}
+                                {formatDateTime(entry.timestamp)}
                               </p>
                             </div>
                           </div>

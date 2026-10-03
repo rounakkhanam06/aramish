@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { formatDateTime } from '../../../utils/date';
 
 const Tickets = () => {
   const [tickets, setTickets] = useState([]);
@@ -372,7 +373,7 @@ const Tickets = () => {
                           <div key={i} className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100/50 text-slate-700 font-medium text-xs leading-relaxed whitespace-pre-line">
                             <div className="flex justify-between items-center mb-1">
                               <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">{reply.repliedBy}</span>
-                              <span className="text-[8px] text-slate-400 font-bold uppercase">{new Date(reply.createdAt).toLocaleString()}</span>
+                              <span className="text-[8px] text-slate-400 font-bold uppercase">{formatDateTime(reply.createdAt)}</span>
                             </div>
                             {reply.message}
                           </div>

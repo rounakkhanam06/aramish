@@ -9,6 +9,7 @@ const CouponUsage = require('../Models/CouponUsage');
 const { handleOrderCancellationStockAndCoupon, handleOrderCancellationRefunds } = require('../utils/orderHelper');
 const walletService = require('../utils/walletService');
 const { isRazorpayConfigured, verifyAndCapturePayment } = require('../utils/razorpayService');
+const { loadShippingDetails, buildShiprocketOrderPayload, cheapestCourier } = require('../utils/shiprocketPayload');
 
 // Resolves the price the customer actually pays for a line (admin selling price, or the
 // variation's own selling price) — never the MRP.
@@ -42,7 +43,7 @@ exports.createOrder = async (req, res) => {
   const walletUndo = [];
 
   try {
-    const { items, total, deliveryAddress, paymentMethod, paymentStatus, paymentId, couponCode, deliveryCharge, etd, redeemWallet, redeemReferralCoins, redeemRefundWallet } = req.body;
+    const { items, total, deliveryAddress, paymentMethod, paymentStatus, paymentId, couponCode, etd, redeemWallet, redeemReferralCoins, redeemRefundWallet } = req.body;
 
     if (!items || items.length === 0 || !total || !deliveryAddress || !paymentMethod) {
       return res.status(400).json({ success: false, message: 'Please provide all required fields' });
@@ -230,29 +231,26 @@ exports.createOrder = async (req, res) => {
     }
     const gstAmount = Math.round(totalGstAmount);
 
-    // 5. Calculate delivery charge
-    let calculatedDeliveryCharge = 0;
+    // 5. Calculate delivery charge — always from Shiprocket's live quote, never from the app's
+    // request (a failed quote used to fall back to the client value, i.e. free delivery).
+    let serviceResponse;
     try {
       const pickupPincode = process.env.SHIPROCKET_PICKUP_PINCODE || '201301';
-      const serviceResponse = await shiprocketService.checkServiceability(
-        pickupPincode, 
-        deliveryAddress.pincode, 
-        totalOrderWeight || 0.5, 
+      serviceResponse = await shiprocketService.checkServiceability(
+        pickupPincode,
+        deliveryAddress.pincode,
+        totalOrderWeight || 0.5,
         paymentMethod === 'COD' ? 1 : 0
       );
-      if (serviceResponse && serviceResponse.data && serviceResponse.data.available_courier_companies) {
-        const couriers = serviceResponse.data.available_courier_companies;
-        if (couriers.length > 0) {
-          const isCod = paymentMethod === 'COD';
-          const calculateTotalFreight = (c) => isCod ? (c.freight_charge + (c.cod_charges || 0)) : c.freight_charge;
-          calculatedDeliveryCharge = Math.min(...couriers.map(calculateTotalFreight));
-        }
-      }
     } catch (svcErr) {
       console.error('Serviceability check failed during price calculation:', svcErr.message);
-      // Fallback to client-sent delivery charge if serviceability fails
-      calculatedDeliveryCharge = Number(deliveryCharge) || 0;
+      throw checkoutError('We could not calculate the delivery charge right now. Please try again in a few minutes.', 503);
     }
+    const bestCourier = cheapestCourier(serviceResponse?.data?.available_courier_companies, paymentMethod === 'COD');
+    if (!bestCourier) {
+      throw checkoutError(`Sorry, delivery is not available to pincode ${deliveryAddress.pincode}${paymentMethod === 'COD' ? ' with Cash on Delivery' : ''}.`, 400);
+    }
+    const calculatedDeliveryCharge = bestCourier.charge;
 
     const isCodChargeEnabled = systemConfig && systemConfig.codChargeEnabled !== undefined ? systemConfig.codChargeEnabled : true;
     const codChargeAmount = systemConfig && systemConfig.codChargeAmount !== undefined ? systemConfig.codChargeAmount : 150;
@@ -364,41 +362,12 @@ exports.createOrder = async (req, res) => {
     // Send order to Shiprocket (outside database transaction to avoid locking write rows during network call)
     try {
       const user = await User.findById(req.user._id);
-      const cityState = shiprocketService.parseCityState(deliveryAddress.address);
-
-      const shiprocketOrderData = {
-        order_id: `ORD_${order._id}`,
-        order_date: new Date().toISOString().slice(0, 16).replace('T', ' '),
-        pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION || 'Primary',
-        billing_customer_name: user.name || deliveryAddress.name || 'Customer',
-        billing_last_name: '',
-        billing_address: deliveryAddress.address,
-        billing_city: cityState.city,
-        billing_pincode: deliveryAddress.pincode,
-        billing_state: cityState.state,
-        billing_country: 'India',
-        billing_email: user.email || 'customer@aramish.com',
-        billing_phone: user.phone || '9876543210',
-        shipping_is_billing: true,
-        order_items: validatedItems.map(item => ({
-            name: item.name,
-            sku: item.productId.toString(),
-            units: item.quantity || 1,
-            selling_price: item.price,
-            discount: 0,
-            tax: 0,
-            hsn: 441122
-        })),
-        payment_method: paymentMethod === 'COD' ? 'COD' : 'Prepaid',
-        sub_total: finalCalculatedTotal,
-        length: 10,
-        breadth: 10,
-        height: 10,
-        weight: totalOrderWeight || 0.5
-      };
+      const { hsnByProductId } = await loadShippingDetails(order.items);
+      // Built from the saved order: COD amount = order.total (after coins / Refund Wallet).
+      const shiprocketOrderData = buildShiprocketOrderPayload(order, user, { weight: totalOrderWeight, hsnByProductId });
 
       const srResponse = await shiprocketService.createShiprocketOrder(shiprocketOrderData);
-      
+
       if (srResponse) {
         order.shiprocketResponses.push({ type: 'CREATE_ORDER', data: srResponse });
         if (srResponse.order_id) {
@@ -407,28 +376,11 @@ exports.createOrder = async (req, res) => {
         }
       }
 
-      // Recheck/store serviceability details
-      try {
-        const pickupPincode = process.env.SHIPROCKET_PICKUP_PINCODE || '201301';
-        const serviceResponse = await shiprocketService.checkServiceability(pickupPincode, deliveryAddress.pincode, totalOrderWeight || 0.5, paymentMethod === 'COD' ? 1 : 0);
-        order.shiprocketResponses.push({ type: 'SERVICEABILITY', data: serviceResponse });
-        
-        if (serviceResponse && serviceResponse.data && serviceResponse.data.available_courier_companies) {
-          const couriers = serviceResponse.data.available_courier_companies;
-          if (couriers.length > 0) {
-            const isCod = paymentMethod === 'COD';
-            const calculateTotalFreight = (c) => isCod ? (c.freight_charge + (c.cod_charges || 0)) : c.freight_charge;
-            const minFreight = Math.min(...couriers.map(calculateTotalFreight));
-            order.deliveryCharge = minFreight;
-            
-            const bestCourier = couriers.find(c => calculateTotalFreight(c) === minFreight);
-            if (bestCourier && bestCourier.etd) {
-              order.etd = bestCourier.etd;
-            }
-          }
-        }
-      } catch (svcErr) {
-        console.error('Serviceability check failed:', svcErr.message);
+      // Keep the quote the customer was charged from. The delivery charge itself is not
+      // touched here — it is already part of the order total the customer agreed to.
+      order.shiprocketResponses.push({ type: 'SERVICEABILITY', data: serviceResponse });
+      if (bestCourier.courier.etd) {
+        order.etd = bestCourier.courier.etd;
       }
 
       await order.save();
@@ -935,22 +887,9 @@ exports.deleteOrder = async (req, res) => {
 
     // 2. Try to cancel on Shiprocket if shiprocketOrderId exists
     if (order.shiprocketOrderId && order.shipmentStatus !== 'Cancelled') {
-      try {
-        const token = await shiprocketService.getShiprocketToken();
-        if (token) {
-          const axios = require('axios');
-          const SHIPROCKET_API_BASE = process.env.SHIPROCKET_API_BASE || 'https://apiv2.shiprocket.in';
-          await axios.post(`${SHIPROCKET_API_BASE}/v1/external/orders/cancel`, {
-            ids: [order.shiprocketOrderId]
-          }, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          console.log(`Shiprocket order ${order.shiprocketOrderId} cancelled successfully during delete.`);
-        }
-      } catch (srErr) {
-        // Ignore Shiprocket cancellation error as per requirements
-        console.error('Shiprocket cancel failed during order deletion (ignored):', srErr.response?.data || srErr.message);
-      }
+      // Best-effort: a failed Shiprocket cancel is logged and ignored, as before.
+      const srCancel = await shiprocketService.cancelShiprocketOrder(order.shiprocketOrderId);
+      if (srCancel) console.log(`Shiprocket order ${order.shiprocketOrderId} cancelled successfully during delete.`);
     }
 
     // 3. Delete order from MongoDB database
@@ -995,21 +934,9 @@ exports.cancelOrder = async (req, res) => {
 
     // Try to cancel on Shiprocket if shiprocketOrderId exists
     if (order.shiprocketOrderId && order.shipmentStatus !== 'Cancelled') {
-      try {
-        const token = await shiprocketService.getShiprocketToken();
-        if (token) {
-          const axios = require('axios');
-          const SHIPROCKET_API_BASE = process.env.SHIPROCKET_API_BASE || 'https://apiv2.shiprocket.in';
-          await axios.post(`${SHIPROCKET_API_BASE}/v1/external/orders/cancel`, {
-            ids: [order.shiprocketOrderId]
-          }, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          console.log(`Shiprocket order ${order.shiprocketOrderId} cancelled successfully.`);
-        }
-      } catch (srErr) {
-        console.error('Shiprocket cancel failed (ignored):', srErr.response?.data || srErr.message);
-      }
+      // Best-effort: a failed Shiprocket cancel is logged and ignored, as before.
+      const srCancel = await shiprocketService.cancelShiprocketOrder(order.shiprocketOrderId);
+      if (srCancel) console.log(`Shiprocket order ${order.shiprocketOrderId} cancelled successfully.`);
     }
 
     order.status = 'Cancelled';

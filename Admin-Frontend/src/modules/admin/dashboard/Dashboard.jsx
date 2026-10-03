@@ -9,6 +9,7 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, Legend
 } from 'recharts';
 import { motion } from 'framer-motion';
+import { formatDate, formatDateTime } from '../../../utils/date';
 
 const iconMap = {
   DollarSign: DollarSign,
@@ -54,7 +55,7 @@ const Dashboard = () => {
     
     // Header
     csvContent += "Aramish Admin System Report\n";
-    csvContent += `Generated At,${new Date().toLocaleString()}\n\n`;
+    csvContent += `Generated At,${formatDateTime(new Date())}\n\n`;
     
     // Overview Metrics
     csvContent += "Metric,Value\n";
@@ -87,7 +88,7 @@ const Dashboard = () => {
     csvContent += "Name,Phone,Email,Joined Date\n";
     const recentCusts = stats.recentCustomers || [];
     recentCusts.forEach(cust => {
-      csvContent += `"${cust.name || 'Anonymous'}",${cust.phone || 'N/A'},${cust.email || 'N/A'},${new Date(cust.createdAt).toLocaleDateString()}\n`;
+      csvContent += `"${cust.name || 'Anonymous'}",${cust.phone || 'N/A'},${cust.email || 'N/A'},${formatDate(cust.createdAt)}\n`;
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -324,7 +325,7 @@ const Dashboard = () => {
                     </div>
                   </div>
                   <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                    {new Date(customer.createdAt).toLocaleDateString()}
+                    {formatDate(customer.createdAt)}
                   </div>
                 </div>
               ))

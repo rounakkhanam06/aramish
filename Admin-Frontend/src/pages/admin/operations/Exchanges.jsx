@@ -9,6 +9,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import OptimizedImage from '../../../components/common/OptimizedImage';
+import { formatDate, formatDateTime } from '../../../utils/date';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -60,7 +61,7 @@ const Timeline = ({ entries }) => {
           <div>
             <p className="text-xs font-bold text-slate-800">{e.status}</p>
             {e.remarks && <p className="text-[11px] text-slate-500">{e.remarks}</p>}
-            <p className="text-[10px] text-slate-400">{new Date(e.timestamp).toLocaleString('en-IN')} · {e.actor}</p>
+            <p className="text-[10px] text-slate-400">{formatDateTime(e.timestamp)} · {e.actor}</p>
           </div>
         </div>
       ))}
@@ -418,7 +419,7 @@ const Exchanges = () => {
                 <div className="flex-shrink-0">{statusBadge(item.status)}</div>
                 {/* Date */}
                 <p className="hidden md:block text-[10px] text-slate-400 w-20 text-right">
-                  {new Date(item.createdAt).toLocaleDateString('en-IN')}
+                  {formatDate(item.createdAt)}
                 </p>
                 {/* Manage */}
                 <button onClick={() => handleManage(item)}
@@ -713,7 +714,7 @@ const Exchanges = () => {
                           {selectedExchange.shipmentErrors.map((err, i) => (
                             <div key={i} className="text-[11px] text-red-700 border-b border-red-100 pb-1.5 last:border-0 last:pb-0">
                               <span className="font-bold uppercase">[{err.leg}]</span> {err.error}
-                              <p className="text-[9px] text-red-400 font-mono mt-0.5">{new Date(err.timestamp).toLocaleString('en-IN')}</p>
+                              <p className="text-[9px] text-red-400 font-mono mt-0.5">{formatDateTime(err.timestamp)}</p>
                             </div>
                           ))}
                         </div>

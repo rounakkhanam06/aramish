@@ -5,6 +5,7 @@ const Coupon = require('../Models/Coupon');
 const CouponUsage = require('../Models/CouponUsage');
 const Cart = require('../Models/Cart');
 const shiprocketService = require('../Router/shiprocketService');
+const { loadShippingDetails, buildShiprocketOrderPayload } = require('../utils/shiprocketPayload');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 
@@ -276,7 +277,8 @@ exports.webhookReceiver = async (req, res) => {
             name: addressDoc.name,
             type: addressDoc.type,
             address: addressDoc.address,
-            pincode: addressDoc.pincode
+            pincode: addressDoc.pincode,
+            phone: addressDoc.phone || ''
           },
           paymentMethod: 'Online',
           paymentStatus: 'Paid',
@@ -310,37 +312,8 @@ exports.webhookReceiver = async (req, res) => {
 
       // Send to Shiprocket
       try {
-        const cityState = shiprocketService.parseCityState(addressDoc.address);
-        const shiprocketOrderData = {
-          order_id: `ORD_${newOrder._id}`,
-          order_date: new Date().toISOString().slice(0, 16).replace('T', ' '),
-          pickup_location: process.env.SHIPROCKET_PICKUP_LOCATION || 'Primary',
-          billing_customer_name: addressDoc.name || user.name || 'Customer',
-          billing_last_name: '',
-          billing_address: addressDoc.address,
-          billing_city: cityState.city,
-          billing_pincode: addressDoc.pincode,
-          billing_state: cityState.state,
-          billing_country: 'India',
-          billing_email: user.email || 'customer@aramish.com',
-          billing_phone: user.phone || '9876543210',
-          shipping_is_billing: true,
-          order_items: validatedItems.map(item => ({
-              name: item.name,
-              sku: item.productId.toString(),
-              units: item.quantity,
-              selling_price: item.price,
-              discount: 0,
-              tax: 0,
-              hsn: 441122
-          })),
-          payment_method: 'Prepaid',
-          sub_total: finalCalculatedTotal,
-          length: 10,
-          breadth: 10,
-          height: 10,
-          weight: totalOrderWeight || 0.5
-        };
+        const { hsnByProductId } = await loadShippingDetails(newOrder.items);
+        const shiprocketOrderData = buildShiprocketOrderPayload(newOrder, user, { weight: totalOrderWeight, hsnByProductId });
 
         const srResponse = await shiprocketService.createShiprocketOrder(shiprocketOrderData);
         if (srResponse) {
