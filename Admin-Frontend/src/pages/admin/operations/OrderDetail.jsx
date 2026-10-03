@@ -725,33 +725,51 @@ const OrderDetail = () => {
                   <User size={18} className="text-blue-500" />
                   <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Customer Profile</h3>
                </div>
-               <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center text-xl font-black border border-blue-100 shadow-inner uppercase">
-                     {order.userId?.name ? order.userId.name.substring(0, 1) : 'G'}
-                  </div>
-                  <div>
-                     <h4 className="text-lg font-black text-slate-900 font-montserrat uppercase tracking-tight">{order.userId?.name || 'Guest User'}</h4>
-                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Lifecycle: Registered Buyer</p>
-                  </div>
-               </div>
-               <div className="space-y-3 pt-4 border-t border-slate-50">
-                  <div className="flex items-center gap-3 text-slate-500 text-xs font-bold uppercase tracking-widest break-all">
-                     <Mail size={14} className="text-slate-300 flex-shrink-0" />
-                     {order.userId?.email || 'N/A'}
-                  </div>
-                  <div className="flex items-center gap-3 text-slate-500 text-xs font-bold uppercase tracking-widest">
-                     <Smartphone size={14} className="text-slate-300 flex-shrink-0" />
-                     {order.userId?.phone || 'N/A'}
-                  </div>
-                  <div className="flex items-start gap-3 text-slate-500 text-xs font-bold uppercase tracking-widest leading-relaxed">
-                     <MapPin size={14} className="text-slate-300 mt-0.5 flex-shrink-0" />
-                     <div>
-                       <p className="text-slate-800 font-bold mb-1">{order.deliveryAddress?.name}</p>
-                       <p className="text-slate-500 leading-normal lowercase font-medium">{order.deliveryAddress?.address}</p>
-                       <p className="text-[10px] font-black text-slate-400 mt-1.5 uppercase">PINCODE: {order.deliveryAddress?.pincode} | TYPE: {order.deliveryAddress?.type || 'WORK'}</p>
-                     </div>
-                  </div>
-               </div>
+               {/* The person the parcel goes to: name/phone from the address chosen at checkout,
+                   falling back to the account for older orders saved without them. */}
+               {(() => {
+                  const recipientName = order.deliveryAddress?.name || order.userId?.name || 'Guest User';
+                  const recipientPhone = order.deliveryAddress?.phone || order.userId?.phone || 'N/A';
+                  const orderedBySomeoneElse = order.userId && (
+                     (order.userId.name && order.userId.name.trim().toLowerCase() !== recipientName.trim().toLowerCase()) ||
+                     (order.userId.phone && order.userId.phone !== recipientPhone)
+                  );
+                  return (
+                     <>
+                        <div className="flex items-center gap-4">
+                           <div className="w-14 h-14 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center text-xl font-black border border-blue-100 shadow-inner uppercase">
+                              {recipientName.substring(0, 1)}
+                           </div>
+                           <div>
+                              <h4 className="text-lg font-black text-slate-900 font-montserrat uppercase tracking-tight">{recipientName}</h4>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+                                 {orderedBySomeoneElse
+                                    ? `Ordered by: ${order.userId.name || 'Customer'}${order.userId.phone ? ` · ${order.userId.phone}` : ''}`
+                                    : 'Lifecycle: Registered Buyer'}
+                              </p>
+                           </div>
+                        </div>
+                        <div className="space-y-3 pt-4 border-t border-slate-50">
+                           <div className="flex items-center gap-3 text-slate-500 text-xs font-bold uppercase tracking-widest break-all">
+                              <Mail size={14} className="text-slate-300 flex-shrink-0" />
+                              {order.userId?.email || 'N/A'}
+                           </div>
+                           <div className="flex items-center gap-3 text-slate-500 text-xs font-bold uppercase tracking-widest">
+                              <Smartphone size={14} className="text-slate-300 flex-shrink-0" />
+                              {recipientPhone}
+                           </div>
+                           <div className="flex items-start gap-3 text-slate-500 text-xs font-bold uppercase tracking-widest leading-relaxed">
+                              <MapPin size={14} className="text-slate-300 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <p className="text-slate-800 font-bold mb-1">{order.deliveryAddress?.name}</p>
+                                <p className="text-slate-500 leading-normal lowercase font-medium">{order.deliveryAddress?.address}</p>
+                                <p className="text-[10px] font-black text-slate-400 mt-1.5 uppercase">PINCODE: {order.deliveryAddress?.pincode} | TYPE: {order.deliveryAddress?.type || 'WORK'}</p>
+                              </div>
+                           </div>
+                        </div>
+                     </>
+                  );
+               })()}
             </div>
 
             {/* Order Timeline */}
