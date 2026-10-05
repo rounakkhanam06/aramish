@@ -65,6 +65,14 @@ export default function ReferEarnPage() {
   const shareUrl = buildReferralShareUrl(referralCode);
   const fullShareText = `${shareText}\n\n${shareUrl}`;
 
+  // Lets the Flutter app's own share button share the referral invite instead of the page URL:
+  // the app calls window.aramishGetShareData() and falls back to title + URL when it is absent.
+  useEffect(() => {
+    if (!referralData?.referralCode) return undefined;
+    window.aramishGetShareData = () => ({ title: 'Join Aramish!', text: fullShareText, url: shareUrl });
+    return () => { delete window.aramishGetShareData; };
+  }, [referralData?.referralCode, fullShareText, shareUrl]);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(referralCode);
     setCopied(true);
