@@ -5,7 +5,9 @@ import { AppProvider, useApp } from './context/AppContext';
 import Layout from './components/layout/Layout';
 import MaintenanceGate from './components/MaintenanceGate';
 import ErrorBoundary from './components/ErrorBoundary';
-import { captureReferralFromUrl } from './utils/referral';
+import { captureReferralFromUrl, recoverDeferredReferral, applyPendingReferralForUser } from './utils/referral';
+import { isIosAppWebView } from './utils/platform';
+import toast from './utils/toast';
 
 // Global Vite Dynamic Import Error Listener (Auto-reloads on deployment/cache mismatch)
 window.addEventListener('vite:preloadError', (event) => {
@@ -113,6 +115,23 @@ function AppContent() {
   useEffect(() => {
     if (!user) captureReferralFromUrl(location.search, location.hash);
   }, [user, location.search, location.hash]);
+
+  // iOS app, first launch after installing from an invite link: recover that link's referral code.
+  // Skipped when the app was opened through an invite link itself, since that link's code wins.
+  useEffect(() => {
+    if (user || !isIosAppWebView()) return;
+    if (location.pathname.startsWith('/r/') || new URLSearchParams(location.search).has('ref')) return;
+    recoverDeferredReferral();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // Logged-in user who followed an invite link: apply it if their account has no referral yet
+  useEffect(() => {
+    if (!user) return;
+    applyPendingReferralForUser().then((data) => {
+      if (data) toast.success(data.message);
+    });
+  }, [user, location.pathname]);
 
   useEffect(() => {
     const protectedRoutes = ['/cart', '/wishlist', '/orders', '/games', '/refer', '/saved-addresses', '/wallet'];

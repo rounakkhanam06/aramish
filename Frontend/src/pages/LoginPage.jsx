@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext';
 import { ArrowLeft, Edit2, Loader2 } from 'lucide-react';
 import toast from '../utils/toast';
 import analytics from '../utils/analytics';
-import { captureReferralFromUrl, getPendingReferralCode, setPendingReferralCode, clearPendingReferralCode } from '../utils/referral';
+import { captureReferralFromUrl, getPendingReferralCode, setPendingReferralCode, clearPendingReferralCode, REFERRAL_RECOVERED_EVENT } from '../utils/referral';
 
 
 const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/auth`;
@@ -27,6 +27,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
   const [referralCode, setReferralCode] = useState(getInitialRefCode);
+
+  // iOS first launch: the deferred referral code can arrive after this page has opened
+  React.useEffect(() => {
+    const onRecovered = (e) => setReferralCode((current) => current || e.detail);
+    window.addEventListener(REFERRAL_RECOVERED_EVENT, onRecovered);
+    return () => window.removeEventListener(REFERRAL_RECOVERED_EVENT, onRecovered);
+  }, []);
 
   // 6-digit OTP state. A single real input sits on top of the 6 visual boxes so focus
   // never has to jump between inputs — on iOS PWAs that jump dismisses the keyboard.

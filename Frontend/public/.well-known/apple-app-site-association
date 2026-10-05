@@ -5,7 +5,7 @@
         "appIDs": ["RCGYYXWHQA.com.aramishshoes.app"],
         "components": [
           { "/": "/r/*", "comment": "Referral invite links" },
-          { "/": "/referral/*", "comment": "Referral deep links" },
+          { "/": "/refer", "comment": "Refer & Earn page" },
           { "/": "/product/*", "comment": "Product deep links" }
         ]
       }

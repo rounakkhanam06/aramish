@@ -3,12 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Copy, Check, Download, Globe } from 'lucide-react';
 import toast from '../utils/toast';
 import { isMobileAppWebView } from '../utils/platform';
-import { setPendingReferralCode, buildPlayStoreUrl, IOS_APP_STORE_URL } from '../utils/referral';
+import { savePendingReferralCode, buildPlayStoreUrl, recordReferralClick, IOS_APP_STORE_URL } from '../utils/referral';
 
 // Landing page for shared invite links: https://aramishshoes.com/r/CODE
-//   - Inside the Flutter app -> signup with the code pre-filled
+//   - Inside the Flutter app -> signup with the code pre-filled (logged-in users: applied by App.jsx)
 //   - Android browser        -> Play Store, with the code passed as the install referrer
-//   - iPhone / iPad          -> copy the code, then App Store (iOS has no install referrer)
+//   - iPhone / iPad          -> record the tap, then App Store; the app recovers the code on
+//                               first launch (deferred deep link, see recoverDeferredReferral)
 //   - Desktop / other        -> website signup with the code pre-filled
 // When the app is installed, Android App Links / iOS Universal Links open the app directly
 // and this page is never shown.
@@ -27,8 +28,9 @@ export default function ReferralLandingPage() {
   const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
 
-  // Saved for 30 days, so the code is auto-applied at signup even if they browse around first
-  const code = useMemo(() => setPendingReferralCode(rawCode), [rawCode]);
+  // Saved for 30 days, so the code is auto-applied at signup even if they browse around first.
+  // A code saved earlier from another invite is kept, not overwritten.
+  const code = useMemo(() => savePendingReferralCode(rawCode), [rawCode]);
   const platform = useMemo(() => detectPlatform(), []);
   const signupPath = `/login?ref=${code}`;
 
@@ -37,7 +39,13 @@ export default function ReferralLandingPage() {
       navigate('/', { replace: true });
     } else if (platform === 'android') {
       window.location.replace(buildPlayStoreUrl(code));
-    } else if (platform === 'app' || platform === 'desktop' || (platform === 'ios' && !IOS_APP_STORE_URL)) {
+    } else if (platform === 'ios' && IOS_APP_STORE_URL) {
+      let cancelled = false;
+      recordReferralClick(code).then(() => {
+        if (!cancelled) window.location.href = IOS_APP_STORE_URL;
+      });
+      return () => { cancelled = true; };
+    } else if (platform === 'app' || platform === 'desktop' || platform === 'ios') {
       navigate(signupPath, { replace: true });
     }
   }, [code, platform, signupPath, navigate]);
@@ -56,6 +64,7 @@ export default function ReferralLandingPage() {
     if (platform === 'ios') {
       // Must run inside the tap handler — iOS only allows clipboard writes from a user gesture
       if (await copyCode()) toast.success('Code copied! Paste it when you sign up in the app.');
+      await recordReferralClick(code);
       window.location.href = IOS_APP_STORE_URL;
     } else {
       window.location.href = buildPlayStoreUrl(code);
@@ -70,8 +79,8 @@ export default function ReferralLandingPage() {
 
       <h1 className="text-2xl font-black text-[#02006c] mb-2 nunito-heading">You're invited to Aramish!</h1>
       <p className="text-sm text-slate-500 max-w-sm mb-6 font-semibold">
-        {platform === 'android'
-          ? 'Opening the Play Store… Install the app and your referral code will be applied at signup.'
+        {platform === 'android' || platform === 'ios'
+          ? `Opening the ${platform === 'ios' ? 'App Store' : 'Play Store'}… Install the app and your referral code will be applied at signup.`
           : 'Download the app and use this referral code when you sign up.'}
       </p>
 

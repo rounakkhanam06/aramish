@@ -11,6 +11,11 @@ dotenv.config();
 
 const app = express();
 
+// Behind nginx: read the visitor's real IP from X-Forwarded-For (used by iOS deferred referral matching).
+// TRUST_PROXY = number of proxy hops in front of Node (default 1), e.g. 2 when Cloudflare sits in front of nginx.
+const trustProxy = process.env.TRUST_PROXY || '1';
+app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
+
 // Allowed Origins for CORS
 const ALLOWED_ORIGINS = [
   "https://www.aramishshoes.com",
@@ -153,7 +158,7 @@ app.get('/.well-known/apple-app-site-association', (req, res) => {
               "appIDs": ["REPLACE_WITH_TEAM_ID.REPLACE_WITH_IOS_BUNDLE_ID"],
               "components": [
                 { "/": "/r/*", "comment": "Referral invite links" },
-                { "/": "/referral/*", "comment": "Referral deep links" },
+                { "/": "/refer", "comment": "Refer & Earn page" },
                 { "/": "/product/*", "comment": "Product deep links" }
               ]
             }
