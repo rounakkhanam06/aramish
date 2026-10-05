@@ -4,7 +4,7 @@ const dotenv = require('dotenv');
 const path = require('path');
 const helmet = require('helmet');
 const compression = require('compression');
-// const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const mongoose = require('mongoose');
 
 dotenv.config();
@@ -76,35 +76,41 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate Limiters (Disabled as requested)
-/*
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: process.env.ENV === 'production' ? 100 : 1000,
-  standardHeaders: true,
+// Rate limiters (in-memory, per server process). Per-IP limits are deliberately generous: mobile
+// carriers put many customers behind one IPv4 address. The per-phone OTP limits that matter most
+// are enforced in the database by userAuthController (resend cooldown, 5 sends/hour, 5 guesses/OTP).
+const limiter = (windowMs, limit, message, extra = {}) => rateLimit({
+  windowMs,
+  limit,
+  standardHeaders: 'draft-8',
   legacyHeaders: false,
+  message: { success: false, message },
+  ...extra
 });
-app.use(globalLimiter);
+const FIFTEEN_MINUTES = 15 * 60 * 1000;
+const ONE_MINUTE = 60 * 1000;
 
-const otpLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 5,
-  message: { success: false, message: 'Too many OTP requests. Please try again after 10 minutes.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/auth/send-otp', otpLimiter);
-app.use('/auth/verify-otp', otpLimiter);
+// Payment/shipping provider callbacks must never be throttled
+const isProviderWebhook = (req) => req.path.endsWith('/webhook');
 
-const adminLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,
-  message: { success: false, message: 'Too many login attempts. Please try again after 15 minutes.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/admin/auth/login', adminLimiter);
-*/
+// Coarse flood protection for every API route
+app.use(limiter(ONE_MINUTE, 600, 'Too many requests. Please slow down.', { skip: isProviderWebhook }));
+
+// OTP: per IP (stops one client spraying many numbers) and per phone number
+app.use('/auth/send-otp', limiter(FIFTEEN_MINUTES, 30, 'Too many OTP requests from this network. Please try again later.'));
+app.use('/auth/send-otp', limiter(FIFTEEN_MINUTES, 6, 'Too many OTP requests for this number. Please try again later.', {
+  keyGenerator: (req) => (req.body?.phone ? `phone:${String(req.body.phone)}` : ipKeyGenerator(req.ip))
+}));
+app.use('/auth/verify-otp', limiter(FIFTEEN_MINUTES, 60, 'Too many login attempts from this network. Please try again later.'));
+
+// Admin panel login: failed attempts only
+app.use('/admin/auth/login', limiter(FIFTEEN_MINUTES, 10, 'Too many login attempts. Please try again after 15 minutes.', { skipSuccessfulRequests: true }));
+
+// Other public endpoints that write data or call paid third-party APIs
+app.use('/referral/deferred', limiter(ONE_MINUTE, 30, 'Too many requests. Please try again shortly.'));
+app.use(['/api/shiprocket/estimate', '/shiprocket/estimate', '/api/logistics/estimate', '/logistics/estimate'],
+  limiter(ONE_MINUTE, 60, 'Too many delivery estimates. Please try again shortly.'));
+app.use(['/analytics/track'], limiter(ONE_MINUTE, 120, 'Too many requests. Please slow down.'));
 
 // Serve uploads with caching headers
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
@@ -167,6 +173,17 @@ app.get('/.well-known/apple-app-site-association', (req, res) => {
       });
     }
   });
+});
+
+// Any successful catalog change (products, banners, chips, brands) clears the public catalog cache
+const { clearCatalogCache } = require('./utils/catalogCache');
+app.use(['/admin/catalog', '/catalog'], (req, res, next) => {
+  if (req.method !== 'GET') {
+    res.on('finish', () => {
+      if (res.statusCode < 400) clearCatalogCache();
+    });
+  }
+  next();
 });
 
 // Routes

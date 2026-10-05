@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, MapPin, Tag, Banknote, ShieldCheck, X, CheckCircle2, Plus, Coins, Landmark, ChevronDown } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -8,7 +8,7 @@ import analytics from '../utils/analytics';
 
 export default function ReviewOrderPage() {
   const navigate = useNavigate();
-  const { cart, totalCartPrice, user, clearCart, addOrder, systemSettings, removeFromCart } = useApp();
+  const { cart, totalCartPrice, user, clearCart, addOrder, refreshOrders, systemSettings, removeFromCart } = useApp();
 
   useEffect(() => {
     if (!user) {
@@ -47,7 +47,16 @@ export default function ReviewOrderPage() {
   // Payment states
   const [paymentMethod, setPaymentMethod] = useState('COD'); // 'COD' | 'ONLINE'
   const [isPaymentDropdownOpen, setIsPaymentDropdownOpen] = useState(false);
-  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [isPlacingOrder, setIsPlacingOrderState] = useState(false);
+  // The ref blocks a second tap before React re-renders (state alone lets a fast double tap through)
+  const placingOrderRef = useRef(false);
+  const setIsPlacingOrder = (value) => {
+    placingOrderRef.current = value;
+    setIsPlacingOrderState(value);
+  };
+  // A Razorpay payment that succeeded but whose order request failed (network/server error).
+  // The next tap retries the order with this payment instead of charging the customer again.
+  const unplacedPaymentIdRef = useRef(null);
 
   // Shipping estimate states
   const [deliveryCharge, setDeliveryCharge] = useState(0);
@@ -342,6 +351,7 @@ export default function ReviewOrderPage() {
   };
 
   const handlePlaceOrder = async () => {
+    if (placingOrderRef.current) return;
     if (cart.length === 0) {
       toast.info("Your cart is empty");
       return;
@@ -364,7 +374,9 @@ export default function ReviewOrderPage() {
 
     setIsPlacingOrder(true);
     
-    if (paymentMethod === 'ONLINE') {
+    if (paymentMethod === 'ONLINE' && unplacedPaymentIdRef.current) {
+      executeOrderPlacement("Online", unplacedPaymentIdRef.current);
+    } else if (paymentMethod === 'ONLINE') {
       const loaded = await loadRazorpay();
       if (!loaded) {
         toast.error("Razorpay SDK failed to load. Are you offline?");
@@ -379,6 +391,7 @@ export default function ReviewOrderPage() {
         name: "Aramish",
         description: "Purchase Transaction",
         handler: function (response) {
+          unplacedPaymentIdRef.current = response.razorpay_payment_id;
           executeOrderPlacement("Online", response.razorpay_payment_id);
         },
         prefill: {
@@ -452,9 +465,21 @@ export default function ReviewOrderPage() {
         })
       });
       
-      const data = await res.json();
-      
+      const data = await res.json().catch(() => ({}));
+
+      // The order for this payment already exists (e.g. created by the Razorpay webhook while
+      // this request was in flight), so the purchase went through.
+      if (data.code === 'PAYMENT_ALREADY_USED') {
+        unplacedPaymentIdRef.current = null;
+        clearCart();
+        refreshOrders();
+        toast.success('Your order has been placed.');
+        navigate('/orders', { replace: true });
+        return;
+      }
+
       if (data.success && data.order) {
+        unplacedPaymentIdRef.current = null;
         const o = data.order;
         const mappedOrder = {
           id: o._id || o.id,
@@ -480,12 +505,19 @@ export default function ReviewOrderPage() {
         clearCart();
         toast.success(`Order Placed Successfully via ${method}!`);
         navigate('/order-success', { replace: true, state: { order: o } });
+      } else if (method === 'Online' && res.status >= 500) {
+        toast.error("Your payment was received but we couldn't confirm the order. Tap Place order to try again. You won't be charged twice.");
       } else {
+        // The order was rejected (stock, amount, coupon...): the payment is not used, and Razorpay
+        // refunds an uncaptured payment automatically.
+        unplacedPaymentIdRef.current = null;
         toast.error(data.message || "Failed to place order.");
       }
     } catch (err) {
       console.error("Order placement failed:", err);
-      toast.error("Failed to place order due to server error.");
+      toast.error(method === 'Online'
+        ? "Network problem while confirming your order. Your payment is safe. Tap Place order to try again."
+        : "Failed to place order. Please check your connection and try again.");
     } finally {
       setIsPlacingOrder(false);
     }
@@ -1015,6 +1047,7 @@ export default function ReviewOrderPage() {
           {/* Place Order Button */}
           <button 
             onClick={handlePlaceOrder}
+            disabled={isPlacingOrder}
             className="w-full bg-[#0B132B] active:bg-[#e05b43] text-white py-3.5 rounded-lg font-bold text-sm shadow-md transition-all active:scale-95"
           >
             Confirm & Place order ₹{Number(grandTotal).toFixed(2)}

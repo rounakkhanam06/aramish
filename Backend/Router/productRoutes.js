@@ -17,12 +17,13 @@ const {
 } = require('../Controllers/productController');
 const { protectAdmin, attachAdminIfPresent } = require('../Middlewares/authMiddleware');
 const { uploadImagesAny, processImages, handleUploadError } = require('../Middlewares/uploadMiddleware');
+const { cachePublicCatalog } = require('../utils/catalogCache');
 
-// Public routes to list products/brands
-router.get('/', attachAdminIfPresent, getProducts);
-router.get('/combined', getCombinedCatalog);
-router.get('/top-buys', getTopBuys);
-router.get('/trending-brands', getTrendingBrands);
+// Public routes to list products/brands (non-admin responses cached briefly, see utils/catalogCache)
+router.get('/', attachAdminIfPresent, cachePublicCatalog, getProducts);
+router.get('/combined', cachePublicCatalog, getCombinedCatalog);
+router.get('/top-buys', cachePublicCatalog, getTopBuys);
+router.get('/trending-brands', cachePublicCatalog, getTrendingBrands);
 router.get('/download-template', protectAdmin, downloadTemplate);
 router.get('/:id', attachAdminIfPresent, getProductById);
 

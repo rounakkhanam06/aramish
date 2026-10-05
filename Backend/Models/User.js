@@ -47,6 +47,20 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // Wrong guesses against the current OTP; at the limit the OTP is discarded (see verifyOtp)
+  otpFailedAttempts: {
+    type: Number,
+    default: 0
+  },
+  // OTPs sent in the current one-hour window (see sendOtp)
+  otpSendCount: {
+    type: Number,
+    default: 0
+  },
+  otpSendWindowStart: {
+    type: Date,
+    default: null
+  },
   lastLogin: {
     type: Date,
     default: null

@@ -356,7 +356,7 @@ export default function ProductDetailsPage() {
 
           // Fetch similar products dynamically
           try {
-             const simRes = await fetch(`${apiBase}/admin/catalog/products`);
+             const simRes = await fetch(`${apiBase}/admin/catalog/products?status=Approved&limit=11`);
              const simData = await simRes.json();
              if (simRes.ok && simData.success) {
                 const similar = simData.products.filter(p => p._id !== id).slice(0, 10);

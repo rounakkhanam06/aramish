@@ -3,6 +3,9 @@ const jwt = require('jsonwebtoken');
 const { getImageUrl } = require('../utils/imageHelper');
 
 const OTP_RESEND_COOLDOWN_SECONDS = 30;
+const OTP_MAX_SENDS_PER_HOUR = 5;      // per phone number
+const OTP_MAX_ATTEMPTS = 5;            // guesses per OTP before it is discarded
+const ONE_HOUR_MS = 60 * 60 * 1000;
 
 // Generate JWT Token
 const generateToken = (id, phone, tokenVersion = 0) => {
@@ -50,33 +53,64 @@ const sendOtp = async (req, res) => {
     const isNewUser = !user || !user.isVerified;
 
     if (!user) {
-      user = new User({ phone });
-    }
-
-    // Enforce a minimum interval between OTP sends so the resend timer shown on the
-    // frontend can't be bypassed by calling this endpoint directly.
-    if (user.otpLastSentAt) {
-      const secondsSinceLastSend = (Date.now() - new Date(user.otpLastSentAt).getTime()) / 1000;
-      const secondsRemaining = Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - secondsSinceLastSend);
-      if (secondsRemaining > 0) {
-        return res.status(429).json({
-          success: false,
-          message: `Please wait ${secondsRemaining}s before requesting another OTP.`,
-          secondsRemaining
-        });
+      try {
+        user = await User.create({ phone });
+      } catch (createErr) {
+        // Two first-time requests for the same number at once: the other one created it
+        if (createErr.code !== 11000) throw createErr;
+        user = await User.findOne({ phone });
       }
     }
 
     const otp = getOtp(phone);
-    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const now = new Date();
+    const otpExpiry = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes
 
     // Store hash, not raw OTP
     const crypto = require('crypto');
     const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
-    user.otp = otpHash;
-    user.otpExpiry = otpExpiry;
-    user.otpLastSentAt = new Date();
-    await user.save();
+
+    // Start a new hourly send window once the previous one is over
+    await User.updateOne(
+      { _id: user._id, $or: [{ otpSendWindowStart: null }, { otpSendWindowStart: { $lte: new Date(now.getTime() - ONE_HOUR_MS) } }] },
+      { $set: { otpSendCount: 0, otpSendWindowStart: now } }
+    );
+
+    // Claim the send atomically, so parallel requests can't each pass the resend cooldown or the
+    // hourly cap and send extra SMS. The cooldown also stops the frontend timer being bypassed.
+    const claimed = await User.findOneAndUpdate(
+      {
+        _id: user._id,
+        otpSendCount: { $lt: OTP_MAX_SENDS_PER_HOUR },
+        $or: [{ otpLastSentAt: null }, { otpLastSentAt: { $lte: new Date(now.getTime() - OTP_RESEND_COOLDOWN_SECONDS * 1000) } }]
+      },
+      {
+        $inc: { otpSendCount: 1 },
+        $set: { otp: otpHash, otpExpiry, otpLastSentAt: now, otpFailedAttempts: 0 }
+      },
+      { new: true }
+    );
+
+    if (!claimed) {
+      const current = await User.findById(user._id).select('otpLastSentAt otpSendCount otpSendWindowStart').lean();
+      const cooldownLeft = current?.otpLastSentAt
+        ? Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - (now.getTime() - new Date(current.otpLastSentAt).getTime()) / 1000)
+        : 0;
+      if (cooldownLeft > 0) {
+        return res.status(429).json({
+          success: false,
+          message: `Please wait ${cooldownLeft}s before requesting another OTP.`,
+          secondsRemaining: cooldownLeft
+        });
+      }
+      const windowStart = current?.otpSendWindowStart ? new Date(current.otpSendWindowStart).getTime() : now.getTime();
+      const secondsRemaining = Math.max(1, Math.ceil((windowStart + ONE_HOUR_MS - now.getTime()) / 1000));
+      return res.status(429).json({
+        success: false,
+        message: `Too many OTP requests for this number. Please try again in ${Math.ceil(secondsRemaining / 60)} minutes.`,
+        secondsRemaining
+      });
+    }
 
     if (process.env.ENV !== 'production') {
       console.log(`📱 OTP for ${phone}: ${otp} [ENV: ${process.env.ENV}]`);
@@ -171,20 +205,41 @@ const verifyOtp = async (req, res) => {
 
     // Check OTP validity
     const crypto = require('crypto');
-    const inputHash = crypto.createHash('sha256').update(otp).digest('hex');
-    
-    // Allow mock OTP '123456' for any user
-    const isMockOtp = (otp === '123456');
-    
-    if (!isMockOtp && (!user.otp || user.otp !== inputHash)) {
-      console.log(`❌ OTP Verification failed for ${phone}:`);
-      console.log(`   - Input OTP: "${otp}"`);
-      console.log(`   - Input Hash: "${inputHash}"`);
-      console.log(`   - Stored Hash in DB: "${user.otp}"`);
-      return res.status(401).json({ success: false, message: 'Invalid OTP' });
+    const inputHash = crypto.createHash('sha256').update(String(otp)).digest('hex');
+
+    if (!user.otp) {
+      return res.status(401).json({ success: false, message: 'OTP expired or already used. Please request a new one.' });
     }
 
-    if (!isMockOtp && user.otpExpiry && new Date() > user.otpExpiry) {
+    // Reserve one guess before checking it. Doing this atomically caps the guesses per OTP at
+    // OTP_MAX_ATTEMPTS even when many requests arrive at once (brute-force protection).
+    const attempt = await User.findOneAndUpdate(
+      { _id: user._id, otp: user.otp, otpFailedAttempts: { $lt: OTP_MAX_ATTEMPTS } },
+      { $inc: { otpFailedAttempts: 1 } },
+      { new: true }
+    );
+    if (!attempt) {
+      return res.status(429).json({ success: false, message: 'Too many wrong attempts. Please request a new OTP.' });
+    }
+
+    // Only the OTP generated by sendOtp is accepted. Test numbers (TEST_PHONE_NUMBERS) get
+    // STATIC_OTP from getOtp, so there is no separate mock-OTP bypass here.
+    if (user.otp !== inputHash) {
+      console.log(`❌ OTP Verification failed for ${phone}`);
+      const attemptsLeft = OTP_MAX_ATTEMPTS - attempt.otpFailedAttempts;
+      if (attemptsLeft <= 0) {
+        // Out of guesses: discard this OTP so it can't be tried any further
+        await User.updateOne({ _id: user._id, otp: user.otp }, { $set: { otp: null, otpExpiry: null } });
+        return res.status(429).json({ success: false, message: 'Too many wrong attempts. Please request a new OTP.' });
+      }
+      return res.status(401).json({
+        success: false,
+        message: `Invalid OTP. ${attemptsLeft} ${attemptsLeft === 1 ? 'attempt' : 'attempts'} left.`,
+        attemptsLeft
+      });
+    }
+
+    if (user.otpExpiry && new Date() > user.otpExpiry) {
       return res.status(401).json({ success: false, message: 'OTP expired. Please request a new one.' });
     }
 
@@ -209,6 +264,7 @@ const verifyOtp = async (req, res) => {
     user.isVerified = true;
     user.otp = null;
     user.otpExpiry = null;
+    user.otpFailedAttempts = 0;
     user.lastLogin = new Date();
     if (name && typeof name === 'string' && name.trim()) {
       user.name = name.trim();

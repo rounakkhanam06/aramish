@@ -10,6 +10,21 @@ import { cachedFetch } from '../utils/apiCache';
 import { getImageUrl } from '../utils/imageHelper';
 import { formatDiscount } from '../utils/discountHelper';
 import { isMobileAppWebView } from '../utils/platform';
+import toast from '../utils/toast';
+
+const CATALOG_PAGE_SIZE = 24;
+
+const LoadMoreButton = ({ loading, onClick }) => (
+  <div className="flex justify-center pt-2">
+    <button
+      onClick={onClick}
+      disabled={loading}
+      className="px-6 py-2.5 border border-[#0B132B]/20 text-[#0B132B] text-xs font-black uppercase tracking-wider rounded-xl disabled:opacity-60 cursor-pointer"
+    >
+      {loading ? 'Loading…' : 'Load more'}
+    </button>
+  </div>
+);
 
 export default function Home() {
   const navigate = useNavigate();
@@ -25,6 +40,15 @@ export default function Home() {
 
   // Dynamic Products from API
   const [rawAllProducts, setRawAllProducts] = useState([]);
+  const [allProductsPage, setAllProductsPage] = useState(1);
+  const [allProductsHasMore, setAllProductsHasMore] = useState(false);
+  const [loadingMoreAll, setLoadingMoreAll] = useState(false);
+  // Category view: fetched page by page from /combined instead of filtering the whole catalog here
+  const [categoryProducts, setCategoryProducts] = useState([]);
+  const [categoryTotal, setCategoryTotal] = useState(0);
+  const [categoryPage, setCategoryPage] = useState(1);
+  const [categoryHasMore, setCategoryHasMore] = useState(false);
+  const [categoryLoading, setCategoryLoading] = useState(false);
   const [crazyDealsProducts, setCrazyDealsProducts] = useState([]);
   const [flashSaleProducts, setFlashSaleProducts] = useState([]);
   const [topSelectionProducts, setTopSelectionProducts] = useState([]);
@@ -55,9 +79,12 @@ export default function Home() {
           if (data.products) {
             const allProducts = data.products;
             setRawAllProducts(allProducts);
-            setCrazyDealsProducts(allProducts.filter(p => p.flags?.crazyDeals));
-            setFlashSaleProducts(allProducts.filter(p => p.flags?.flashSale));
-            setTopSelectionProducts(allProducts.filter(p => p.flags?.topSection));
+            setAllProductsPage(1);
+            setAllProductsHasMore(!!data.hasMore);
+            // Older API responses held the whole catalog, with no separate section lists
+            setCrazyDealsProducts(data.crazyDeals || allProducts.filter(p => p.flags?.crazyDeals));
+            setFlashSaleProducts(data.flashSale || allProducts.filter(p => p.flags?.flashSale));
+            setTopSelectionProducts(data.topSection || allProducts.filter(p => p.flags?.topSection));
           }
 
           if (data.topBuys) {
@@ -372,46 +399,81 @@ export default function Home() {
     sales: p.sales || 0,
   });
 
-  const filteredCategoryProducts = useMemo(() => {
-    if (selectedCategory === 'for-you') {
-      return [];
-    }
-    const selectedCatObj = categories.find(c => c._id === selectedCategory || c.id === selectedCategory);
-    const catName = selectedCatObj ? (selectedCatObj.categoryName || selectedCatObj.name || '').toLowerCase() : '';
-    const catSlug = selectedCatObj ? (selectedCatObj.id || '').toLowerCase() : '';
-    const catId = selectedCategory.toLowerCase();
+  // One page of approved products from the paginated catalog API. The server matches categories
+  // and subcategories by id, slug or name, like the old in-browser filter did.
+  const fetchCatalogPage = (category, subCategory, page, signal) => {
+    const params = new URLSearchParams({ page: String(page), limit: String(CATALOG_PAGE_SIZE), category, subCategory });
+    return cachedFetch(`/admin/catalog/products/combined?${params}`, { ttl: 60, signal });
+  };
 
-    let filtered = rawAllProducts.filter(p => {
-      const prodCat = (p.category || '').toLowerCase();
-      if (prodCat === catId || prodCat === catSlug) return true;
-      const pCatObj = categories.find(c => (c._id || '').toLowerCase() === prodCat || (c.id || '').toLowerCase() === prodCat);
-      const pCatName = pCatObj ? (pCatObj.categoryName || pCatObj.name || '').toLowerCase() : '';
-      return pCatName === catName && catName !== '';
-    });
+  // Adds a page to a list, skipping products already shown (pages shift when products are added)
+  const appendUnique = (current, next) => {
+    const seen = new Set(current.map(p => p._id || p.id));
+    return [...current, ...next.filter(p => !seen.has(p._id || p.id))];
+  };
 
-    if (selectedSubCategory !== 'all') {
-      const targetSub = selectedSubCategory.toLowerCase();
-      const activeSubObj = subCategoryChips.find(sc => (sc._id || sc.id || '').toLowerCase() === targetSub);
-      const subName = activeSubObj ? (activeSubObj.subCategoryName || '').toLowerCase() : '';
-      const subSlug = activeSubObj ? (activeSubObj.id || '').toLowerCase() : '';
-
-      filtered = filtered.filter(p => {
-        const prodSub = (p.subCategory || '').toLowerCase();
-        if (prodSub === targetSub || prodSub === subSlug) return true;
-        if (subName && prodSub === subName) return true;
-
-        const pSubObj = subCategoryChips.find(sc => (sc._id || '').toLowerCase() === prodSub || (sc.id || '').toLowerCase() === prodSub);
-        if (pSubObj) {
-          const pSubName = (pSubObj.subCategoryName || '').toLowerCase();
-          const pSubSlug = (pSubObj.id || '').toLowerCase();
-          if (subName && pSubName === subName) return true;
-          if (subSlug && pSubSlug === subSlug) return true;
-        }
-        return false;
+  useEffect(() => {
+    if (selectedCategory === 'for-you') return;
+    const controller = new AbortController();
+    setCategoryLoading(true);
+    setCategoryProducts([]);
+    setCategoryTotal(0);
+    setCategoryHasMore(false);
+    fetchCatalogPage(selectedCategory, selectedSubCategory, 1, controller.signal)
+      .then((data) => {
+        if (!data?.success) return;
+        setCategoryProducts(data.products || []);
+        setCategoryTotal(data.totalProducts || 0);
+        setCategoryPage(1);
+        setCategoryHasMore(!!data.hasMore);
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') console.error('Error fetching category products:', err);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCategoryLoading(false);
       });
+    return () => controller.abort();
+  }, [selectedCategory, selectedSubCategory]);
+
+  const loadMoreCategoryProducts = async () => {
+    if (categoryLoading) return;
+    setCategoryLoading(true);
+    try {
+      const data = await fetchCatalogPage(selectedCategory, selectedSubCategory, categoryPage + 1);
+      if (data?.success) {
+        setCategoryProducts(current => appendUnique(current, data.products || []));
+        setCategoryPage(categoryPage + 1);
+        setCategoryHasMore(!!data.hasMore);
+      }
+    } catch {
+      toast.error('Could not load more products. Please try again.');
+    } finally {
+      setCategoryLoading(false);
     }
-    return filtered.map(normaliseProduct);
-  }, [rawAllProducts, selectedCategory, selectedSubCategory, subCategoryChips, categories]);
+  };
+
+  const loadMoreAllProducts = async () => {
+    if (loadingMoreAll) return;
+    setLoadingMoreAll(true);
+    try {
+      const data = await fetchCatalogPage('for-you', 'all', allProductsPage + 1);
+      if (data?.success) {
+        setRawAllProducts(current => appendUnique(current, data.products || []));
+        setAllProductsPage(allProductsPage + 1);
+        setAllProductsHasMore(!!data.hasMore);
+      }
+    } catch {
+      toast.error('Could not load more products. Please try again.');
+    } finally {
+      setLoadingMoreAll(false);
+    }
+  };
+
+  const filteredCategoryProducts = useMemo(
+    () => (selectedCategory === 'for-you' ? [] : categoryProducts.map(normaliseProduct)),
+    [categoryProducts, selectedCategory]
+  );
 
 
 
@@ -1028,6 +1090,9 @@ export default function Home() {
                   </div>
                 )}
               </div>
+              {allProductsHasMore && (
+                <LoadMoreButton loading={loadingMoreAll} onClick={loadMoreAllProducts} />
+              )}
             </div>
 
           </>
@@ -1111,15 +1176,19 @@ export default function Home() {
                   );
                 })()}
                 <span className="text-[10px] md:text-xs text-[#0B132B] font-bold bg-gold/10 border border-gold/20 px-3 py-1 rounded-full">
-                  {filteredCategoryProducts.length} Items
+                  {categoryTotal} Items
                 </span>
               </div>
-              
+
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {filteredCategoryProducts.length > 0 ? (
                   filteredCategoryProducts.map((deal) => (
                     <ProductCard key={deal.id} product={deal} />
                   ))
+                ) : categoryLoading ? (
+                  <div className="col-span-2 md:col-span-4 py-16 flex justify-center">
+                    <div className="w-8 h-8 border-4 border-slate-200 border-t-[#0B132B] rounded-full animate-spin" />
+                  </div>
                 ) : (
                   <div className="col-span-2 md:col-span-4 py-16 flex flex-col items-center justify-center text-center border border-dashed border-white/10 rounded-3xl bg-surface">
                     <LayoutGrid className="w-8 h-8 text-slate-300 mb-3" />
@@ -1130,6 +1199,9 @@ export default function Home() {
                   </div>
                 )}
               </div>
+              {categoryHasMore && filteredCategoryProducts.length > 0 && (
+                <LoadMoreButton loading={categoryLoading} onClick={loadMoreCategoryProducts} />
+              )}
             </div>
 
             {/* Dynamically append Top 10 Buys and Trending Brands */}

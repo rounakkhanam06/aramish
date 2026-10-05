@@ -72,16 +72,28 @@ export default function ReferEarnPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Until /referral/me answers, the code is the '...' placeholder and the link would be broken
+  const codeReady = () => {
+    if (referralData?.referralCode) return true;
+    toast.info('Loading your referral code, please try again in a moment.');
+    return false;
+  };
+
   const handleWhatsAppShare = () => {
+    if (!codeReady()) return;
     const url = `https://wa.me/?text=${encodeURIComponent(fullShareText)}`;
     window.open(url, '_blank');
   };
 
   const handleNativeShare = async () => {
+    if (!codeReady()) return;
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      // The app's native share sheet must share `text` (it already contains the /r/CODE link);
+      // `url` is the referral link on its own, for handlers that read that field.
       window.flutter_inappwebview.callHandler('shareContent', {
         title: 'Join Aramish!',
-        text: fullShareText
+        text: fullShareText,
+        url: shareUrl
       });
     } else if (navigator.share) {
       const shareData = { title: 'Join Aramish!', text: shareText, url: shareUrl };

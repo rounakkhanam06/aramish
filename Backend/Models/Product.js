@@ -142,5 +142,13 @@ productSchema.index({ status: 1, 'flags.crazyDeals': 1 });
 productSchema.index({ status: 1, 'flags.flashSale': 1 });
 productSchema.index({ brandId: 1 });
 productSchema.index({ isTrending: 1 });
+// Storefront lists: approved products newest first (homepage, /combined, ?status=Approved),
+// the flagged homepage sections, category browsing and price sorting
+productSchema.index({ status: 1, createdAt: -1 });
+productSchema.index({ status: 1, 'flags.crazyDeals': 1, createdAt: -1 });
+productSchema.index({ status: 1, 'flags.flashSale': 1, createdAt: -1 });
+productSchema.index({ status: 1, 'flags.topSection': 1, createdAt: -1 });
+productSchema.index({ status: 1, category: 1, createdAt: -1 });
+productSchema.index({ status: 1, sellingPrice: 1 });
 
 module.exports = mongoose.model('Product', productSchema);

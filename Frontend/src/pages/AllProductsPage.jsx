@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import ProductCard from '../components/ui/ProductCard';
 import { cachedFetch } from '../utils/apiCache';
 import { formatDiscount } from '../utils/discountHelper';
+import toast from '../utils/toast';
 
 // Normalise API product to match the shape ProductCard expects
 const normaliseProduct = (p) => ({
@@ -22,18 +23,29 @@ const normaliseProduct = (p) => ({
   sales: p.sales || 0,
 });
 
+const PAGE_SIZE = 24;
+
+const fetchPage = (page, signal) =>
+  cachedFetch(`/admin/catalog/products/combined?category=for-you&page=${page}&limit=${PAGE_SIZE}`, { ttl: 300, signal });
+
 export default function AllProductsPage() {
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
     const fetchAllProducts = async () => {
       try {
-        const data = await cachedFetch('/admin/catalog/products?status=Approved', { ttl: 300, signal: controller.signal });
+        const data = await fetchPage(1, controller.signal);
         if (data.success && data.products) {
           setProducts(data.products.map(normaliseProduct));
+          setTotal(data.totalProducts || data.products.length);
+          setHasMore(!!data.hasMore);
         }
       } catch (err) {
         if (err.name !== 'AbortError') console.error('Error fetching all products:', err);
@@ -44,6 +56,26 @@ export default function AllProductsPage() {
     fetchAllProducts();
     return () => controller.abort();
   }, []);
+
+  const loadMore = async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const data = await fetchPage(page + 1);
+      if (data.success && data.products) {
+        setProducts((current) => {
+          const seen = new Set(current.map((p) => p.id));
+          return [...current, ...data.products.map(normaliseProduct).filter((p) => !seen.has(p.id))];
+        });
+        setPage(page + 1);
+        setHasMore(!!data.hasMore);
+      }
+    } catch {
+      toast.error('Could not load more products. Please try again.');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-surface flex flex-col pb-20 animate-fade-in">
@@ -59,7 +91,7 @@ export default function AllProductsPage() {
 
       {!loading && (
         <p className="px-4 pt-3 text-xs text-slate-400 font-semibold">
-          {products.length} {products.length === 1 ? 'product' : 'products'} to explore
+          {total} {total === 1 ? 'product' : 'products'} to explore
         </p>
       )}
 
@@ -87,6 +119,18 @@ export default function AllProductsPage() {
           </div>
         )}
       </div>
+
+      {!loading && hasMore && (
+        <div className="flex justify-center px-4">
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="px-6 py-2.5 border border-[#0B132B]/20 text-[#0B132B] text-xs font-black uppercase tracking-wider rounded-xl disabled:opacity-60 cursor-pointer"
+          >
+            {loadingMore ? 'Loading…' : 'Load more'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

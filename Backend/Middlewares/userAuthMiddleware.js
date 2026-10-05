@@ -12,9 +12,14 @@ const protectUser = async (req, res, next) => {
     return res.status(401).json({ success: false, message: 'Not authorized, token missing' });
   }
 
+  let decoded;
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch (error) {
+    return res.status(401).json({ success: false, message: 'Not authorized, invalid token' });
+  }
+
+  try {
     // Verify audience
     if (decoded.aud !== 'user') {
       return res.status(401).json({ success: false, message: 'Not authorized, invalid token audience' });
@@ -30,10 +35,13 @@ const protectUser = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Session expired' });
     }
 
-    next();
   } catch (error) {
-    return res.status(401).json({ success: false, message: 'Not authorized, invalid token' });
+    // A database problem is not an auth failure: a 401 here would force-logout every active user
+    console.error('Auth middleware error:', error.message);
+    return res.status(503).json({ success: false, message: 'Service temporarily unavailable. Please try again.' });
   }
+
+  next();
 };
 
 module.exports = { protectUser };

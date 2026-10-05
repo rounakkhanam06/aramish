@@ -17,7 +17,7 @@ export default function CrazyDealsPage() {
     const controller = new AbortController();
     const fetchDeals = async () => {
       try {
-        const data = await cachedFetch('/admin/catalog/products?status=Approved', { ttl: 300, signal: controller.signal });
+        const data = await cachedFetch('/admin/catalog/products?status=Approved&flag=crazyDeals&limit=100', { ttl: 300, signal: controller.signal });
         if (data.success && data.products) {
           const crazy = data.products.filter(p => p.flags?.crazyDeals);
           setDeals(crazy.map(p => ({

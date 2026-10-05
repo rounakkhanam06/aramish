@@ -14,7 +14,7 @@ export default function SimilarProductsPage() {
     const controller = new AbortController();
     const fetchProducts = async () => {
       try {
-        const data = await cachedFetch('/admin/catalog/products?status=Approved', { ttl: 300, signal: controller.signal });
+        const data = await cachedFetch('/admin/catalog/products?status=Approved&limit=40', { ttl: 300, signal: controller.signal });
         if (data.success && data.products) {
           setProducts(data.products);
         }

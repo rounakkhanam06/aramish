@@ -9,6 +9,12 @@ const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
 
+// Public list sizes: storefront requests never return the whole catalog in one response
+const MAX_PUBLIC_PAGE_SIZE = 100;
+const HOMEPAGE_PAGE_SIZE = 24;
+const HOMEPAGE_SECTION_LIMIT = 40;
+const HOMEPAGE_FLAGS = ['crazyDeals', 'flashSale', 'topSection'];
+
 const parseJsonField = (field, defaultVal = {}) => {
   if (!field) return defaultVal;
   try {
@@ -149,8 +155,12 @@ const formatProductImageUrls = (product) => {
 // @access  Public
 const getProducts = async (req, res) => {
   try {
-    const { category, status, search, full } = req.query;
+    const { category, status, search, full, flag, page, limit } = req.query;
     const filter = {};
+
+    if (HOMEPAGE_FLAGS.includes(flag)) {
+      filter[`flags.${flag}`] = true;
+    }
 
     if (category && category !== 'All') {
       filter.category = category;
@@ -200,7 +210,19 @@ const getProducts = async (req, res) => {
     let query = Product.find(filter);
     const hideAdminFields = !req.admin ? ' -costPrice -article' : ' -costPrice';
     query = query.select(full !== 'true' ? `-highlights -technicalSpecs -description -shippingSpecs${hideAdminFields}` : hideAdminFields);
-    const products = (await query.sort({ createdAt: -1 }).lean()).map(formatProductImageUrls);
+
+    // Storefront lists are capped; the admin panel (incl. its unauthenticated inventory/stock
+    // screens, which ask for every status) still gets the full list unless it passes a limit.
+    let parsedLimit = parseInt(limit, 10);
+    if (!req.admin && (status === 'Approved' || limit !== undefined)) {
+      parsedLimit = Math.min(MAX_PUBLIC_PAGE_SIZE, parsedLimit > 0 ? parsedLimit : MAX_PUBLIC_PAGE_SIZE);
+    }
+    query = query.sort({ createdAt: -1 });
+    if (parsedLimit > 0) {
+      const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+      query = query.skip((parsedPage - 1) * parsedLimit).limit(parsedLimit);
+    }
+    const products = (await query.lean()).map(formatProductImageUrls);
     res.status(200).json({ success: true, products });
   } catch (error) {
     console.error('Get Products Error:', error);
@@ -839,14 +861,28 @@ const getHomepageData = async (req, res) => {
     const Banner = require('../Models/Banner');
     const Brand = require('../Models/Brand');
 
-    const [chips, subchips, banners, products, topBuys, dbTrendingBrands] = await Promise.all([
+    const listFields = '-highlights -technicalSpecs -description -shippingSpecs -costPrice';
+    // The flagged homepage sections, each fetched on its own so none is cut off by the page limit
+    const sectionQuery = (flag) => Product.find({ status: 'Approved', [`flags.${flag}`]: true })
+      .select(listFields)
+      .sort({ createdAt: -1 })
+      .limit(HOMEPAGE_SECTION_LIMIT)
+      .lean();
+
+    const [chips, subchips, banners, products, totalProducts, crazyDeals, flashSale, topSection, topBuys, dbTrendingBrands] = await Promise.all([
       CategoryChip.find({}).sort({ order: 1 }).lean(),
       SubCategoryChip.find({}).lean(),
       Banner.find({}).sort({ createdAt: -1 }).lean(),
+      // First page of "All products"; the app loads further pages from /combined
       Product.find({ status: 'Approved' })
-        .select('-highlights -technicalSpecs -description -shippingSpecs -costPrice')
+        .select(listFields)
         .sort({ createdAt: -1 })
+        .limit(HOMEPAGE_PAGE_SIZE)
         .lean(),
+      Product.countDocuments({ status: 'Approved' }),
+      sectionQuery('crazyDeals'),
+      sectionQuery('flashSale'),
+      sectionQuery('topSection'),
       fetchDynamicTopBuys(),
       Brand.find({ isTrending: true, status: 'Active' }).lean()
     ]);
@@ -867,6 +903,11 @@ const getHomepageData = async (req, res) => {
       subchips,
       banners,
       products: processedProducts,
+      totalProducts,
+      hasMore: processedProducts.length < totalProducts,
+      crazyDeals: crazyDeals.map(ensureProductFallbackImage),
+      flashSale: flashSale.map(ensureProductFallbackImage),
+      topSection: topSection.map(ensureProductFallbackImage),
       topBuys: processedTopBuys,
       trendingBrands
     });
@@ -894,7 +935,7 @@ const getCombinedCatalog = async (req, res) => {
     } = req.query;
 
     const parsedPage = Math.max(1, parseInt(page, 10) || 1);
-    const parsedLimit = Math.max(1, parseInt(limit, 10) || 20);
+    const parsedLimit = Math.min(MAX_PUBLIC_PAGE_SIZE, Math.max(1, parseInt(limit, 10) || 20));
     const skip = (parsedPage - 1) * parsedLimit;
 
     // Base query: only approved products

@@ -29,10 +29,9 @@ const resolveLinePricing = (product, variationSku) => {
 // server, answered with its own 4xx status instead of 500.
 const checkoutError = (message, status = 400) => Object.assign(new Error(message), { status });
 
-// @desc    Create a new order
-// @route   POST /api/orders
-// @access  Private
-exports.createOrder = async (req, res) => {
+// One checkout attempt. A write conflict with another checkout of the same product answers
+// 503 CHECKOUT_BUSY after rolling everything back; createOrder retries those.
+const createOrderAttempt = async (req, res) => {
   let decrementedProducts = [];
   let couponUsageIncremented = false;
   let couponCodeClean = null;
@@ -113,6 +112,27 @@ exports.createOrder = async (req, res) => {
         attributes: item.attributes || {},
         gstPercentage: product.gstPercentage || 0
       });
+    }
+
+    // Delivery charge — always from Shiprocket's live quote, never from the app's request (a
+    // failed quote used to fall back to the client value, i.e. free delivery). Fetched before any
+    // stock write, so this network call doesn't hold the products' rows locked in the transaction.
+    let serviceResponse;
+    try {
+      const pickupPincode = process.env.SHIPROCKET_PICKUP_PINCODE || '201301';
+      serviceResponse = await shiprocketService.checkServiceability(
+        pickupPincode,
+        deliveryAddress.pincode,
+        totalOrderWeight || 0.5,
+        paymentMethod === 'COD' ? 1 : 0
+      );
+    } catch (svcErr) {
+      console.error('Serviceability check failed during price calculation:', svcErr.message);
+      throw checkoutError('We could not calculate the delivery charge right now. Please try again in a few minutes.', 503);
+    }
+    const bestCourier = cheapestCourier(serviceResponse?.data?.available_courier_companies, paymentMethod === 'COD');
+    if (!bestCourier) {
+      throw checkoutError(`Sorry, delivery is not available to pincode ${deliveryAddress.pincode}${paymentMethod === 'COD' ? ' with Cash on Delivery' : ''}.`, 400);
     }
 
     // 2. Verify and decrement stock atomically
@@ -231,25 +251,6 @@ exports.createOrder = async (req, res) => {
     }
     const gstAmount = Math.round(totalGstAmount);
 
-    // 5. Calculate delivery charge — always from Shiprocket's live quote, never from the app's
-    // request (a failed quote used to fall back to the client value, i.e. free delivery).
-    let serviceResponse;
-    try {
-      const pickupPincode = process.env.SHIPROCKET_PICKUP_PINCODE || '201301';
-      serviceResponse = await shiprocketService.checkServiceability(
-        pickupPincode,
-        deliveryAddress.pincode,
-        totalOrderWeight || 0.5,
-        paymentMethod === 'COD' ? 1 : 0
-      );
-    } catch (svcErr) {
-      console.error('Serviceability check failed during price calculation:', svcErr.message);
-      throw checkoutError('We could not calculate the delivery charge right now. Please try again in a few minutes.', 503);
-    }
-    const bestCourier = cheapestCourier(serviceResponse?.data?.available_courier_companies, paymentMethod === 'COD');
-    if (!bestCourier) {
-      throw checkoutError(`Sorry, delivery is not available to pincode ${deliveryAddress.pincode}${paymentMethod === 'COD' ? ' with Cash on Delivery' : ''}.`, 400);
-    }
     const calculatedDeliveryCharge = bestCourier.charge;
 
     const isCodChargeEnabled = systemConfig && systemConfig.codChargeEnabled !== undefined ? systemConfig.codChargeEnabled : true;
@@ -469,8 +470,40 @@ exports.createOrder = async (req, res) => {
 
     let status = error.status || 500;
     if (error.name === 'ValidationError' || error.name === 'CastError') status = 400;
-    else if (error.code === 11000 && error.keyPattern && error.keyPattern.paymentId) status = 409;
-    res.status(status).json({ success: false, message: status === 409 && error.code === 11000 ? 'This payment has already been used for another order.' : error.message });
+    if (error.code === 11000 && error.keyPattern && error.keyPattern.paymentId) {
+      // An order for this payment already exists (double submit, or the Razorpay webhook got there first)
+      return res.status(409).json({ success: false, code: 'PAYMENT_ALREADY_USED', message: 'This payment has already been used for another order.' });
+    }
+    // Two checkouts writing the same product at once: safe to retry, so don't report it as a crash
+    if (error.errorLabels?.includes?.('TransientTransactionError') || (error.hasErrorLabel && error.hasErrorLabel('TransientTransactionError'))) {
+      return res.status(503).json({ success: false, code: 'CHECKOUT_BUSY', message: 'Many people are ordering right now. Please try again.' });
+    }
+    res.status(status).json({ success: false, message: error.message });
+  }
+};
+
+const MAX_CHECKOUT_ATTEMPTS = 8;
+
+// @desc    Create a new order
+// @route   POST /api/orders
+// @access  Private
+// Concurrent checkouts of the same product collide inside their MongoDB transactions; the loser
+// is rolled back and retried here, so a busy product doesn't fail orders while stock remains.
+// Re-running is safe: payment verification accepts an already-captured payment.
+exports.createOrder = async (req, res) => {
+  for (let attempt = 1; ; attempt++) {
+    const result = {};
+    await createOrderAttempt(req, {
+      status(code) { result.statusCode = code; return this; },
+      json(body) { result.body = body; return this; }
+    });
+
+    const busy = result.statusCode === 503 && result.body?.code === 'CHECKOUT_BUSY';
+    if (busy && attempt < MAX_CHECKOUT_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, 20 * attempt + Math.random() * 80));
+      continue;
+    }
+    return res.status(result.statusCode).json(result.body);
   }
 };
 
