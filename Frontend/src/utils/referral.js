@@ -58,8 +58,8 @@ export const captureReferralFromUrl = (search = window.location.search, hash = w
 // ---- Referral invite links (/r/CODE) and app store redirects ----
 
 export const ANDROID_PACKAGE_ID = 'com.aramishshoes.app';
-// App Store listing, e.g. https://apps.apple.com/in/app/aramish/id1234567890 — unset until the iOS app is live
-export const IOS_APP_STORE_URL = import.meta.env.VITE_IOS_APP_STORE_URL || '';
+// App Store listing (VITE_IOS_APP_STORE_URL overrides it)
+export const IOS_APP_STORE_URL = import.meta.env.VITE_IOS_APP_STORE_URL || 'https://apps.apple.com/in/app/aramish-shoes/id6815557405';
 
 const SITE_URL = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/$/, '');
 
