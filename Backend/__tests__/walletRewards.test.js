@@ -42,7 +42,7 @@ const makeProduct = async (overrides = {}) => {
   counter += 1;
   return Product.create({
     name: `Shoe ${counter}`, category: 'Shoes', sellingPrice: 1000, mrp: 1200, stock: 50, sales: 0,
-    article: `ART-W-${counter}-${Date.now()}`, sku: `SKU-W-${counter}-${Date.now()}`, shippingSpecs: { weight: 0.5 }, gstPercentage: 0, status: 'Approved', ...overrides
+    article: `ART-W-${counter}-${Date.now()}`, sku: `SKU-W-${counter}-${Date.now()}`, shippingSpecs: { weight: 0.5 }, status: 'Approved', ...overrides
   });
 };
 
@@ -157,14 +157,14 @@ describe('Checkout (createOrder) — selling price, 25% redemption, single walle
     expect(res.body.order.rewardCoinsExpected).toBe(85);
   });
 
-  test('5. ₹10,000 wallet + ₹10,000 order -> ₹2,500 redeemed (GST/delivery/fees excluded from the basis)', async () => {
+  test('5. ₹10,000 wallet + ₹10,000 order -> ₹2,500 redeemed (delivery/fees excluded from the basis)', async () => {
     const user = await makeUser({ walletBalance: 10000 });
-    const product = await makeProduct({ sellingPrice: 10000, mrp: 12000, gstPercentage: 18 });
+    const product = await makeProduct({ sellingPrice: 10000, mrp: 12000 });
     const res = await checkout(user, product);
     expect(res.statusCode).toBe(201);
     expect(res.body.order.walletUsed).toBe(2500);
-    // 10000 + 1800 GST + 10 platform fee + 150 COD - 2500 wallet
-    expect(res.body.order.total).toBe(9460);
+    // 10000 + 10 platform fee + 150 COD - 2500 wallet
+    expect(res.body.order.total).toBe(7660);
     expect(await balance(user._id)).toBe(7500);
     const ledger = await WalletTransaction.findOne({ userId: user._id, type: 'ORDER_REDEMPTION' });
     expect(ledger.amount).toBe(-2500);

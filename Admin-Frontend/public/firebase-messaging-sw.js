@@ -30,7 +30,11 @@ messaging.onBackgroundMessage((payload) => {
     }
   };
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  // Messages with a `notification` block are already displayed by the Firebase SDK —
+  // showing them here too produced every push twice. Only data-only messages need it.
+  if (!payload.notification) {
+    self.registration.showNotification(notificationTitle, notificationOptions);
+  }
 });
 
 // Handle clicking on notification banner in phone tray or desktop

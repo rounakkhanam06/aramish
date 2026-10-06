@@ -194,7 +194,6 @@ app.use('/cart', require('./Router/cartRoutes'));
 app.use('/orders', require('./Router/orderRoutes'));
 app.use('/api/payments', require('./Router/paymentRoutes'));
 app.use('/referral', require('./Router/referralRoutes'));
-app.use('/games', require('./Router/gameRoutes'));
 app.use('/reels', require('./Router/reelRoutes'));
 app.use('/analytics', require('./Router/analyticsRoutes'));
 app.use('/admin/analytics', require('./Router/analyticsRoutes'));

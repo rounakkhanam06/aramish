@@ -9,6 +9,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import OptimizedImage from '../../components/common/OptimizedImage';
+import Pagination from '../../components/common/Pagination';
 import { formatDateTime } from '../../utils/date';
 
 const StatusBadge = ({ status }) => {
@@ -37,8 +38,22 @@ const Orders = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [statusMenuOpen, setStatusMenuOpen] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  // Server-side pagination / filtering — the API returns one page at a time
+  const PAGE_SIZE = 20;
+  const [page, setPage] = useState(1);
+  const [pageInfo, setPageInfo] = useState({ total: 0, pages: 1 });
+  const [stats, setStats] = useState({ totalSales: 0, pending: 0, inTransit: 0, cancelled: 0, statusCounts: {} });
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   const tabs = ['All', 'Pending', 'Processing', 'Shipped', 'Out for Delivery', 'Delivered', 'Cancelled', 'Return Requested'];
+
+  const buildQuery = (pageNo, limit) => {
+    const params = new URLSearchParams({ page: String(pageNo), limit: String(limit) });
+    if (activeTab !== 'All') params.set('status', activeTab);
+    if (debouncedSearch) params.set('search', debouncedSearch);
+    return params.toString();
+  };
 
   const fetchOrders = async () => {
     const token = localStorage.getItem('adminToken');
@@ -50,7 +65,7 @@ const Orders = () => {
     try {
       const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       setLoading(true);
-      const res = await fetch(`${apiBase}/orders/admin/all`, {
+      const res = await fetch(`${apiBase}/orders/admin/all?${buildQuery(page, PAGE_SIZE)}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -58,6 +73,10 @@ const Orders = () => {
       const data = await res.json();
       if (res.ok && data.success) {
         setOrders(data.orders || []);
+        setPageInfo({ total: data.total || 0, pages: data.pages || 1 });
+        if (data.stats) setStats(data.stats);
+        // A filter/search that shrank the results can leave us past the last page
+        if (page > (data.pages || 1)) setPage(data.pages || 1);
       } else {
         toast.error(data.message || 'Failed to fetch orders');
       }
@@ -69,9 +88,18 @@ const Orders = () => {
     }
   };
 
+  // Debounce typing in the search box; any filter change starts again at page 1
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
   useEffect(() => {
     fetchOrders();
-  }, []);
+  }, [page, activeTab, debouncedSearch]);
 
   const handleUpdateStatus = async (orderId, newStatus) => {
     const token = localStorage.getItem('adminToken');
@@ -94,6 +122,7 @@ const Orders = () => {
         if (selectedOrder && selectedOrder._id === orderId) {
           setSelectedOrder(prev => ({ ...prev, status: newStatus }));
         }
+        fetchOrders(); // refresh tab counts and the filtered page
       } else {
         toast.error(data.message || 'Failed to update order status');
       }
@@ -347,11 +376,31 @@ const Orders = () => {
     }
   };
 
-  const handleExport = () => {
+  // Exports EVERY order matching the current tab/search (fetched page by page), not just this page
+  const handleExport = async () => {
+    const token = localStorage.getItem('adminToken');
+    if (!token) return;
+    setExporting(true);
+    let allOrders = [];
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      for (let p = 1, pages = 1; p <= pages; p++) {
+        const res = await fetch(`${apiBase}/orders/admin/all?${buildQuery(p, 100)}`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.message || 'Export failed');
+        allOrders = allOrders.concat(data.orders || []);
+        pages = data.pages || 1;
+      }
+    } catch (err) {
+      toast.error(err.message || 'Could not export orders');
+      setExporting(false);
+      return;
+    }
+    setExporting(false);
     const headers = ['Order ID', 'Customer', 'Email', 'Total Amount', 'Status', 'Payment Method', 'Payment Status', 'Date'];
     const csvContent = [
       headers.join(','),
-      ...orders.map(o => `"${o._id}","${o.userId?.name || 'Guest'}","${o.userId?.email || ''}",${o.total},"${o.status}","${o.paymentMethod}","${o.paymentStatus}","${formatDateTime(o.createdAt)}"`)
+      ...allOrders.map(o => `"${o._id}","${o.userId?.name || 'Guest'}","${o.userId?.email || ''}",${o.total},"${o.status}","${o.paymentMethod}","${o.paymentStatus}","${formatDateTime(o.createdAt)}"`)
     ].join('\n');
 
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -365,21 +414,12 @@ const Orders = () => {
     document.body.removeChild(link);
   };
 
-  // Filter and search logic
-  const filteredOrders = orders.filter(order => {
-    const matchesTab = activeTab === 'All' || order.status === activeTab;
-    const matchesSearch = 
-      order._id.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      (order.userId?.name && order.userId.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (order.userId?.email && order.userId.email.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesTab && matchesSearch;
-  });
-
-  // Calculate stats based on loaded orders
-  const totalSales = orders.filter(o => o.status !== 'Cancelled').reduce((sum, o) => sum + o.total, 0);
-  const pendingCount = orders.filter(o => o.status === 'Pending').length;
-  const transitCount = orders.filter(o => ['Shipped', 'Out for Delivery'].includes(o.status)).length;
-  const cancelledCount = orders.filter(o => o.status === 'Cancelled').length;
+  // The server already applied the tab + search; stats cover ALL orders
+  const filteredOrders = orders;
+  const totalSales = stats.totalSales || 0;
+  const pendingCount = stats.pending || 0;
+  const transitCount = stats.inTransit || 0;
+  const cancelledCount = stats.cancelled || 0;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -392,10 +432,11 @@ const Orders = () => {
         <div className="flex gap-3">
           <button 
             onClick={handleExport}
-            className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all shadow-sm"
+            disabled={exporting}
+            className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all shadow-sm disabled:opacity-60"
           >
             <Download size={16} />
-            Export CSV
+            {exporting ? 'Exporting...' : 'Export CSV'}
           </button>
         </div>
       </div>
@@ -427,7 +468,7 @@ const Orders = () => {
             {tabs.map(tab => (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab)}
+                onClick={() => { setActiveTab(tab); setPage(1); }}
                 className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                   activeTab === tab 
                   ? 'bg-blue-500 text-white shadow-lg shadow-blue-100' 
@@ -435,6 +476,7 @@ const Orders = () => {
                 }`}
               >
                 {tab}
+                <span className={`ml-1.5 ${activeTab === tab ? 'text-blue-100' : 'text-slate-300'}`}>{(stats.statusCounts || {})[tab] || 0}</span>
               </button>
             ))}
           </div>
@@ -595,6 +637,15 @@ const Orders = () => {
             </tbody>
           </table>
         </div>
+        <Pagination
+          page={page}
+          pages={pageInfo.pages}
+          total={pageInfo.total}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+          label="orders"
+          disabled={loading}
+        />
       </div>
 
       {/* Order Detail Modal */}

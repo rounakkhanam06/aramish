@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import {
   TrendingUp, TrendingDown, Users, ShoppingBag,
-  DollarSign, Activity, Calendar, Download, RefreshCw, Gamepad2, Search, ArrowRight, Eye, ArrowUpRight, Coins,
+  DollarSign, Activity, Calendar, Download, RefreshCw, Search, ArrowRight, Eye, ArrowUpRight,
   ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -52,7 +52,6 @@ const Analytics = () => {
   const [events, setEvents] = useState([]);
   const [searches, setSearches] = useState([]);
   const [products, setProducts] = useState(null);
-  const [games, setGames] = useState(null);
 
   // Top Viewed Products pagination
   const [topViewsPage, setTopViewsPage] = useState(1);
@@ -122,8 +121,7 @@ const Analytics = () => {
         funnelRes,
         eventsRes,
         searchRes,
-        productsRes,
-        gamesRes
+        productsRes
       ] = await Promise.all([
         safeFetch('overview'),
         safeFetch(`dau?range=${dauRange}&startDate=${customStartDate}&endDate=${customEndDate}`),
@@ -132,8 +130,7 @@ const Analytics = () => {
         safeFetch('funnel'),
         safeFetch('events'),
         safeFetch('search'),
-        safeFetch('products/top'),
-        safeFetch('games')
+        safeFetch('products/top')
       ]);
 
       if (overviewRes) setOverview(overviewRes);
@@ -144,7 +141,6 @@ const Analytics = () => {
       if (eventsRes) setEvents(eventsRes);
       if (searchRes) setSearches(searchRes);
       if (productsRes) setProducts(productsRes);
-      if (gamesRes) setGames(gamesRes);
 
       if (isSilent) {
         if (hasError) {
@@ -452,52 +448,14 @@ const Analytics = () => {
             <div className="mt-4 p-4 bg-purple-50 rounded-2xl flex items-start gap-3">
                <Activity size={20} className="text-purple-500 mt-1 flex-shrink-0" />
                <p className="text-[11px] text-purple-600 font-bold leading-relaxed uppercase">
-                  Session lengths have improved by <strong>15%</strong> this week. Direct checkout routes and game plays are the primary drivers.
+                  Session lengths have improved by <strong>15%</strong> this week. Direct checkout routes are the primary driver.
                </p>
             </div>
          </div>
       </div>
 
-      {/* Game Analytics & Search Analytics */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-         {/* Game Plays analytics */}
-         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8 flex flex-col justify-between">
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 uppercase tracking-tight mb-2 font-montserrat">Game Playground Activity</h3>
-              <p className="text-xs text-slate-400 font-bold mb-6 uppercase">Game Plays, Streaks, and Reward Coins distribution</p>
-              
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                 <div className="p-4 bg-orange-50/50 rounded-2xl border border-orange-100/50 text-center">
-                    <Gamepad2 className="w-6 h-6 text-orange-500 mx-auto mb-2" />
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Total Plays</span>
-                    <span className="text-lg font-black text-slate-800 font-roboto mt-1 block leading-none">{games?.totalPlays || 0}</span>
-                 </div>
-                 <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50 text-center">
-                    <Users className="w-6 h-6 text-blue-500 mx-auto mb-2" />
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Unique Players</span>
-                    <span className="text-lg font-black text-slate-800 font-roboto mt-1 block leading-none">{games?.uniqueUsers || 0}</span>
-                 </div>
-                 <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100/50 text-center">
-                    <Coins className="w-6 h-6 text-emerald-500 mx-auto mb-2" />
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block leading-none">Coins Claimed</span>
-                    <span className="text-lg font-black text-slate-800 font-roboto mt-1 block leading-none">{games?.totalPointsAwarded || 0}</span>
-                 </div>
-              </div>
-            </div>
-            
-            {games?.dailyPlays && games.dailyPlays.length > 0 && (
-              <div className="h-[150px]">
-                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={games.dailyPlays}>
-                       <XAxis dataKey="_id" tick={{fontSize: 9, fill: '#94a3b8'}} />
-                       <Tooltip />
-                       <Bar dataKey="count" fill="#ff7f50" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                 </ResponsiveContainer>
-              </div>
-            )}
-         </div>
-
+      {/* Search Analytics */}
+      <div className="grid grid-cols-1 gap-6">
          {/* Search Queries analytics */}
          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
             <h3 className="text-lg font-bold text-slate-900 uppercase tracking-tight mb-2 font-montserrat">Top Search Queries</h3>

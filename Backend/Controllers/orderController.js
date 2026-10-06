@@ -9,7 +9,7 @@ const CouponUsage = require('../Models/CouponUsage');
 const { handleOrderCancellationStockAndCoupon, handleOrderCancellationRefunds } = require('../utils/orderHelper');
 const walletService = require('../utils/walletService');
 const { isRazorpayConfigured, verifyAndCapturePayment } = require('../utils/razorpayService');
-const { loadShippingDetails, buildShiprocketOrderPayload, cheapestCourier } = require('../utils/shiprocketPayload');
+const { loadShippingDetails, buildShiprocketOrderPayload, cheapestCourier, shiprocketCostsFor } = require('../utils/shiprocketPayload');
 
 // Resolves the price the customer actually pays for a line (admin selling price, or the
 // variation's own selling price) — never the MRP.
@@ -28,6 +28,15 @@ const resolveLinePricing = (product, variationSku) => {
 // A checkout problem caused by the request (bad input, stock, coupon, payment) rather than the
 // server, answered with its own 4xx status instead of 500.
 const checkoutError = (message, status = 400) => Object.assign(new Error(message), { status });
+
+// Our costs (Shiprocket charges, product cost price) are admin-only — never sent to customers.
+const toCustomerOrder = (order) => {
+  const o = typeof order.toJSON === 'function' ? order.toJSON() : { ...order };
+  delete o.shippingCost;
+  delete o.shiprocketCodFee;
+  o.items = (o.items || []).map(({ costPrice, ...item }) => item);
+  return o;
+};
 
 // One checkout attempt. A write conflict with another checkout of the same product answers
 // 503 CHECKOUT_BUSY after rolling everything back; createOrder retries those.
@@ -110,7 +119,7 @@ const createOrderAttempt = async (req, res) => {
         variationSku: item.variationSku || null,
         article: product.article || null,
         attributes: item.attributes || {},
-        gstPercentage: product.gstPercentage || 0
+        costPrice: product.costPrice != null ? product.costPrice : null
       });
     }
 
@@ -130,7 +139,7 @@ const createOrderAttempt = async (req, res) => {
       console.error('Serviceability check failed during price calculation:', svcErr.message);
       throw checkoutError('We could not calculate the delivery charge right now. Please try again in a few minutes.', 503);
     }
-    const bestCourier = cheapestCourier(serviceResponse?.data?.available_courier_companies, paymentMethod === 'COD');
+    const bestCourier = cheapestCourier(serviceResponse?.data?.available_courier_companies);
     if (!bestCourier) {
       throw checkoutError(`Sorry, delivery is not available to pincode ${deliveryAddress.pincode}${paymentMethod === 'COD' ? ' with Cash on Delivery' : ''}.`, 400);
     }
@@ -236,20 +245,11 @@ const createOrderAttempt = async (req, res) => {
       }
     }
 
-    // 4. Calculate GST and platform fee
+    // 4. Calculate platform fee (no GST is charged on orders)
     const SystemConfig = require('../Models/SystemConfig');
     const systemConfig = await SystemConfig.findOne({}, null, sessionOpt);
     const platformCommission = systemConfig && systemConfig.commission !== undefined ? systemConfig.commission : 15;
-    
-    // Calculate item-level GST
-    const discountRatio = calculatedSubtotal > 0 ? (discountAmount / calculatedSubtotal) : 0;
-    let totalGstAmount = 0;
-    for (const item of validatedItems) {
-      const itemTotalPrice = item.price * item.quantity;
-      const itemFinalPrice = Math.max(0, itemTotalPrice - (itemTotalPrice * discountRatio));
-      totalGstAmount += itemFinalPrice * ((item.gstPercentage || 0) / 100);
-    }
-    const gstAmount = Math.round(totalGstAmount);
+    const gstAmount = 0;
 
     const calculatedDeliveryCharge = bestCourier.charge;
 
@@ -299,6 +299,10 @@ const createOrderAttempt = async (req, res) => {
 
     const finalPayableTotal = walletService.roundMoney(Math.max(0, finalCalculatedTotal - walletUsedAmount - refundWalletUsedAmount));
 
+    // Shiprocket's charges to us for this shipment (expense tracking only). Its COD fee applies
+    // only when the courier actually collects cash — a COD order fully paid by wallet ships as Prepaid.
+    const shiprocketCosts = shiprocketCostsFor(bestCourier.courier, { isCod: paymentMethod === 'COD' && finalPayableTotal > 0 });
+
     // 6. Verify Razorpay payment if paymentMethod is Online
     if (paymentMethod === 'Online') {
       if (isRazorpayConfigured()) {
@@ -342,6 +346,8 @@ const createOrderAttempt = async (req, res) => {
       deliveryCharge: calculatedDeliveryCharge,
       codCharge,
       prepaidDiscount,
+      shippingCost: shiprocketCosts.shippingCost,
+      shiprocketCodFee: shiprocketCosts.shiprocketCodFee,
       etd: etd || ''
     };
     if (paymentId) {
@@ -413,7 +419,7 @@ const createOrderAttempt = async (req, res) => {
       console.error('Failed to notify admins of new order:', notifErr.message);
     }
 
-    res.status(201).json({ success: true, message: 'Order placed successfully', order });
+    res.status(201).json({ success: true, message: 'Order placed successfully', order: toCustomerOrder(order) });
   } catch (error) {
     console.error("Error creating order:", error);
 
@@ -563,7 +569,7 @@ exports.getUserOrders = async (req, res) => {
       total,
       page,
       pages: Math.ceil(total / limit),
-      orders 
+      orders: orders.map(toCustomerOrder)
     });
   } catch (error) {
     console.error("Error fetching orders:", error);
@@ -580,23 +586,56 @@ exports.getAllOrders = async (req, res) => {
     const limit = Math.min(100, parseInt(req.query.limit) || 20);
     const skip = (page - 1) * limit;
 
-    const [orders, total] = await Promise.all([
-      Order.find({})
+    // Filters run on the server so they cover every order, not just the loaded page.
+    const match = {};
+    if (req.query.status && req.query.status !== 'All') match.status = String(req.query.status);
+    const search = String(req.query.search || '').trim();
+    if (search) {
+      const rx = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const User = require('../Models/User');
+      const users = await User.find({ $or: [{ name: new RegExp(rx, 'i') }, { email: new RegExp(rx, 'i') }, { phone: new RegExp(rx, 'i') }] })
+        .select('_id').limit(500).lean();
+      match.$or = [
+        { $expr: { $regexMatch: { input: { $toString: '$_id' }, regex: rx, options: 'i' } } },
+        { userId: { $in: users.map(u => u._id) } }
+      ];
+    }
+
+    const [orders, total, statusStats] = await Promise.all([
+      Order.find(match)
         .populate('userId', 'name email phone')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      Order.countDocuments({})
+      Order.countDocuments(match),
+      // Header cards and tab counts: across ALL orders
+      Order.aggregate([{ $group: { _id: '$status', count: { $sum: 1 }, total: { $sum: { $ifNull: ['$total', 0] } } } }])
     ]);
+
+    const statusCounts = {};
+    let allCount = 0; let totalSales = 0;
+    statusStats.forEach(s => {
+      statusCounts[s._id] = s.count;
+      allCount += s.count;
+      if (s._id !== 'Cancelled') totalSales += s.total;
+    });
+    statusCounts.All = allCount;
 
     res.status(200).json({ 
       success: true, 
       count: orders.length, 
       total,
       page,
-      pages: Math.ceil(total / limit),
-      orders 
+      pages: Math.max(1, Math.ceil(total / limit)),
+      orders,
+      stats: {
+        totalSales: Math.round(totalSales * 100) / 100,
+        pending: statusCounts.Pending || 0,
+        inTransit: (statusCounts.Shipped || 0) + (statusCounts['Out for Delivery'] || 0),
+        cancelled: statusCounts.Cancelled || 0,
+        statusCounts
+      }
     });
   } catch (error) {
     console.error("Error fetching all orders for admin:", error);
@@ -785,7 +824,7 @@ exports.getUserOrderById = async (req, res) => {
     if (order.userId.toString() !== req.user._id.toString()) {
       return res.status(401).json({ success: false, message: 'Not authorized to view this order' });
     }
-    res.status(200).json({ success: true, order });
+    res.status(200).json({ success: true, order: toCustomerOrder(order) });
   } catch (error) {
     console.error("Error fetching order:", error);
     res.status(500).json({ success: false, message: error.message });

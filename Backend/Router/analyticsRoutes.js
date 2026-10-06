@@ -13,8 +13,11 @@ const {
   getTopEvents,
   getSearchAnalytics,
   getTopProducts,
-  getGameAnalytics,
   getEarnings,
+  getCoinsOverview,
+  getCoinsPurchases,
+  getCoinsCustomers,
+  getCoinsLedger,
   getSystemNotifications,
   globalSearch
 } = require('../Controllers/analyticsController');
@@ -51,8 +54,11 @@ router.get('/funnel', protectAdmin, getCheckoutFunnel);
 router.get('/events', protectAdmin, getTopEvents);
 router.get('/search', protectAdmin, getSearchAnalytics);
 router.get('/products/top', protectAdmin, getTopProducts);
-router.get('/games', protectAdmin, getGameAnalytics);
 router.get('/earnings', protectAdmin, getEarnings);
+router.get('/coins/overview', protectAdmin, getCoinsOverview);
+router.get('/coins/purchases', protectAdmin, getCoinsPurchases);
+router.get('/coins/customers', protectAdmin, getCoinsCustomers);
+router.get('/coins/ledger', protectAdmin, getCoinsLedger);
 router.get('/notifications/system', protectAdmin, getSystemNotifications);
 router.get('/search/global', protectAdmin, globalSearch);
 

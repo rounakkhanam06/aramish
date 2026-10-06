@@ -1,8 +1,6 @@
 const AnalyticsEvent = require('../Models/AnalyticsEvent');
 const User = require('../Models/User');
 const Order = require('../Models/Order');
-const GamePlayLogModel = require('../Models/GamePlayLog');
-const Game = require('../Models/Game');
 const mongoose = require('mongoose');
 
 // @desc    Record tracking event(s)
@@ -144,7 +142,7 @@ const getOverview = async (req, res) => {
     try {
       const WalletTransaction = require('../Models/WalletTransaction');
       const coinStats = await WalletTransaction.aggregate([
-        { $match: { type: { $in: ['Welcome Bonus', 'ORDER_REWARD', 'REFERRAL_REWARD', 'GAME_REWARD'] } } },
+        { $match: { type: { $in: ['Welcome Bonus', 'ORDER_REWARD', 'REFERRAL_REWARD'] } } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]);
       totalCoinsEarned = coinStats.length > 0 ? coinStats[0].total : 0;
@@ -225,21 +223,10 @@ const getOverview = async (req, res) => {
     // 7. Recent Customers (latest 5 signups)
     const recentCustomers = await User.find({}, 'name phone email createdAt').sort({ createdAt: -1 }).limit(5);
 
-    // 8. Recent activities (customer signups, orders, gameplay)
+    // 8. Recent activities (customer signups, orders)
     const recentUsers = await User.find({}, 'name createdAt').sort({ createdAt: -1 }).limit(5);
     const recentOrdersList = await Order.find({}).populate('userId', 'name').sort({ createdAt: -1 }).limit(5);
     
-    let recentGames = [];
-    try {
-      recentGames = await GamePlayLogModel.find({})
-        .populate('userId', 'name')
-        .populate('gameId', 'name')
-        .sort({ createdAt: -1 })
-        .limit(5);
-    } catch (e) {
-      console.error('Error fetching gameplay logs for overview:', e);
-    }
-
     const activities = [];
 
     recentUsers.forEach(u => {
@@ -262,19 +249,6 @@ const getOverview = async (req, res) => {
         icon: 'ShoppingBag',
         color: 'text-blue-500',
         bg: 'bg-blue-50'
-      });
-    });
-
-    recentGames.forEach(g => {
-      const custName = g.userId?.name || 'A customer';
-      const gameName = g.gameId?.name || 'Game';
-      activities.push({
-        title: 'Game Played',
-        desc: `${custName} earned ${g.pointsAwarded || 0} coins in ${gameName}`,
-        timestamp: g.playedAt || g.createdAt,
-        icon: 'TrendingUp',
-        color: 'text-amber-500',
-        bg: 'bg-amber-50'
       });
     });
 
@@ -305,7 +279,6 @@ const getOverview = async (req, res) => {
       recentActivities = [
         { title: 'New Order Placed', desc: 'Order of ₹1,499 placed by Rohan Sharma', time: '5 mins ago', icon: 'ShoppingBag', color: 'text-blue-500', bg: 'bg-blue-50' },
         { title: 'New Customer Signup', desc: 'Sneha Patel registered on the platform', time: '15 mins ago', icon: 'Users', color: 'text-green-500', bg: 'bg-green-50' },
-        { title: 'Game Played', desc: 'Amit Kumar won 150 coins in Spin the Wheel', time: '1 hour ago', icon: 'TrendingUp', color: 'text-amber-500', bg: 'bg-amber-50' },
         { title: 'Order Delivered', desc: 'Order #ORD10243 successfully delivered', time: '2 hours ago', icon: 'CheckCircle2', color: 'text-emerald-500', bg: 'bg-emerald-50' },
       ];
     }
@@ -830,161 +803,40 @@ const getTopProducts = async (req, res) => {
   }
 };
 
-// @desc    Get dashboard game performance tracking details
-// @route   GET /admin/analytics/games
+// @desc    Coins & Rewards reports (overview, per purchase, per customer, ledger)
+// @route   GET /admin/analytics/coins/{overview|purchases|customers|ledger}
 // @access  Private (Admin)
-const getGameAnalytics = async (req, res) => {
+const coinsHandler = (fn) => async (req, res) => {
   try {
-    // Relying on GamePlayLog database details
-    const totalPlays = await GamePlayLogModel.countDocuments();
-    const uniqueUsersResult = await GamePlayLogModel.aggregate([
-      { $group: { _id: '$userId' } },
-      { $count: 'count' }
-    ]);
-    const uniqueUsers = uniqueUsersResult[0] ? uniqueUsersResult[0].count : 0;
-
-    const pointsDistributedStats = await GamePlayLogModel.aggregate([
-      { $group: { _id: null, totalPoints: { $sum: '$pointsAwarded' } } }
-    ]);
-    const totalPointsAwarded = pointsDistributedStats[0] ? pointsDistributedStats[0].totalPoints : 0;
-
-    // Daily play counts for last 7 days
-    const dailyPlays = await GamePlayLogModel.aggregate([
-      {
-        $group: {
-          _id: { $dateToString: { format: '%Y-%m-%d', date: '$playedAt' } },
-          count: { $sum: 1 }
-        }
-      },
-      { $sort: { _id: -1 } },
-      { $limit: 7 }
-    ]);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        totalPlays,
-        uniqueUsers,
-        totalPointsAwarded,
-        dailyPlays: dailyPlays.reverse()
-      }
-    });
+    const { rangeStart } = require('../utils/financeService');
+    const data = await fn({ ...req.query, from: rangeStart(req.query.range) });
+    res.status(200).json({ success: true, data });
   } catch (error) {
-    console.error('Get Game Analytics Error:', error);
+    console.error('Coins report error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
+const coinsService = require('../utils/coinsService');
+const getCoinsOverview = coinsHandler(coinsService.getCoinsOverview);
+const getCoinsPurchases = coinsHandler(coinsService.getPurchaseRewards);
+const getCoinsCustomers = coinsHandler(coinsService.getCustomerCoins);
+const getCoinsLedger = coinsHandler(coinsService.getCoinLedger);
 
-// @desc    Get store earnings analytics
+// @desc    Get store earnings analytics — the complete, reconciled finance breakdown
 // @route   GET /admin/analytics/earnings
 // @access  Private (Admin)
 const getEarnings = async (req, res) => {
   try {
-    const { range } = req.query;
-    let matchQuery = { paymentStatus: 'Paid', status: { $nin: ['Cancelled', 'Refunded', 'Returned'] } };
-    let matchQueryGmv = { status: { $ne: 'Cancelled' } };
-    let matchQueryCoins = { type: 'ORDER_REDEMPTION' };
+    const { getFinanceBreakdown, rangeStart } = require('../utils/financeService');
+    const from = rangeStart(req.query.range);
+    const finance = await getFinanceBreakdown({ from, orderPage: req.query.orderPage, orderPageSize: req.query.orderPageSize });
 
-    if (range && range !== 'all') {
-      const now = new Date();
-      let startDate = new Date();
-      if (range === 'today') {
-        startDate.setHours(0, 0, 0, 0);
-      } else if (range === 'week') {
-        startDate.setDate(now.getDate() - 7);
-        startDate.setHours(0, 0, 0, 0);
-      } else if (range === 'month') {
-        startDate.setDate(now.getDate() - 30);
-        startDate.setHours(0, 0, 0, 0);
-      }
-      matchQuery.createdAt = { $gte: startDate };
-      matchQueryGmv.createdAt = { $gte: startDate };
-      matchQueryCoins.createdAt = { $gte: startDate };
-    }
+    // Category split of product sales, on the same orders (everything except Cancelled)
+    const categoryMatch = { status: { $ne: 'Cancelled' } };
+    if (from) categoryMatch.createdAt = { $gte: from };
 
-    // 1. Net Revenue: Sum of total of paid orders (excluding Cancelled/Refunded and delivery charges)
-    const netRevenueStats = await Order.aggregate([
-      { $match: matchQuery },
-      { $unwind: '$items' },
-      { $group: { _id: null, total: { $sum: { $multiply: ['$items.price', '$items.quantity'] } } } }
-    ]);
-    const netRevenue = netRevenueStats.length > 0 ? netRevenueStats[0].total : 0;
-
-    // 1b. Settled This Month: Paid orders in the current month
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-    const settledThisMonthStats = await Order.aggregate([
-      { 
-        $match: { 
-          paymentStatus: 'Paid', 
-          status: { $nin: ['Cancelled', 'Refunded', 'Returned'] },
-          createdAt: { $gte: startOfMonth }
-        } 
-      },
-      { $unwind: '$items' },
-      { $group: { _id: null, total: { $sum: { $multiply: ['$items.price', '$items.quantity'] } } } }
-    ]);
-    const settledThisMonth = settledThisMonthStats.length > 0 ? settledThisMonthStats[0].total : 0;
-
-
-    // 2. Gross Merchandise Value (GMV): Sum of all orders (excluding Cancelled)
-    const gmvStats = await Order.aggregate([
-      { $match: matchQueryGmv },
-      { $group: { _id: null, total: { $sum: '$total' } } }
-    ]);
-    const gmv = gmvStats.length > 0 ? gmvStats[0].total : 0;
-
-    // 3. Coins Redeemed at checkout (legacy records are positive, new ones negative)
-    const WalletTransaction = require('../Models/WalletTransaction');
-    const spentStats = await WalletTransaction.aggregate([
-      { $match: matchQueryCoins },
-      { $group: { _id: null, total: { $sum: { $abs: '$amount' } } } }
-    ]);
-    const coinsRedeemed = spentStats.length > 0 ? spentStats[0].total : 0;
-
-    // 4. Sales Trend (last 7 days daily earnings)
-    const startOfSevenDaysAgo = new Date();
-    startOfSevenDaysAgo.setDate(startOfSevenDaysAgo.getDate() - 7);
-    startOfSevenDaysAgo.setHours(0, 0, 0, 0);
-
-    const dailySalesStats = await Order.aggregate([
-      { 
-        $match: { 
-          createdAt: { $gte: startOfSevenDaysAgo },
-          paymentStatus: 'Paid',
-          status: { $nin: ['Cancelled', 'Refunded', 'Returned'] }
-        } 
-      },
-      {
-        $group: {
-          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-          revenue: { $sum: '$total' }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ]);
-
-    const salesMap = {};
-    dailySalesStats.forEach(item => {
-      salesMap[item._id] = item.revenue;
-    });
-
-    const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const salesTrend = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
-      salesTrend.push({
-        day: daysOfWeek[d.getDay()],
-        revenue: Math.round(salesMap[dateStr] || 0)
-      });
-    }
-
-    // 5. Category Revenue Breakdown
     const categoryRevenueStats = await Order.aggregate([
-      { $match: matchQuery },
+      { $match: categoryMatch },
       { $unwind: '$items' },
       {
         $addFields: {
@@ -1065,46 +917,15 @@ const getEarnings = async (req, res) => {
       colorIdx++;
     }
 
-    // Ensure we don't return an empty array if no sales yet
-    if (categoryRevenue.length === 0) {
-      categoryRevenue.push(
-        { name: 'Fashion Sales', value: '₹0', percent: 0, color: 'bg-blue-500' },
-        { name: 'Electronics Sales', value: '₹0', percent: 0, color: 'bg-green-500' }
-      );
-    }
-
-    // 6. Recent Transaction Log (10 latest paid orders)
-    const latestOrders = await Order.find(matchQuery).populate('userId', 'name').sort({ createdAt: -1 }).limit(10);
-    const transactions = latestOrders.map((order, i) => {
-      const orderId = order._id ? order._id.toString().substring(18).toUpperCase() : String(i).padStart(6, '0');
-      return {
-        id: order.paymentId || `TXN${orderId}`,
-        source: `Order #OD${orderId}`,
-        type: order.paymentMethod === 'Online' ? 'Online Payment' : 'COD Payment',
-        gross: `₹${(order.total || 0).toLocaleString()}`,
-        discount: '₹0',
-        status: order.paymentStatus === 'Paid' ? 'Settled' : order.paymentStatus === 'Pending' ? 'Pending' : 'Failed'
-      };
-    });
-
     res.status(200).json({
       success: true,
-      data: {
-        netRevenue,
-        settledThisMonth,
-        gmv,
-        coinsRedeemed,
-        salesTrend,
-        categoryRevenue,
-        transactions
-      }
+      data: { ...finance, categoryRevenue }
     });
   } catch (error) {
     console.error('Get Earnings Error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
-
 
 const getSystemNotifications = async (req, res) => {
   try {
@@ -1287,8 +1108,11 @@ module.exports = {
   getTopEvents,
   getSearchAnalytics,
   getTopProducts,
-  getGameAnalytics,
   getEarnings,
+  getCoinsOverview,
+  getCoinsPurchases,
+  getCoinsCustomers,
+  getCoinsLedger,
   getSystemNotifications,
   globalSearch
 };

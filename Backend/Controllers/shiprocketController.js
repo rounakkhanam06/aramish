@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const { handleOrderCancellationRefunds } = require('../utils/orderHelper');
 const { processDeliveredOrderRewards } = require('../utils/walletService');
 const { verifyWebhookToken } = require('../utils/shiprocketWebhookAuth');
-const { loadShippingDetails, buildShiprocketOrderPayload, cheapestCourier } = require('../utils/shiprocketPayload');
+const { loadShippingDetails, buildShiprocketOrderPayload, cheapestCourier, shiprocketCostsFor } = require('../utils/shiprocketPayload');
 const { srErrorMessage, readAwbResult, readLabelResult, requestPickupChecked } = require('../utils/shiprocketResults');
 
 // Forward-shipping updates (Processing/Shipped/Out for Delivery/Delivered) must never pull an
@@ -55,7 +55,7 @@ exports.estimateShipping = async (req, res) => {
         }
 
         // Same rule checkout charges by. No courier means no delivery — never "free delivery".
-        const best = cheapestCourier(data?.data?.available_courier_companies, Number(cod) === 1);
+        const best = cheapestCourier(data?.data?.available_courier_companies);
         if (!best) {
             return res.status(400).json({ success: false, message: `Delivery is not available to pincode ${deliveryPincode}${Number(cod) === 1 ? ' with Cash on Delivery' : ''}.` });
         }
@@ -226,6 +226,8 @@ exports.processOrder = async (req, res) => {
 
         const results = { awb: null, pickup: null, label: null };
         let finalCourierId = courierId;
+        // Shiprocket's charges for the courier we auto-book (applied only once the AWB is assigned)
+        let bookedCosts = null;
 
         // Step 1: If no courier ID provided, pick the cheapest courier for the order's real
         // weight — the same courier the customer's delivery charge was priced on at checkout.
@@ -235,9 +237,10 @@ exports.processOrder = async (req, res) => {
                 const pickupPincode = process.env.SHIPROCKET_PICKUP_PINCODE || '201301';
                 const { weight } = await loadShippingDetails(order.items);
                 const svcData = await shiprocketService.checkServiceability(pickupPincode, order.deliveryAddress.pincode, weight, isCod ? 1 : 0);
-                const best = cheapestCourier(svcData?.data?.available_courier_companies, isCod);
+                const best = cheapestCourier(svcData?.data?.available_courier_companies);
                 if (best && best.courier.courier_company_id) {
                     finalCourierId = best.courier.courier_company_id;
+                    bookedCosts = shiprocketCostsFor(best.courier, { isCod });
                 }
             } catch (svcErr) {
                 console.error('Could not auto-select courier, will let Shiprocket decide:', svcErr.message);
@@ -268,6 +271,11 @@ exports.processOrder = async (req, res) => {
                         activity: `AWB ${awbInfo.awb_code} assigned via ${awbInfo.courier_name || 'courier'}`,
                         location: ''
                     });
+                    // Our real Shiprocket cost is the booked courier's (the customer's bill is unchanged)
+                    if (bookedCosts) {
+                        order.shippingCost = bookedCosts.shippingCost;
+                        order.shiprocketCodFee = bookedCosts.shiprocketCodFee;
+                    }
                 }
             } catch (awbErr) {
                 console.error('AWB assignment failed:', awbErr.response?.data || awbErr.message);
@@ -712,7 +720,7 @@ exports.createShiprocketOrderForExisting = async (req, res) => {
             const pickupPincode = process.env.SHIPROCKET_PICKUP_PINCODE || '201301';
             const serviceResponse = await shiprocketService.checkServiceability(pickupPincode, order.deliveryAddress.pincode, weight, isCod ? 1 : 0);
             order.shiprocketResponses.push({ type: 'SERVICEABILITY', data: serviceResponse });
-            const best = cheapestCourier(serviceResponse?.data?.available_courier_companies, isCod);
+            const best = cheapestCourier(serviceResponse?.data?.available_courier_companies);
             if (best && best.courier.etd) order.etd = best.courier.etd;
         } catch (svcErr) {
             console.error('Serviceability check failed:', svcErr.message);

@@ -148,7 +148,8 @@ exports.webhookReceiver = async (req, res) => {
           image: (product.images && product.images[0]) || '',
           variationSku: item.variationSku || null,
           article: product.article || null,
-          attributes: item.attributes || {}
+          attributes: item.attributes || {},
+          costPrice: product.costPrice != null ? product.costPrice : null
         });
       }
 
@@ -238,10 +239,10 @@ exports.webhookReceiver = async (req, res) => {
 
         const SystemConfig = require('../Models/SystemConfig');
         const systemConfig = await SystemConfig.findOne({});
-        const gstPercentage = systemConfig && systemConfig.gstPercentage !== undefined ? systemConfig.gstPercentage : 18;
         const platformCommission = systemConfig && systemConfig.commission !== undefined ? systemConfig.commission : 15;
 
-        const gstAmount = Math.round(Math.max(0, calculatedSubtotal - discountAmount) * (gstPercentage / 100));
+        // No GST is charged on orders
+        const gstAmount = 0;
 
         // Estimate Delivery
         let deliveryCharge = 0;
@@ -266,7 +267,11 @@ exports.webhookReceiver = async (req, res) => {
           console.error('Serviceability check failed in webhook:', svcErr.message);
         }
 
-        const finalCalculatedTotal = Math.max(0, calculatedSubtotal - discountAmount + gstAmount + platformCommission + deliveryCharge);
+        const isPrepaidDiscountEnabled = systemConfig && systemConfig.prepaidDiscountEnabled !== undefined ? systemConfig.prepaidDiscountEnabled : true;
+        const prepaidDiscountAmount = systemConfig && systemConfig.prepaidDiscountAmount !== undefined ? systemConfig.prepaidDiscountAmount : 100;
+        const prepaidDiscount = isPrepaidDiscountEnabled ? prepaidDiscountAmount : 0;
+
+        const finalCalculatedTotal = Math.max(0, calculatedSubtotal - discountAmount + gstAmount + platformCommission + deliveryCharge - prepaidDiscount);
 
         // Create Order
         newOrder = await Order.create({
@@ -285,7 +290,15 @@ exports.webhookReceiver = async (req, res) => {
           paymentId,
           status: 'Processing',
           couponCode: couponCode || null,
+          subtotal: calculatedSubtotal,
+          discountAmount,
+          gstAmount,
+          platformCommission,
           deliveryCharge,
+          prepaidDiscount,
+          // Prepaid shipment: Shiprocket charges us its freight only (no COD fee)
+          shippingCost: deliveryCharge,
+          shiprocketCodFee: 0,
           etd
         });
 

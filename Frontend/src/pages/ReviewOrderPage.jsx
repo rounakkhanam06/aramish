@@ -527,16 +527,7 @@ export default function ReviewOrderPage() {
   const originalTotal = cart.reduce((sum, item) => sum + (item.originalPrice || item.price) * item.quantity, 0);
   const productDiscount = Math.max(0, originalTotal - totalCartPrice);
   const platformCommission = systemSettings?.commission ?? 15;
-  
-  const discountRatio = originalTotal > 0 ? (discountAmount / totalCartPrice) : 0; // Wait, totalCartPrice is originalTotal - productDiscount. discountAmount is the coupon. So discount is on totalCartPrice.
-  let calculatedGstAmount = 0;
-  cart.forEach(item => {
-    const itemTotalPrice = (item.originalPrice || item.price) * item.quantity;
-    const itemAfterProductDiscount = item.price * item.quantity; // price is sellingPrice
-    const itemFinalPrice = Math.max(0, itemAfterProductDiscount - (itemAfterProductDiscount * (totalCartPrice > 0 ? (discountAmount / totalCartPrice) : 0)));
-    calculatedGstAmount += itemFinalPrice * ((item.gstPercentage || 0) / 100);
-  });
-  const gstAmount = Math.round(calculatedGstAmount);
+
   const codChargeAmount = systemSettings?.codChargeAmount ?? 150;
   const isCodChargeEnabled = systemSettings?.codChargeEnabled ?? true;
   const prepaidDiscountAmount = systemSettings?.prepaidDiscountAmount ?? 100;
@@ -545,7 +536,7 @@ export default function ReviewOrderPage() {
   const codCharge = (isCodChargeEnabled && paymentMethod === 'COD') ? codChargeAmount : 0;
   const prepaidDiscount = (isPrepaidDiscountEnabled && paymentMethod === 'ONLINE') ? prepaidDiscountAmount : 0;
 
-  const grandTotalBeforeCoins = Math.max(0, totalCartPrice - discountAmount + gstAmount + platformCommission + deliveryCharge + codCharge - prepaidDiscount);
+  const grandTotalBeforeCoins = Math.max(0, totalCartPrice - discountAmount + platformCommission + deliveryCharge + codCharge - prepaidDiscount);
   
   // Wallet figures are backend-calculated (min(available balance, redemption% of product value)).
   // The order total can only cap it further; the backend applies the same cap when placing the order.
@@ -889,7 +880,7 @@ export default function ReviewOrderPage() {
                   {paymentMethod === 'COD' && <span className="w-2 h-2 rounded-full bg-[#0B132B]" />}
                 </button>
 
-                {/* Online Payment option (Commented out)
+                {/* Online Payment option */}
                 <button
                   type="button"
                   onClick={() => {
@@ -909,12 +900,11 @@ export default function ReviewOrderPage() {
                       )}
                     </span>
                     {isPrepaidDiscountEnabled && (
-                      <span className="text-[10px] text-emerald-600 font-medium mt-0.5">Save ₹{prepaidDiscountAmount} instantly with prepaid orders!</span>
+                      <span className="self-start mt-1 text-[10px] font-black uppercase tracking-wide text-white bg-emerald-600 px-2 py-0.5 rounded-md shadow-sm">₹{prepaidDiscountAmount} EXTRA OFF ON PREPAID ORDERS</span>
                     )}
                   </div>
                   {paymentMethod === 'ONLINE' && <span className="w-2 h-2 rounded-full bg-[#0B132B]" />}
                 </button>
-                */}
               </div>
             )}
           </div>
@@ -941,10 +931,6 @@ export default function ReviewOrderPage() {
                 <span className="text-emerald-600 font-medium">- ₹{Number(discountAmount).toFixed(2)}</span>
               </div>
             )}
-            <div className="flex justify-between items-center">
-              <span>Product GST</span>
-              <span className="text-slate-800">₹{Number(gstAmount).toFixed(2)}</span>
-            </div>
             <div className="flex justify-between items-center">
               <span>Platform Fee</span>
               <span className="text-slate-800">₹{Number(platformCommission).toFixed(2)}</span>
@@ -1001,6 +987,7 @@ export default function ReviewOrderPage() {
               <span>Net Payable</span>
               <span>₹{Number(grandTotal).toFixed(2)}</span>
             </div>
+            <p className="-mt-3 text-right text-[10px] font-semibold text-slate-500">Inclusive of all taxes (GST)</p>
 
             {/* Order Reward Coins Info Badge */}
             {walletPreview?.rewardCoinsEnabled && walletPreview.estimatedRewardCoins > 0 && (

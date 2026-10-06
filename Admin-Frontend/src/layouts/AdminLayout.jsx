@@ -5,7 +5,7 @@ import {
   Bell, Search, Menu, ShieldCheck, Briefcase, Layers, Star,
   Truck, Store, Key, Settings, ChevronDown, ChevronRight,
   UserPlus, DollarSign, BarChart3, HelpCircle, FileText, Image, LayoutGrid, Layout, Bookmark,
-  Tag, Zap, MessageSquare, RotateCcw, Inbox, Gamepad2,
+  Tag, Zap, MessageSquare, RotateCcw, Inbox, Coins,
   Banknote, Percent, AlertCircle, CheckCircle2, GitBranch, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -204,6 +204,7 @@ const AdminLayout = () => {
       title: 'FINANCE',
       items: [
         { name: 'Earnings', path: '/admin/finance/earnings', icon: <DollarSign size={18} /> },
+        { name: 'Coins & Rewards', path: '/admin/finance/coins', icon: <Coins size={18} /> },
       ]
     },
     {

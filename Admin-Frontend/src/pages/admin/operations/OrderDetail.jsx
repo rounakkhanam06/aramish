@@ -555,6 +555,39 @@ const OrderDetail = () => {
                       </div>
                       <p className="text-2xl font-black text-blue-600 font-roboto">₹{order.total.toLocaleString()}</p>
                    </div>
+
+                   {/* Our costs for this order (admin only — not part of the customer's bill) */}
+                   <div className="pt-3 border-t border-dashed border-slate-200 space-y-2">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Our Costs (Not Billed to Customer)</p>
+                      {order.shippingCost === null || order.shippingCost === undefined ? (
+                         <p className="text-[11px] font-semibold text-slate-400">Shiprocket costs were not recorded for this older order — see Finance → Earnings for the derived/estimated figure.</p>
+                      ) : (
+                         <>
+                            <div className="flex justify-between text-xs font-semibold text-slate-500">
+                               <span>Shiprocket Freight</span>
+                               <span className="text-red-600">- ₹{Number(order.shippingCost).toLocaleString()}</span>
+                            </div>
+                            {order.paymentMethod === 'COD' && (
+                               <div className="flex justify-between text-xs font-semibold text-slate-500">
+                                  <span>Shiprocket COD Fee</span>
+                                  <span className="text-red-600">- ₹{Number(order.shiprocketCodFee || 0).toLocaleString()}</span>
+                               </div>
+                            )}
+                            {order.paymentMethod === 'COD' && (
+                               <div className="flex justify-between text-xs font-bold text-slate-700">
+                                  <span>COD Margin (Admin COD charge − Shiprocket COD fee)</span>
+                                  <span>₹{(Number(order.codCharge || 0) - Number(order.shiprocketCodFee || 0)).toLocaleString()}</span>
+                               </div>
+                            )}
+                         </>
+                      )}
+                      {!!order.walletUsed && order.walletUsed > 0 && (
+                         <div className="flex justify-between text-xs font-semibold text-slate-500">
+                            <span>Coins Redeemed (platform-funded)</span>
+                            <span className="text-red-600">- ₹{Number(order.walletUsed).toLocaleString()}</span>
+                         </div>
+                      )}
+                   </div>
                 </div>
             </div>
 

@@ -128,6 +128,49 @@ export default function CartPage() {
 
   const selectedAddress = addressesList.find(a => (a._id === selectedAddressId || a.id === selectedAddressId)) || addressesList[0] || mockAddresses[0];
 
+  // Shipping estimate — same Shiprocket estimate endpoint checkout uses, for the customer's
+  // default saved address (the API returns addresses default-first, and checkout preselects
+  // that same one). Never estimated for the mock addresses. COD/Prepaid are website-level
+  // payment options, not shipping modes, so the quote here is payment-agnostic. This is only
+  // an estimate: the backend re-quotes Shiprocket when the order is placed.
+  const shippingAddress = dbAddresses[0] || null;
+  const shippingPincode = shippingAddress?.pincode || '';
+  const cartWeight = cart.reduce((total, item) => total + ((item.weight || 0.5) * item.quantity), 0);
+  const [shippingEstimate, setShippingEstimate] = useState({ status: 'idle', charge: 0, message: '' });
+
+  useEffect(() => {
+    if (!shippingPincode || cart.length === 0) {
+      setShippingEstimate({ status: 'idle', charge: 0, message: '' });
+      return;
+    }
+    let cancelled = false;
+    setShippingEstimate(prev => ({ ...prev, status: 'loading' }));
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/shiprocket/estimate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deliveryPincode: shippingPincode, weight: cartWeight, cod: 0 })
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (res.ok && data.success) {
+          setShippingEstimate({ status: 'ok', charge: Number(data.deliveryCharge) || 0, message: '' });
+        } else if (res.status === 400) {
+          setShippingEstimate({ status: 'unavailable', charge: 0, message: data.message || `Delivery is not available to pincode ${shippingPincode}.` });
+        } else {
+          setShippingEstimate({ status: 'error', charge: 0, message: '' });
+        }
+      } catch {
+        if (!cancelled) setShippingEstimate({ status: 'error', charge: 0, message: '' });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [shippingPincode, cartWeight, cart.length, API_BASE]);
+
+  const hasShippingEstimate = shippingEstimate.status === 'ok';
+  const shippingCharge = hasShippingEstimate ? shippingEstimate.charge : 0;
+
   const handleApplyCustomQty = () => {
     const qty = parseInt(customQtyInput);
     if (!isNaN(qty) && qty > 0) {
@@ -255,20 +298,7 @@ export default function CartPage() {
 
   const mockSavings = 2458;
   const platformCommission = systemSettings?.commission ?? 15;
-  
-  // Calculate dynamic GST per item based on actual product GST
-  let calculatedGstAmount = 0;
-  cart.forEach(item => {
-    const itemTotal = item.price * item.quantity;
-    const itemDiscount = discountAmount > 0 ? (itemTotal / totalCartPrice) * discountAmount : 0;
-    const finalItemPrice = Math.max(0, itemTotal - itemDiscount);
-    const itemGst = item.gstPercentage ?? systemSettings?.gstPercentage ?? 18;
-    calculatedGstAmount += finalItemPrice * (itemGst / 100);
-  });
-  
-  const gstAmount = Math.round(calculatedGstAmount);
-  const effectiveGstPercentage = totalCartPrice > 0 ? Math.round((gstAmount / Math.max(1, totalCartPrice - discountAmount)) * 100) : (systemSettings?.gstPercentage ?? 18);
-  const finalTotal = Math.max(0, totalCartPrice - discountAmount + gstAmount + platformCommission);
+  const finalTotal = Math.max(0, totalCartPrice - discountAmount + platformCommission + shippingCharge);
   const mockOriginalTotal = totalCartPrice + mockSavings;
 
   return (
@@ -446,22 +476,40 @@ export default function CartPage() {
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span>GST ({effectiveGstPercentage}%)</span>
-                  <span className="text-slate-900">₹{Number(gstAmount).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
                   <span>Platform Fee</span>
                   <span className="text-slate-900">₹{Number(platformCommission).toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Shipping Fee</span>
-                  <span className="text-emerald-600 font-bold">FREE</span>
+                <div>
+                  <div className="flex justify-between">
+                    <span>Shipping Fee</span>
+                    {shippingEstimate.status === 'loading' ? (
+                      <span className="text-slate-400">Calculating...</span>
+                    ) : hasShippingEstimate ? (
+                      shippingCharge > 0
+                        ? <span className="text-slate-900">₹{Number(shippingCharge).toFixed(2)}</span>
+                        : <span className="text-emerald-600 font-bold">FREE</span>
+                    ) : (
+                      <span className="text-slate-500">Calculated at checkout</span>
+                    )}
+                  </div>
+                  {hasShippingEstimate && (
+                    <p className="text-[10px] text-slate-400 font-medium mt-0.5">Estimated for pincode {shippingPincode}</p>
+                  )}
+                  {shippingEstimate.status === 'unavailable' && (
+                    <p className="text-[10px] text-red-600 font-semibold mt-0.5 leading-snug">{shippingEstimate.message}</p>
+                  )}
                 </div>
 
                 <div className="border-t border-white/10 pt-3 flex justify-between text-base font-black text-[#02006c]">
-                  <span>Total Amount</span>
+                  <span>{hasShippingEstimate ? 'Total Amount' : 'Total (excl. shipping)'}</span>
                   <span>₹{Number(finalTotal).toFixed(2)}</span>
                 </div>
+                <p className="-mt-2 text-right text-[10px] font-semibold text-slate-500">Inclusive of all taxes (GST)</p>
+                {(systemSettings?.prepaidDiscountEnabled ?? true) && (systemSettings?.prepaidDiscountAmount ?? 100) > 0 && (
+                  <div className="text-center text-[11px] font-black uppercase tracking-wide text-white bg-emerald-600 px-3 py-2 rounded-lg shadow-sm">
+                    ₹{systemSettings?.prepaidDiscountAmount ?? 100} EXTRA OFF ON PREPAID ORDERS
+                  </div>
+                )}
               </div>
 
               {/* Desktop Checkout button */}

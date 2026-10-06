@@ -64,6 +64,9 @@ const sendNotificationToUser = async (userId, payload) => {
     }
 
     const { title, body, data } = payload;
+    // Same tag for the same event: if a browser gets it twice (e.g. via an old and a new
+    // token), the second one replaces the first instead of showing a duplicate pop-up.
+    const tag = notificationTag(data);
     const messagePayload = {
       notification: { 
         title, 
@@ -88,7 +91,8 @@ const sendNotificationToUser = async (userId, payload) => {
           requireInteraction: false,
           data: {
             url: data?.url || '/'
-          }
+          },
+          ...(tag ? { tag } : {})
         },
         fcmOptions: {
           link: data?.url || '/'
@@ -138,6 +142,12 @@ const sendNotificationToUser = async (userId, payload) => {
   }
 };
 
+/** Stable per-event tag, e.g. "NEW_ORDER:<orderId>" (undefined when the event has no id). */
+const notificationTag = (data = {}) => {
+  const id = data.orderId || data.ticketId || data.returnId || data.exchangeId;
+  return id ? `${data.type || 'EVENT'}:${id}` : undefined;
+};
+
 /**
  * Send push notification to all Active Admins (for new orders, returns, exchanges, etc.)
  * @param {object} payload { title, body, data }
@@ -161,6 +171,9 @@ const sendNotificationToAdmins = async (payload) => {
     }
 
     const { title, body, data } = payload;
+    // Same tag for the same event: if a browser gets it twice (e.g. via an old and a new
+    // token), the second one replaces the first instead of showing a duplicate pop-up.
+    const tag = notificationTag(data);
     const messagePayload = {
       notification: { 
         title, 
@@ -185,7 +198,8 @@ const sendNotificationToAdmins = async (payload) => {
           requireInteraction: true,
           data: {
             url: data?.url || '/admin/orders'
-          }
+          },
+          ...(tag ? { tag } : {})
         },
         fcmOptions: {
           link: data?.url || '/admin/orders'

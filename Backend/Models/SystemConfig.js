@@ -7,7 +7,6 @@ const systemConfigSchema = new mongoose.Schema({
   currency: { type: String, default: 'INR (₹)' },
   commission: { type: Number, default: 10 },
   gstNo: { type: String, default: '07AAAAA0000A1Z5' },
-  gstPercentage: { type: Number, default: 18 },
   codChargeEnabled: { type: Boolean, default: true },
   codChargeAmount: { type: Number, default: 150 },
   prepaidDiscountEnabled: { type: Boolean, default: true },

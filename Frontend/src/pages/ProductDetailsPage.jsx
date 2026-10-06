@@ -822,6 +822,12 @@ export default function ProductDetailsPage() {
                 <span className="text-2xl md:text-3xl font-black text-[#02006c] tracking-tight">₹{displayPrice}</span>
               </div>
               <p className="text-xs text-slate-400 line-through mt-0.5">MRP ₹{displayOriginalPrice}</p>
+              <p className="text-[11px] text-emerald-700 font-semibold mt-0.5">Inclusive of all taxes (GST)</p>
+              {(systemSettings?.prepaidDiscountEnabled ?? true) && (systemSettings?.prepaidDiscountAmount ?? 100) > 0 && (
+                <span className="inline-block mt-1.5 text-[11px] font-black uppercase tracking-wide text-white bg-emerald-600 px-2.5 py-1 rounded-md shadow-sm animate-pulse">
+                  ₹{systemSettings?.prepaidDiscountAmount ?? 100} EXTRA OFF ON PREPAID ORDERS
+                </span>
+              )}
             </div>
             <div>
               {displayStock === 0 ? (

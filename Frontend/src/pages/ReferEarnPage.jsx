@@ -61,7 +61,8 @@ export default function ReferEarnPage() {
   }, [user]);
 
   const referralCode = referralData?.referralCode || '...';
-  const shareText = `Hey! Join Aramish using my referral code ${referralCode}! 🎉`;
+  // No emoji: it arrives as a broken "?" character in WhatsApp when shared from the app
+  const shareText = `Hey! Join Aramish using my referral code ${referralCode}. Install the app here:`;
   const shareUrl = buildReferralShareUrl(referralCode);
   const fullShareText = `${shareText}\n\n${shareUrl}`;
 

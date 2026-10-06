@@ -20,7 +20,9 @@ const orderSchema = new mongoose.Schema({
       image: { type: String },
       variationSku: { type: String, default: null },
       article: { type: String, default: null },
-      attributes: { type: Map, of: String, default: {} }
+      attributes: { type: Map, of: String, default: {} },
+      // Product cost price at checkout (admin-entered, for profit reporting). null = not set.
+      costPrice: { type: Number, default: null }
     }
   ],
   subtotal: {
@@ -128,6 +130,18 @@ const orderSchema = new mongoose.Schema({
   prepaidDiscount: {
     type: Number,
     default: 0
+  },
+  // What Shiprocket charges US for this order (an expense, not part of the customer's bill):
+  // the courier's freight and, on a COD shipment with cash to collect, its own COD fee.
+  // Recorded from the checkout quote and refreshed when a courier is auto-booked.
+  // null = order placed before this was recorded (finance reports derive or estimate it).
+  shippingCost: {
+    type: Number,
+    default: null
+  },
+  shiprocketCodFee: {
+    type: Number,
+    default: null
   },
   etd: {
     type: String,

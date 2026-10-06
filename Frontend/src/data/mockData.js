@@ -31,41 +31,6 @@ export const VALUE_PROPS = [
   { id: 4, title: "Best Price", desc: "Promise", icon: "Award" },
 ];
 
-export const PLAY_AND_WIN = [
-  {
-    id: 'game-1',
-    name: 'Spin & Win',
-    desc: 'Win Coins Daily',
-    icon: 'Compass',
-    color: 'bg-rose-50 text-rose-500 border-rose-100',
-    hoverColor: 'hover:bg-rose-100 hover:border-rose-200'
-  },
-  {
-    id: 'game-2',
-    name: 'Daily Quiz',
-    desc: 'Test Your Brain',
-    icon: 'HelpCircle',
-    color: 'bg-gold/10 text-gold border-gold/20',
-    hoverColor: 'hover:bg-gold/10 hover:border-gold/20'
-  },
-  {
-    id: 'game-3',
-    name: 'Scratch Card',
-    desc: 'Scratch & Earn',
-    icon: 'Layers',
-    color: 'bg-amber-50 text-amber-600 border-amber-100',
-    hoverColor: 'hover:bg-amber-100 hover:border-amber-200'
-  },
-  {
-    id: 'game-4',
-    name: 'Treasure Hunt',
-    desc: 'Find & Win',
-    icon: 'MapPin',
-    color: 'bg-sky-50 text-sky-500 border-sky-100',
-    hoverColor: 'hover:bg-sky-100 hover:border-sky-200'
-  }
-];
-
 export const NOTIFICATIONS = [
   {
     id: 1,

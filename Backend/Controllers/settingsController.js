@@ -47,7 +47,7 @@ const updateSettings = async (req, res) => {
 
     const fields = [
       'platformName', 'supportEmail', 'helpline', 'currency',
-      'commission', 'gstNo', 'gstPercentage', 'returnWindowDays',
+      'commission', 'gstNo', 'returnWindowDays',
       'welcomeBonusCoins', 'rewardCoinsEnabled', 'marqueeEnabled', 'walletEnabled',
       'referralRewardPerOrder', 'orderRewardPercentage', 'orderRewardMaxCap', 'walletRedemptionPercentage', 'referralEnabled',
       'crazyDealsHeaderName', 'showCrazyDealsTimer', 'crazyDealsDuration',
@@ -59,7 +59,7 @@ const updateSettings = async (req, res) => {
     fields.forEach(f => {
       if (req.body[f] !== undefined) {
         if ([
-          'commission', 'gstPercentage',
+          'commission',
           'returnWindowDays', 'welcomeBonusCoins', 'crazyDealsDuration', 'featuredCollectionDuration', 'newArrivalsDuration',
           'codChargeAmount', 'prepaidDiscountAmount',
           'referralRewardPerOrder', 'orderRewardPercentage', 'orderRewardMaxCap', 'walletRedemptionPercentage'

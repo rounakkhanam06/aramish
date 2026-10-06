@@ -204,13 +204,6 @@ class AnalyticsTracker {
     this.track('wishlist_add', 'social', { productId });
   }
 
-  trackGamePlay(gameKey, action, score = 0) {
-    this.track(action === 'start' ? 'game_start' : 'game_complete', 'game', {
-      gameKey,
-      score
-    });
-  }
-
   trackCouponApplied(code, success = true, discount = 0) {
     this.track('coupon_applied', 'commerce', { code, success, discount });
   }

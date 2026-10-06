@@ -234,16 +234,16 @@ describe('Order placement & variant stock', () => {
     expect(await variantStock(p._id, sku)).toBe(0);
   });
 
-  test('COD charge, delivery, GST and platform fee are computed server-side', async () => {
+  test('COD charge, delivery and platform fee are computed server-side, with no GST', async () => {
     const { token } = await makeUser();
-    const p = await makeProduct({ gstPercentage: 12 });
+    const p = await makeProduct();
     const r = await placeOrder(token, [{ product: p, sku: p.variations[0].sku, qty: 1 }]);
     const o = r.data.order;
     expect(o.subtotal).toBe(1000);
-    expect(o.gstAmount).toBe(120);
+    expect(o.gstAmount).toBe(0);
     expect(o.codCharge).toBe(150);
     expect(o.deliveryCharge).toBe(50);
-    expect(o.total).toBe(1000 + 120 + o.platformCommission + 50 + 150);
+    expect(o.total).toBe(1000 + o.platformCommission + 50 + 150);
   });
 
   test('coupon: applied once per user, usage restored on cancel', async () => {

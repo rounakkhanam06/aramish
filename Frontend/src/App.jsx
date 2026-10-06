@@ -40,7 +40,6 @@ const lazyRetry = (componentImport) =>
 const Home               = lazyRetry(() => import('./pages/Home'));
 const CategoriesPage     = lazyRetry(() => import('./pages/CategoriesPage'));
 const StudioPage         = lazyRetry(() => import('./pages/StudioPage'));
-const GamesPage          = lazyRetry(() => import('./pages/GamesPage'));
 const CartPage           = lazyRetry(() => import('./pages/CartPage'));
 const ProfilePage        = lazyRetry(() => import('./pages/ProfilePage'));
 const LoginPage          = lazyRetry(() => import('./pages/LoginPage'));
@@ -134,7 +133,7 @@ function AppContent() {
   }, [user, location.pathname]);
 
   useEffect(() => {
-    const protectedRoutes = ['/cart', '/wishlist', '/orders', '/games', '/refer', '/saved-addresses', '/wallet'];
+    const protectedRoutes = ['/cart', '/wishlist', '/orders', '/refer', '/saved-addresses', '/wallet'];
     const isProtectedRoute = protectedRoutes.some(route => location.pathname.startsWith(route));
 
     if (!user && isProtectedRoute) {
@@ -156,7 +155,6 @@ function AppContent() {
           <Route path="/categories" element={<CategoriesPage />} />
           <Route path="/brand/:brandId" element={<BrandPage />} />
           <Route path="/studio" element={<StudioPage />} />
-          <Route path="/games" element={<GamesPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/wishlist" element={<WishlistPage />} />
           <Route path="/orders" element={<OrdersPage />} />

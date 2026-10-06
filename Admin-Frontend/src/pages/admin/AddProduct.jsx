@@ -158,7 +158,6 @@ const AddProduct = () => {
 
   // Tax compliance
   const [hsnCode, setHsnCode] = useState('');
-  const [gstPercentage, setGstPercentage] = useState(0);
 
   // Variations state
   const [variations, setVariations] = useState([]);
@@ -214,7 +213,6 @@ const AddProduct = () => {
           setTags(Array.isArray(p.tags) ? p.tags.join(', ') : '');
           setManufacturerInfo(p.manufacturerInfo || '');
           setHsnCode(p.hsnCode || '');
-          setGstPercentage(p.gstPercentage || 0);
           setImages(p.images || []);
           setDescriptionImages(p.descriptionImages || []);
           
@@ -647,7 +645,6 @@ const AddProduct = () => {
       bodyFormData.append('sku', sku);
       bodyFormData.append('article', article);
       bodyFormData.append('hsnCode', hsnCode);
-      bodyFormData.append('gstPercentage', gstPercentage);
       bodyFormData.append('brandName', brandName || 'Generic');
       bodyFormData.append('brandId', brandId || '');
       bodyFormData.append('isTrending', isTrending);
@@ -1462,9 +1459,9 @@ const AddProduct = () => {
             </div>
           </section>
 
-          {/* Tax & Compliance */}
+          {/* Compliance */}
           <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-            <SectionTitle icon={ShieldCheck} color="bg-green-50 text-green-600">Tax & Compliance</SectionTitle>
+            <SectionTitle icon={ShieldCheck} color="bg-green-50 text-green-600">Compliance</SectionTitle>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -1476,20 +1473,6 @@ const AddProduct = () => {
                   placeholder="e.g. 4202" 
                   className={inputCls} 
                 />
-              </div>
-              <div>
-                <Label>GST Percentage</Label>
-                <select 
-                  value={gstPercentage}
-                  onChange={e => setGstPercentage(Number(e.target.value))}
-                  className={inputCls}
-                >
-                  <option value={0}>0% (No GST)</option>
-                  <option value={5}>5%</option>
-                  <option value={12}>12%</option>
-                  <option value={18}>18%</option>
-                  <option value={28}>28%</option>
-                </select>
               </div>
             </div>
           </section>

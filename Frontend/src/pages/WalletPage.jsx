@@ -72,7 +72,6 @@ export default function WalletPage() {
     REFERRAL_REWARD: 'Referral Reward',
     ORDER_REWARD: 'Order Reward',
     ORDER_REDEMPTION: 'Used on Order',
-    GAME_REWARD: 'Game Reward',
     REFUND: 'Refund'
   };
   const REFUND_WALLET_LABELS = {

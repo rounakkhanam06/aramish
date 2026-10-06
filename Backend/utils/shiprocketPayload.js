@@ -53,17 +53,30 @@ const toOrderItem = ({ name, sku, units, price, productId }, hsnByProductId = {}
 };
 
 /**
- * The cheapest courier the customer can be charged for (freight, plus the courier's COD fee
- * on COD) — the same rule checkout uses to price delivery. Returns null when none are available.
+ * The cheapest courier by delivery (freight) charge — the same rule checkout uses to price
+ * delivery. The customer is charged freight only: Shiprocket's own `cod_charges` are never
+ * passed on, because COD is billed solely through the Admin-configured COD charge. (For a COD
+ * order the courier list itself comes from a COD serviceability check, so the chosen courier
+ * can collect cash.) Returns null when none are available.
  */
-const cheapestCourier = (couriers, isCod) => {
+const cheapestCourier = (couriers) => {
   let best = null;
   for (const c of couriers || []) {
-    const charge = (Number(c.freight_charge) || 0) + (isCod ? (Number(c.cod_charges) || 0) : 0);
+    const charge = Number(c.freight_charge) || 0;
     if (!best || charge < best.charge) best = { courier: c, charge };
   }
   return best;
 };
+
+/**
+ * What Shiprocket charges us for shipping an order with `courier`: its freight, plus its own
+ * COD fee when the courier collects cash (COD with something left to pay). Our expense only —
+ * never added to the customer's bill.
+ */
+const shiprocketCostsFor = (courier, { isCod }) => ({
+  shippingCost: Math.round((Number(courier?.freight_charge) || 0) * 100) / 100,
+  shiprocketCodFee: isCod ? Math.round((Number(courier?.cod_charges) || 0) * 100) / 100 : 0
+});
 
 /**
  * Shiprocket "adhoc" order payload for one of our orders.
@@ -156,5 +169,6 @@ module.exports = {
   loadShippingDetails,
   toOrderItem,
   cheapestCourier,
+  shiprocketCostsFor,
   buildShiprocketOrderPayload
 };

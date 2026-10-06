@@ -34,7 +34,7 @@ const makeProduct = async (overrides = {}) => {
   counter += 1;
   return Product.create({
     name: `Shoe ${counter}`, category: 'Shoes', sellingPrice: 1000, mrp: 1200, stock: 50, sales: 0,
-    article: `ART-C-${counter}-${Date.now()}`, sku: `SKU-C-${counter}-${Date.now()}`, shippingSpecs: { weight: 0.5 }, gstPercentage: 0, status: 'Approved', ...overrides
+    article: `ART-C-${counter}-${Date.now()}`, sku: `SKU-C-${counter}-${Date.now()}`, shippingSpecs: { weight: 0.5 }, status: 'Approved', ...overrides
   });
 };
 const mockRes = () => {

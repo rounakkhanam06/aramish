@@ -68,13 +68,6 @@ const productSchema = new mongoose.Schema({
     crazyDeals: { type: Boolean, default: false },
     flashSale: { type: Boolean, default: false }
   },
-  gstCategory: {
-    type: String
-  },
-  gstPercentage: {
-    type: Number,
-    default: 0
-  },
   hsnCode: {
     type: String
   },

@@ -873,8 +873,9 @@ export default function OrderDetailsPage() {
   // previously made the displayed breakdown drift from the real Total Paid.
   const subtotal = globalOrder ? (globalOrder.subtotal ?? 0) : orderItems.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
   const platformCommission = globalOrder ? (globalOrder.platformCommission ?? 0) : (systemSettings?.commission ?? 15);
-  const gstAmount = globalOrder ? (globalOrder.gstAmount ?? 0) : Math.round(subtotal * ((systemSettings?.gstPercentage ?? 18) / 100));
-  const gstPercentage = subtotal > 0 ? Math.round((gstAmount / subtotal) * 100) : (systemSettings?.gstPercentage ?? 18);
+  // GST is no longer charged; only orders placed before that change carry a gstAmount.
+  const gstAmount = globalOrder?.gstAmount || 0;
+  const gstPercentage = subtotal > 0 ? Math.round((gstAmount / subtotal) * 100) : 0;
   const deliveryCharge = globalOrder?.deliveryCharge || 0;
   const codCharge = globalOrder?.codCharge || 0;
   const prepaidDiscount = globalOrder?.prepaidDiscount || 0;
@@ -931,7 +932,7 @@ export default function OrderDetailsPage() {
       <div style="border: 1px solid #e2e8f0; border-radius: 20px; padding: 40px; background: #ffffff;">
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #02006c; padding-bottom: 24px; margin-bottom: 30px;">
           <div style="text-align: left;">
-            <h1 style="margin: 0; font-size: 26px; font-weight: 900; color: #02006c; letter-spacing: 0.5px;">TAX INVOICE</h1>
+            <h1 style="margin: 0; font-size: 26px; font-weight: 900; color: #02006c; letter-spacing: 0.5px;">INVOICE</h1>
             <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b; font-weight: 600;">Order ID: #${id?.slice(0, 5)}</p>
           </div>
           <div style="text-align: right;">
@@ -987,10 +988,10 @@ export default function OrderDetailsPage() {
             <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569;">Items Subtotal:</td>
             <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569; text-align: right;">₹${subtotal}</td>
           </tr>
-          <tr>
+          ${gstAmount > 0 ? `<tr>
             <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569;">GST (${gstPercentage}%):</td>
             <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569; text-align: right;">₹${gstAmount}</td>
-          </tr>
+          </tr>` : ''}
           <tr>
             <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569;">Platform Fee:</td>
             <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569; text-align: right;">₹${platformCommission}</td>
@@ -1564,10 +1565,12 @@ export default function OrderDetailsPage() {
                    <span className="flex items-center gap-1">Discounted price <div className="w-3.5 h-3.5 border border-slate-350 rounded-full flex items-center justify-center text-[8px] font-bold">i</div></span>
                    <span>₹{subtotal}</span>
                  </div>
-                 <div className="flex justify-between items-center text-slate-600 font-semibold">
-                   <span>GST ({gstPercentage}%)</span>
-                   <span>₹{gstAmount}</span>
-                 </div>
+                 {gstAmount > 0 && (
+                   <div className="flex justify-between items-center text-slate-600 font-semibold">
+                     <span>GST ({gstPercentage}%)</span>
+                     <span>₹{gstAmount}</span>
+                   </div>
+                 )}
                  <div className="flex justify-between items-center text-slate-600 font-semibold">
                    <span className="flex items-center gap-1">Platform fee</span>
                    <span>₹{platformCommission}</span>
@@ -1915,8 +1918,8 @@ export default function OrderDetailsPage() {
                     </div>
                     <p className="text-[10px] text-green-600 mt-1 font-semibold leading-relaxed">
                       {refundMethodOption === 'Wallet' 
-                        ? 'The full eligible refund amount (including GST) will be credited to your wallet. For full returns, shipping and platform fees are also refunded.' 
-                        : `Only the item price will be refunded. GST, Platform fee, and shipping charges will not be refunded for Bank/UPI transfers.`}
+                        ? 'The full eligible refund amount will be credited to your wallet. For full returns, shipping and platform fees are also refunded.' 
+                        : `Only the item price will be refunded. Platform fee and shipping charges will not be refunded for Bank/UPI transfers.`}
                     </p>
                   </div>
                 );

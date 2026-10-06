@@ -24,7 +24,6 @@ const Settings = () => {
   const [supportEmail, setSupportEmail] = useState('');
   const [gstNo, setGstNo] = useState('');
   const [commission, setCommission] = useState(10);
-  const [gstPercentage, setGstPercentage] = useState(18);
   const [codChargeEnabled, setCodChargeEnabled] = useState(true);
   const [codChargeAmount, setCodChargeAmount] = useState(150);
   const [prepaidDiscountEnabled, setPrepaidDiscountEnabled] = useState(true);
@@ -107,7 +106,6 @@ const Settings = () => {
         setSupportEmail(s.supportEmail || '');
         setGstNo(s.gstNo || '');
         setCommission(s.commission ?? 10);
-        setGstPercentage(s.gstPercentage ?? 18);
         setCodChargeEnabled(s.codChargeEnabled ?? true);
         setCodChargeAmount(s.codChargeAmount ?? 150);
         setPrepaidDiscountEnabled(s.prepaidDiscountEnabled ?? true);
@@ -203,8 +201,7 @@ const Settings = () => {
             helpline,
             supportEmail,
             gstNo,
-            commission,
-            gstPercentage
+            commission
           })
         });
         const settingsData = await settingsRes.json();
@@ -223,7 +220,7 @@ const Settings = () => {
           toast.error(profileData.message || settingsData.message || 'Failed to update settings');
         }
       } else if (activeSection === 'Business') {
-        // Save Platform commission & GST rate
+        // Save Platform commission & payment pricing
         const settingsRes = await fetch(`${apiBase}/admin/settings`, {
           method: 'PUT',
           headers: {
@@ -234,7 +231,6 @@ const Settings = () => {
             helpline,
             gstNo,
             commission,
-            gstPercentage,
             codChargeEnabled,
             codChargeAmount: Number(codChargeAmount),
             prepaidDiscountEnabled,
@@ -585,7 +581,7 @@ const Settings = () => {
                       <div>
                         <p className="text-[10px] font-semibold text-slate-900 uppercase tracking-widest">Global Logic Policy</p>
                         <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
-                          Commission rates and Global GST percentage are applied automatically platform-wide.
+                          Commission rates are applied automatically platform-wide. No GST is charged on products.
                         </p>
                       </div>
                     </div>

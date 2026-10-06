@@ -43,7 +43,7 @@ const makeProduct = (overrides = {}) => {
   return Product.create({
     name: `Shoe ${counter}`, category: 'Shoes', sellingPrice: 1000, mrp: 1200, stock: 10, sales: 0,
     article: `ART-S-${counter}-${Date.now()}`, sku: `SKU-S-${counter}-${Date.now()}`, shippingSpecs: { weight: 0.8 },
-    gstPercentage: 0, hsnCode: '6403', status: 'Approved', ...overrides
+    hsnCode: '6403', status: 'Approved', ...overrides
   });
 };
 const mockRes = () => {
@@ -85,12 +85,12 @@ describe('Order sent to Shiprocket at checkout', () => {
 
     expect(res.statusCode).toBe(201);
     const order = await Order.findById(res.body.order._id);
-    // ₹1,000 product + ₹80 COD delivery − ₹250 coins (25% of the ₹1,000 product value)
+    // ₹1,000 product + ₹50 delivery − ₹250 coins (25% of the ₹1,000 product value)
     expect(order.walletUsed).toBe(250);
-    expect(order.total).toBe(830);
+    expect(order.total).toBe(800);
     const payload = sentToShiprocket();
     expect(payload.payment_method).toBe('COD');
-    expect(payload.sub_total).toBe(830); // the courier collects ₹830, not ₹1,080
+    expect(payload.sub_total).toBe(800); // the courier collects ₹800, not ₹1,050
   });
 
   test('coins and Refund Wallet together: courier collects only the remainder', async () => {
@@ -103,8 +103,8 @@ describe('Order sent to Shiprocket at checkout', () => {
     const order = await Order.findById(res.body.order._id);
     expect(order.walletUsed).toBe(250);
     expect(order.refundWalletUsed).toBe(300);
-    expect(order.total).toBe(530);
-    expect(sentToShiprocket().sub_total).toBe(530);
+    expect(order.total).toBe(500);
+    expect(sentToShiprocket().sub_total).toBe(500);
   });
 
   test('COD amount is what the customer still owes after Refund Wallet money', async () => {
@@ -115,12 +115,40 @@ describe('Order sent to Shiprocket at checkout', () => {
 
     expect(res.statusCode).toBe(201);
     const order = await Order.findById(res.body.order._id);
-    // ₹1,000 product + ₹80 cheapest COD delivery (50 + 30) − ₹300 Refund Wallet
-    expect(order.deliveryCharge).toBe(80);
-    expect(order.total).toBe(780);
+    // ₹1,000 product + ₹50 cheapest delivery (Shiprocket's ₹30 cod_charges not passed on) − ₹300 Refund Wallet
+    expect(order.deliveryCharge).toBe(50);
+    expect(order.total).toBe(750);
     const payload = sentToShiprocket();
     expect(payload.payment_method).toBe('COD');
-    expect(payload.sub_total).toBe(780);
+    expect(payload.sub_total).toBe(750);
+  });
+
+  test('COD bill = Shiprocket delivery + Admin COD charge only; Prepaid = delivery − Admin prepaid discount', async () => {
+    await SystemConfig.updateOne({}, { codChargeEnabled: true, codChargeAmount: 150, prepaidDiscountEnabled: true, prepaidDiscountAmount: 100 });
+    const product = await makeProduct({ stock: 10 });
+
+    const cod = await checkout(await makeUser(), product, { paymentMethod: 'COD' });
+    expect(cod.statusCode).toBe(201);
+    const codOrder = await Order.findById(cod.body.order._id);
+    expect(codOrder.deliveryCharge).toBe(50); // freight only — no Shiprocket cod_charges
+    expect(codOrder.codCharge).toBe(150);
+    expect(codOrder.prepaidDiscount).toBe(0);
+    expect(codOrder.total).toBe(1000 + 50 + 150);
+
+    const prepaid = await checkout(await makeUser(), product, { paymentMethod: 'Online' });
+    expect(prepaid.statusCode).toBe(201);
+    const prepaidOrder = await Order.findById(prepaid.body.order._id);
+    expect(prepaidOrder.deliveryCharge).toBe(50);
+    expect(prepaidOrder.codCharge).toBe(0);
+    expect(prepaidOrder.prepaidDiscount).toBe(100);
+    expect(prepaidOrder.total).toBe(1000 + 50 - 100);
+  });
+
+  test('the estimate API quotes freight only, without Shiprocket cod_charges', async () => {
+    const res = mockRes();
+    await estimateShipping({ body: { deliveryPincode: '282002', weight: 0.8, cod: 1 } }, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.deliveryCharge).toBe(50);
   });
 
   test('a COD order fully covered by the Refund Wallet is sent as Prepaid (nothing to collect)', async () => {
@@ -133,7 +161,7 @@ describe('Order sent to Shiprocket at checkout', () => {
     expect(res.body.order.total).toBe(0);
     const payload = sentToShiprocket();
     expect(payload.payment_method).toBe('Prepaid');
-    expect(payload.sub_total).toBe(1080); // full order value declared
+    expect(payload.sub_total).toBe(1050); // full order value declared (₹1,000 + ₹50 delivery)
   });
 
   test('uses the selected address name/phone and the product HSN code', async () => {

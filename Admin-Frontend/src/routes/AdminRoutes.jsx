@@ -18,8 +18,8 @@ import StockAlerts from '../pages/admin/inventory/StockAlerts';
 import Orders from '../pages/admin/Orders';
 import AddProduct from '../pages/admin/AddProduct';
 import PlatformEarnings from '../pages/admin/finance/PlatformEarnings';
+import CoinsRewards from '../pages/admin/finance/CoinsRewards';
 import Rules from '../pages/admin/Rules';
-import TaxConfig from '../pages/admin/finance/TaxConfig';
 import AllDeliveries from '../pages/admin/delivery/AllDeliveries';
 import DeliveryApproval from '../pages/admin/delivery/DeliveryApproval';
 import Settings from '../pages/admin/Settings';
@@ -31,7 +31,6 @@ import SubAdmins from '../pages/admin/system/SubAdmins';
 import Coupons from '../pages/admin/promotions/Coupons';
 import FlashSale from '../pages/admin/promotions/FlashSale';
 import FeaturedProducts from '../pages/admin/promotions/FeaturedProducts';
-import GameManager from '../pages/admin/promotions/GameManager';
 import ReferralProgram from '../pages/admin/promotions/ReferralProgram';
 
 // Comms
@@ -92,7 +91,6 @@ const AdminRoutes = () => {
         <Route path="promotions/coupons" element={<Coupons />} />
         <Route path="promotions/flash-sale" element={<FlashSale />} />
         <Route path="promotions/featured" element={<FeaturedProducts />} />
-        {/* <Route path="promotions/games" element={<GameManager />} /> */}
         <Route path="promotions/referrals" element={<ReferralProgram />} />
 
         {/* Comms */}
@@ -107,8 +105,8 @@ const AdminRoutes = () => {
         
         {/* Finance */}
         <Route path="finance/earnings" element={<PlatformEarnings />} />
+        <Route path="finance/coins" element={<CoinsRewards />} />
         <Route path="finance/rules" element={<Rules />} />
-        <Route path="finance/tax" element={<TaxConfig />} />
         
         {/* System */}
         <Route path="system/sub-admins" element={<SubAdmins />} />

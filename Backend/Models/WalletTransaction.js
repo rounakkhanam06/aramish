@@ -15,7 +15,7 @@ const walletTransactionSchema = new mongoose.Schema({
     enum: [
       'Welcome Bonus', 'ORDER_REDEMPTION', 'REFUND', 'Redemption', 'Refund', 'Payment', 'Order Cancellation',
       'ORDER_REWARD', 'ORDER_REWARD_REDUCE',
-      'REFERRAL_REWARD', 'REFERRAL_REWARD_REVERSAL', 'GAME_REWARD', 'CHECKOUT_ROLLBACK', 'LEGACY_BALANCE_MERGE',
+      'REFERRAL_REWARD', 'REFERRAL_REWARD_REVERSAL', 'CHECKOUT_ROLLBACK', 'LEGACY_BALANCE_MERGE',
       // Refund Wallet (actual money) entries
       'REFUND_WALLET_CREDIT',          // refund paid into the Refund Wallet
       'REFUND_WALLET_DEBIT',           // Refund Wallet money used on an order
@@ -34,7 +34,7 @@ const walletTransactionSchema = new mongoose.Schema({
   // Where the coins came from / went to — used for history, auditing and reporting.
   source: {
     type: String,
-    enum: ['WELCOME_BONUS', 'REFERRAL_REWARD', 'ORDER_REWARD', 'ORDER_REDEMPTION', 'REFUND', 'GAME_REWARD', 'ADJUSTMENT'],
+    enum: ['WELCOME_BONUS', 'REFERRAL_REWARD', 'ORDER_REWARD', 'ORDER_REDEMPTION', 'REFUND', 'ADJUSTMENT'],
     default: null,
   },
   orderId: {

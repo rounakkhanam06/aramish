@@ -130,8 +130,7 @@ export const AppProvider = ({ children }) => {
         variationSku: item.variationSku || null,
         selectedColor: colorVal || null,
         selectedSize: sizeVal || null,
-        attributes: typeof attributes.toObject === 'function' ? attributes.toObject() : attributes,
-        gstPercentage: p.gstPercentage || 0
+        attributes: typeof attributes.toObject === 'function' ? attributes.toObject() : attributes
       };
     }).filter(Boolean);
   };
@@ -202,8 +201,7 @@ export const AppProvider = ({ children }) => {
   }, [user]);
 
   const [systemSettings, setSystemSettings] = useState({
-    commission: 15,
-    gstPercentage: 18
+    commission: 15
   });
 
   useEffect(() => {
@@ -598,9 +596,6 @@ export const AppProvider = ({ children }) => {
     }
   }, [user]);
 
-  // Game Modals State
-  const [activeGame, setActiveGame] = useState(null); // 'spin' | 'quiz' | 'scratch' | 'treasure' | null
-
   // Cart helper functions
   const addToCart = async (product) => {
     analytics.trackAddToCart(product);
@@ -879,8 +874,6 @@ export const AppProvider = ({ children }) => {
         setActiveTab,
         isLocationModalOpen,
         setIsLocationModalOpen,
-        activeGame,
-        setActiveGame,
         globalToast,
         setGlobalToast,
         userReels,

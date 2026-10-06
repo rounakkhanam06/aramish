@@ -491,7 +491,7 @@ const getWallet = async (req, res) => {
     };
 
     // Earned totals per source (for display/reporting); the balance itself is one number.
-    const earnedBySource = { WELCOME_BONUS: 0, REFERRAL_REWARD: 0, ORDER_REWARD: 0, GAME_REWARD: 0, REFUND: 0 };
+    const earnedBySource = { WELCOME_BONUS: 0, REFERRAL_REWARD: 0, ORDER_REWARD: 0, REFUND: 0 };
     for (const w of walletTransactions) {
       const source = walletService.getTransactionSource(w);
       if (source in earnedBySource) {

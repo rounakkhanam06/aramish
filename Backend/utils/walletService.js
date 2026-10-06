@@ -723,7 +723,7 @@ const restoreRefundWalletForOrder = async (orderId, { maxAmount = null, partial 
 
 // ─── Other credits ──────────────────────────────────────────────────────────
 
-/** Generic credit for non-reward sources (game rewards, store-credit refunds). */
+/** Generic credit for non-reward sources (store-credit refunds). */
 const creditWalletStandalone = async (params) => {
   try {
     return await runWalletTransaction((ctx) => creditWallet(params, ctx), `${params.type} credit ${params.userId}`);
@@ -743,7 +743,6 @@ const SOURCE_BY_TYPE = {
   REFERRAL_REWARD: 'REFERRAL_REWARD',
   REFERRAL_REWARD_REVERSAL: 'REFERRAL_REWARD',
   ORDER_REDEMPTION: 'ORDER_REDEMPTION',
-  GAME_REWARD: 'GAME_REWARD',
   REFUND_WALLET_CREDIT: 'REFUND',
   REFUND_WALLET_DEBIT: 'REFUND',
   REFUND_WALLET_RESTORE: 'REFUND',

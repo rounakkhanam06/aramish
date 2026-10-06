@@ -245,8 +245,6 @@ const createProduct = async (req, res) => {
       discountLabel,
       sku,
       article,
-      gstCategory,
-      gstPercentage,
       hsnCode,
       brandName,
       brandId,
@@ -375,8 +373,6 @@ const createProduct = async (req, res) => {
       descriptionImages,
       shippingSpecs: parseJsonField(req.body.shippingSpecs),
       flags: parseJsonField(req.body.flags, { topSection: false, crazyDeals: false, flashSale: false }),
-      gstCategory,
-      gstPercentage: Number(gstPercentage) || 0,
       hsnCode,
       images: imageUrls,
       brandId: brandId || undefined,
@@ -441,13 +437,13 @@ const applyProductUpdate = async (req, res) => {
 
     const fields = [
       'name', 'category', 'subCategory', 'description', 'sellingPrice',
-      'mrp', 'costPrice', 'stock', 'discountLabel', 'sku', 'article', 'gstCategory', 'gstPercentage', 'hsnCode',
+      'mrp', 'costPrice', 'stock', 'discountLabel', 'sku', 'article', 'hsnCode',
       'manufacturerInfo', 'status'
     ];
 
     fields.forEach(f => {
       if (req.body[f] !== undefined) {
-        if (['sellingPrice', 'mrp', 'costPrice', 'stock', 'gstPercentage'].includes(f)) {
+        if (['sellingPrice', 'mrp', 'costPrice', 'stock'].includes(f)) {
           product[f] = req.body[f] === '' ? undefined : Number(req.body[f]);
         } else {
           product[f] = req.body[f];
@@ -1249,8 +1245,6 @@ const resolveImageEntry = async (rawValue, zipImageMap, warningsList, rowLabel, 
   return await task;
 };
 
-const GST_PERCENTAGE_OPTIONS = [0, 5, 12, 18, 28];
-
 const bulkUploadProducts = async (req, res) => {
   try {
     const excelFile = req.files && req.files.file && req.files.file[0];
@@ -1595,18 +1589,6 @@ const bulkUploadProducts = async (req, res) => {
         continue;
       }
 
-      const gstPercentageRaw = getValue('GST Percentage');
-      let gstPercentage = 0;
-      if (gstPercentageRaw !== undefined && gstPercentageRaw !== '') {
-        const parsedGst = cleanNumber(gstPercentageRaw, 0);
-        if (!GST_PERCENTAGE_OPTIONS.includes(parsedGst)) {
-          failedCount++;
-          errorsList.push({ row: i + 1, message: `GST Percentage must be one of: ${GST_PERCENTAGE_OPTIONS.join(', ')}.` });
-          continue;
-        }
-        gstPercentage = parsedGst;
-      }
-
       // Resolve Category
       const categoryDoc = await resolveCategory(rawCategory);
       if (!categoryDoc) {
@@ -1676,7 +1658,6 @@ const bulkUploadProducts = async (req, res) => {
         tags: getValue('Tags') ? getValue('Tags').toString().split(',').map(t => t.trim()).filter(Boolean) : [],
         manufacturerInfo: getValue('Manufacturer Info') || '',
         hsnCode: getValue('HSN Code') || '',
-        gstPercentage,
         isTrending: parseBoolValue(getValue('Is Trending')),
         status: 'Approved'
       };
@@ -1792,7 +1773,7 @@ const downloadTemplate = async (req, res) => {
       'Type', 'Toe Shape', 'Care Instructions', 'Fit', 'Warranty',
       'Weight (kg)', 'Length (cm)', 'Width (cm)', 'Height (cm)',
       'Featured Collection', 'Crazy Deals', 'New Arrivals', 'Is Trending',
-      'HSN Code', 'GST Percentage', 'Brand Name', 'Tags', 'Manufacturer Info',
+      'HSN Code', 'Brand Name', 'Tags', 'Manufacturer Info',
       'Image URLs', 'Description Image URLs', 'Specifications (JSON)'
     ];
 
@@ -1817,7 +1798,7 @@ const downloadTemplate = async (req, res) => {
       'Oxford', 'Round Toe', 'Wipe with a damp cloth', 'Regular', '6 Months',
       0.8, 30, 20, 10,
       'FALSE', 'TRUE', 'FALSE', 'TRUE',
-      '6403', 5, 'Generic', 'shoes, leather, formal', 'FootCraft Mfg.',
+      '6403', 'Generic', 'shoes, leather, formal', 'FootCraft Mfg.',
       'https://example.com/img1.jpg, https://example.com/img2.jpg', '', ''
     ];
     sheet.addRow(sampleRow);
@@ -1853,7 +1834,6 @@ const downloadTemplate = async (req, res) => {
       ['Required columns', 'Name, Article Number, Category, MRP, Selling Price, Weight (kg)'],
       ['Cost Price (₹)', 'Optional. What the item costs you to source — used only to show your profit margin in the admin panel. Never shown to customers.'],
       ['Category / Sub Category', "Pick a value from the dropdown (see the 'Lists' sheet) or check 'Auto-Create Missing' in the admin panel to create new ones automatically on upload."],
-      ['GST Percentage', `Must be one of: ${GST_PERCENTAGE_OPTIONS.join(', ')}.`],
       ['TRUE/FALSE columns', 'Featured Collection, Crazy Deals, New Arrivals, Is Trending, Use Default Pricing — pick TRUE or FALSE from the dropdown.'],
       ['Image URLs', "Comma-separate multiple entries, e.g. https://.../a.jpg, https://.../b.jpg. Description Image URLs supports up to 5."],
       ['Local image files', "Instead of a URL, you can put a bare filename here (e.g. satchel-1.jpg) if you also attach a ZIP of your images when uploading (use the 'Attach Images (ZIP)' button next to Upload Excel). Filenames are matched inside the ZIP regardless of folder — just make sure each name is unique across the ZIP. URLs and local filenames can be mixed in the same cell."],
@@ -1869,7 +1849,6 @@ const downloadTemplate = async (req, res) => {
     const listsSheet = workbook.addWorksheet('Lists');
     listsSheet.getCell('A1').value = 'Categories';
     listsSheet.getCell('B1').value = 'Sub Categories';
-    listsSheet.getCell('C1').value = 'GST Percentage';
     listsSheet.getRow(1).font = { bold: true };
 
     categories.forEach((cat, idx) => {
@@ -1878,17 +1857,12 @@ const downloadTemplate = async (req, res) => {
     subcategories.forEach((sub, idx) => {
       listsSheet.getCell(`B${idx + 2}`).value = sub.subCategoryName;
     });
-    GST_PERCENTAGE_OPTIONS.forEach((pct, idx) => {
-      listsSheet.getCell(`C${idx + 2}`).value = pct;
-    });
 
     const categoryFormula = `Lists!$A$2:$A$${Math.max(2, categories.length + 1)}`;
     const subCategoryFormula = `Lists!$B$2:$B$${Math.max(2, subcategories.length + 1)}`;
-    const gstFormula = `Lists!$C$2:$C$${GST_PERCENTAGE_OPTIONS.length + 1}`;
 
     const categoryColIndex = headers.indexOf('Category') + 1;
     const subCategoryColIndex = headers.indexOf('Sub Category') + 1;
-    const gstColIndex = headers.indexOf('GST Percentage') + 1;
     const boolColIndexes = ['Featured Collection', 'Crazy Deals', 'New Arrivals', 'Is Trending'].map(h => headers.indexOf(h) + 1);
 
     for (let r = 2; r <= 1000; r++) {
@@ -1900,10 +1874,6 @@ const downloadTemplate = async (req, res) => {
       row.getCell(subCategoryColIndex).dataValidation = {
         type: 'list', allowBlank: true, formulae: [subCategoryFormula],
         showErrorMessage: true, errorTitle: 'Invalid Sub Category', error: 'Please select a Sub Category from the dropdown.'
-      };
-      row.getCell(gstColIndex).dataValidation = {
-        type: 'list', allowBlank: true, formulae: [gstFormula],
-        showErrorMessage: true, errorTitle: 'Invalid GST Percentage', error: `GST Percentage must be one of: ${GST_PERCENTAGE_OPTIONS.join(', ')}.`
       };
       boolColIndexes.forEach(colIdx => {
         row.getCell(colIdx).dataValidation = {

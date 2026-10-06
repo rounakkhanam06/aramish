@@ -101,7 +101,6 @@ export default function Layout({ children }) {
                            location.pathname.toLowerCase().startsWith('/wishlist') ||
                            location.pathname.toLowerCase().startsWith('/orders') ||
                            location.pathname.toLowerCase().startsWith('/cart') ||
-                           location.pathname.toLowerCase().startsWith('/games') ||
                            location.pathname.toLowerCase().startsWith('/crazy-deals') ||
                            location.pathname.toLowerCase().startsWith('/product') ||
                            location.pathname.toLowerCase().startsWith('/similar-products') ||

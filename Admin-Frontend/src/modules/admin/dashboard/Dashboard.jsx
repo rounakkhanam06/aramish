@@ -358,7 +358,6 @@ const Dashboard = () => {
               (stats?.recentActivities || [
                 { title: 'New Order Placed', desc: 'Order of ₹1,499 placed by Rohan Sharma', time: '5 mins ago', icon: 'ShoppingBag', color: 'text-blue-500', bg: 'bg-blue-50' },
                 { title: 'New Customer Signup', desc: 'Sneha Patel registered on the platform', time: '15 mins ago', icon: 'Users', color: 'text-green-500', bg: 'bg-green-50' },
-                { title: 'Game Played', desc: 'Amit Kumar won 150 coins in Spin the Wheel', time: '1 hour ago', icon: 'TrendingUp', color: 'text-amber-500', bg: 'bg-amber-50' },
                 { title: 'Order Delivered', desc: 'Order #ORD10243 successfully delivered', time: '2 hours ago', icon: 'CheckCircle2', color: 'text-emerald-500', bg: 'bg-emerald-50' },
               ]).map((activity, i) => {
                 const IconComponent = iconMap[activity.icon] || Clock;

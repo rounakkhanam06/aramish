@@ -29,7 +29,11 @@ messaging.onBackgroundMessage((payload) => {
     }
   };
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  // Messages with a `notification` block are already displayed by the Firebase SDK —
+  // showing them here too produced every push twice. Only data-only messages need it.
+  if (!payload.notification) {
+    self.registration.showNotification(notificationTitle, notificationOptions);
+  }
 
   if (payload.data?.type === 'FORCE_LOGOUT') {
     self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then(clients => {
