@@ -168,8 +168,12 @@ export default function CartPage() {
     return () => { cancelled = true; };
   }, [shippingPincode, cartWeight, cart.length, API_BASE]);
 
+  // Free Shipping for Customers (Admin setting): delivery is always ₹0, no address needed.
+  // The estimate above still runs to warn about undeliverable pincodes.
+  const freeShipping = systemSettings?.freeShippingEnabled !== false;
   const hasShippingEstimate = shippingEstimate.status === 'ok';
-  const shippingCharge = hasShippingEstimate ? shippingEstimate.charge : 0;
+  const shippingCharge = !freeShipping && hasShippingEstimate ? shippingEstimate.charge : 0;
+  const shippingKnown = freeShipping || hasShippingEstimate;
 
   const handleApplyCustomQty = () => {
     const qty = parseInt(customQtyInput);
@@ -482,7 +486,9 @@ export default function CartPage() {
                 <div>
                   <div className="flex justify-between">
                     <span>Shipping Fee</span>
-                    {shippingEstimate.status === 'loading' ? (
+                    {freeShipping ? (
+                      <span className="text-emerald-600 font-bold">FREE</span>
+                    ) : shippingEstimate.status === 'loading' ? (
                       <span className="text-slate-400">Calculating...</span>
                     ) : hasShippingEstimate ? (
                       shippingCharge > 0
@@ -492,7 +498,7 @@ export default function CartPage() {
                       <span className="text-slate-500">Calculated at checkout</span>
                     )}
                   </div>
-                  {hasShippingEstimate && (
+                  {!freeShipping && hasShippingEstimate && (
                     <p className="text-[10px] text-slate-400 font-medium mt-0.5">Estimated for pincode {shippingPincode}</p>
                   )}
                   {shippingEstimate.status === 'unavailable' && (
@@ -501,7 +507,7 @@ export default function CartPage() {
                 </div>
 
                 <div className="border-t border-white/10 pt-3 flex justify-between text-base font-black text-[#02006c]">
-                  <span>{hasShippingEstimate ? 'Total Amount' : 'Total (excl. shipping)'}</span>
+                  <span>{shippingKnown ? 'Total Amount' : 'Total (excl. shipping)'}</span>
                   <span>₹{Number(finalTotal).toFixed(2)}</span>
                 </div>
                 <p className="-mt-2 text-right text-[10px] font-semibold text-slate-500">Inclusive of all taxes (GST)</p>

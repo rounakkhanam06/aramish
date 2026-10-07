@@ -245,7 +245,7 @@ exports.webhookReceiver = async (req, res) => {
         const gstAmount = 0;
 
         // Estimate Delivery
-        let deliveryCharge = 0;
+        let deliveryCharge = 0; // Shiprocket freight for this shipment (our cost)
         let etd = '';
         try {
           const pickupPincode = process.env.SHIPROCKET_PICKUP_PINCODE || '201301';
@@ -271,7 +271,11 @@ exports.webhookReceiver = async (req, res) => {
         const prepaidDiscountAmount = systemConfig && systemConfig.prepaidDiscountAmount !== undefined ? systemConfig.prepaidDiscountAmount : 100;
         const prepaidDiscount = isPrepaidDiscountEnabled ? prepaidDiscountAmount : 0;
 
-        const finalCalculatedTotal = Math.max(0, calculatedSubtotal - discountAmount + gstAmount + platformCommission + deliveryCharge - prepaidDiscount);
+        // Free Shipping for Customers: bill ₹0 delivery; the freight stays our cost
+        const freeShipping = !systemConfig || systemConfig.freeShippingEnabled !== false;
+        const billedDeliveryCharge = freeShipping ? 0 : deliveryCharge;
+
+        const finalCalculatedTotal = Math.max(0, calculatedSubtotal - discountAmount + gstAmount + platformCommission + billedDeliveryCharge - prepaidDiscount);
 
         // Create Order
         newOrder = await Order.create({
@@ -294,7 +298,7 @@ exports.webhookReceiver = async (req, res) => {
           discountAmount,
           gstAmount,
           platformCommission,
-          deliveryCharge,
+          deliveryCharge: billedDeliveryCharge,
           prepaidDiscount,
           // Prepaid shipment: Shiprocket charges us its freight only (no COD fee)
           shippingCost: deliveryCharge,

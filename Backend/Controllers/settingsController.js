@@ -53,7 +53,7 @@ const updateSettings = async (req, res) => {
       'crazyDealsHeaderName', 'showCrazyDealsTimer', 'crazyDealsDuration',
       'featuredCollectionHeaderName', 'showFeaturedCollectionTimer', 'featuredCollectionDuration',
       'newArrivalsHeaderName', 'showNewArrivalsTimer', 'newArrivalsDuration',
-      'codChargeEnabled', 'codChargeAmount', 'prepaidDiscountEnabled', 'prepaidDiscountAmount', 'welcomeBonusEnabled'
+      'codChargeEnabled', 'codChargeAmount', 'prepaidDiscountEnabled', 'prepaidDiscountAmount', 'welcomeBonusEnabled', 'freeShippingEnabled'
     ];
 
     fields.forEach(f => {
@@ -65,7 +65,7 @@ const updateSettings = async (req, res) => {
           'referralRewardPerOrder', 'orderRewardPercentage', 'orderRewardMaxCap', 'walletRedemptionPercentage'
         ].includes(f)) {
           config[f] = Number(req.body[f]);
-        } else if (['rewardCoinsEnabled', 'marqueeEnabled', 'walletEnabled', 'referralEnabled', 'showCrazyDealsTimer', 'showFeaturedCollectionTimer', 'showNewArrivalsTimer', 'codChargeEnabled', 'prepaidDiscountEnabled', 'welcomeBonusEnabled'].includes(f)) {
+        } else if (['rewardCoinsEnabled', 'marqueeEnabled', 'walletEnabled', 'referralEnabled', 'showCrazyDealsTimer', 'showFeaturedCollectionTimer', 'showNewArrivalsTimer', 'codChargeEnabled', 'prepaidDiscountEnabled', 'welcomeBonusEnabled', 'freeShippingEnabled'].includes(f)) {
           config[f] = req.body[f] === true || req.body[f] === 'true';
         } else {
           config[f] = req.body[f];

@@ -20,6 +20,7 @@ const ReturnRequest = require('../Models/ReturnRequest');
 const SystemConfig = require('../Models/SystemConfig');
 const WalletTransaction = require('../Models/WalletTransaction');
 const { createOrder } = require('../Controllers/orderController');
+const { estimateShipping } = require('../Controllers/shiprocketController');
 const { getFinanceBreakdown } = require('../utils/financeService');
 const { getCoinsOverview } = require('../utils/coinsService');
 
@@ -64,7 +65,8 @@ beforeEach(async () => {
     returnWindowDays: 2, commission: 10,
     codChargeEnabled: true, codChargeAmount: 150,
     prepaidDiscountEnabled: true, prepaidDiscountAmount: 100,
-    walletRedemptionPercentage: 25
+    walletRedemptionPercentage: 25,
+    freeShippingEnabled: false // paid-shipping scenarios; the free-shipping default is tested below
   });
   shiprocketService.checkServiceability.mockResolvedValue({ data: { available_courier_companies: COURIERS } });
   shiprocketService.createShiprocketOrder.mockResolvedValue({ order_id: 111, shipment_id: 222 });
@@ -192,4 +194,54 @@ test('legacy data: separate referral coins, orders without a fee breakdown, and 
   expect(f.payments.walletCoins).toBe(150);
   expect(f.expenses.coinsRedeemed).toBe(150);
   f.checks.forEach(chk => expect({ key: chk.key, ok: chk.ok }).toEqual({ key: chk.key, ok: true }));
+});
+
+describe('Free Shipping for Customers (Admin setting, on by default)', () => {
+  beforeEach(async () => {
+    // Back to the schema default (enabled)
+    await SystemConfig.updateOne({}, { $unset: { freeShippingEnabled: 1 } });
+  });
+
+  test('customers pay ₹0 delivery; Shiprocket freight and COD fee are tracked as our expense, and finance reconciles', async () => {
+    expect((await SystemConfig.findOne({})).freeShippingEnabled).toBe(true);
+    const product = await Product.create({ name: 'Shoe', category: 'Shoes', sellingPrice: 1000, mrp: 1200, costPrice: 600, stock: 10, sku: 'FS-FREE', article: 'FA-FREE', shippingSpecs: { weight: 0.5 }, status: 'Approved' });
+
+    const cod = await checkout(await makeUser(), product, { paymentMethod: 'COD' });
+    expect(cod.deliveryCharge).toBe(0);
+    expect(cod.total).toBe(1000 + 10 + 150); // product + platform fee + Admin COD charge — no shipping
+    expect(cod.shippingCost).toBe(50);
+    expect(cod.shiprocketCodFee).toBe(30);
+
+    const prepaid = await checkout(await makeUser(), product, { paymentMethod: 'Online' });
+    expect(prepaid.deliveryCharge).toBe(0);
+    expect(prepaid.total).toBe(1000 + 10 - 100);
+    expect(prepaid.shippingCost).toBe(50);
+    expect(prepaid.shiprocketCodFee).toBe(0);
+
+    const f = await getFinanceBreakdown();
+    expect(f.income.deliveryCharges).toBe(0);
+    expect(f.expenses).toMatchObject({ shiprocketFreight: 100, shiprocketCodFees: 30 });
+    expect(f.shipping).toMatchObject({ freeShippingOrders: 2, paidShippingOrders: 0, freightAbsorbedOnFreeShipping: 100, deliveryCharged: 0, margin: -100 });
+    expect(f.cod).toMatchObject({ codChargesBilled: 150, shiprocketCodFees: 30, margin: 120 });
+    // COD: 1160 − 50 freight − 30 COD fee = 1080 | Prepaid: 910 − 50 freight = 860
+    expect(f.results.earningsBeforeProductCost).toBe(1080 + 860);
+    f.checks.forEach(chk => expect({ key: chk.key, ok: chk.ok }).toEqual({ key: chk.key, ok: true }));
+  });
+
+  test('the shipping estimate shows ₹0 but still rejects undeliverable pincodes; switching the setting off restores charges', async () => {
+    const res = mockRes();
+    await estimateShipping({ body: { deliveryPincode: '282002', weight: 0.5, cod: 1 } }, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ deliveryCharge: 0, freeShipping: true });
+
+    shiprocketService.checkServiceability.mockResolvedValueOnce({ data: { available_courier_companies: [] } });
+    const none = mockRes();
+    await estimateShipping({ body: { deliveryPincode: '999999', weight: 0.5, cod: 0 } }, none);
+    expect(none.statusCode).toBe(400);
+
+    await SystemConfig.updateOne({}, { freeShippingEnabled: false });
+    const paid = mockRes();
+    await estimateShipping({ body: { deliveryPincode: '282002', weight: 0.5, cod: 0 } }, paid);
+    expect(paid.body).toMatchObject({ deliveryCharge: 50, freeShipping: false });
+  });
 });

@@ -12,6 +12,8 @@
  *    customer's own (previously refunded) money, so it counts like cash.
  *  - Shiprocket charges us its freight and, on COD shipments with cash to collect, its own
  *    COD fee. Both are expenses; neither is part of the customer's bill.
+ *  - With "Free Shipping for Customers" on, the delivery charge billed is ₹0 and the whole
+ *    Shiprocket freight is absorbed — it still appears as an expense on every order.
  *  - Legacy GST collected is a tax liability, not earnings.
  *  - Cancelled orders earn nothing; a cancelled order that was already shipped (has an AWB)
  *    still cost us its forward freight (RTO).
@@ -330,11 +332,19 @@ const getFinanceBreakdown = async ({ from = null, orderPage = 1, orderPageSize =
     prepaidDiscountGiven: S(prepaidRows, 'prepaidDiscount'),
     collected: S(prepaidRows, 'cash')
   };
+  // Free Shipping for Customers: billed ₹0 delivery with a recorded Shiprocket cost (we paid the
+  // freight). Older orders with no delivery charge and no recorded cost are counted separately.
+  const freeShippingRows = active.filter(r => r.delivery === 0 && r.costSource === 'recorded');
+  const paidShippingRows = active.filter(r => r.delivery > 0);
   const shipping = {
     deliveryCharged: income.deliveryCharges,
     shiprocketFreight: expenses.shiprocketFreight,
     rtoFreight: expenses.rtoFreight,
-    margin: roundMoney(income.deliveryCharges - expenses.shiprocketFreight - expenses.rtoFreight)
+    margin: roundMoney(income.deliveryCharges - expenses.shiprocketFreight - expenses.rtoFreight),
+    freeShippingOrders: freeShippingRows.length,
+    paidShippingOrders: paidShippingRows.length,
+    olderOrdersWithoutDeliveryCharge: active.length - freeShippingRows.length - paidShippingRows.length,
+    freightAbsorbedOnFreeShipping: S(freeShippingRows, 'shiprocketFreight')
   };
 
   // Wallet ledgers

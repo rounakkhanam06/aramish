@@ -59,7 +59,12 @@ exports.estimateShipping = async (req, res) => {
         if (!best) {
             return res.status(400).json({ success: false, message: `Delivery is not available to pincode ${deliveryPincode}${Number(cod) === 1 ? ' with Cash on Delivery' : ''}.` });
         }
-        res.status(200).json({ success: true, deliveryCharge: best.charge, etd: best.courier.etd || '' });
+        // Free Shipping for Customers: the customer pays ₹0 (Shiprocket freight is our cost);
+        // the quote above still confirms the pincode is deliverable.
+        const SystemConfig = require('../Models/SystemConfig');
+        const config = await SystemConfig.findOne({}).select('freeShippingEnabled').lean();
+        const freeShipping = !config || config.freeShippingEnabled !== false;
+        res.status(200).json({ success: true, deliveryCharge: freeShipping ? 0 : best.charge, freeShipping, etd: best.courier.etd || '' });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

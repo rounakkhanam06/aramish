@@ -251,7 +251,10 @@ const createOrderAttempt = async (req, res) => {
     const platformCommission = systemConfig && systemConfig.commission !== undefined ? systemConfig.commission : 15;
     const gstAmount = 0;
 
-    const calculatedDeliveryCharge = bestCourier.charge;
+    // Free Shipping for Customers (Admin setting, on by default): the customer is billed ₹0 for
+    // delivery and Shiprocket's freight is our expense (recorded below as shippingCost).
+    const freeShipping = !systemConfig || systemConfig.freeShippingEnabled !== false;
+    const calculatedDeliveryCharge = freeShipping ? 0 : bestCourier.charge;
 
     const isCodChargeEnabled = systemConfig && systemConfig.codChargeEnabled !== undefined ? systemConfig.codChargeEnabled : true;
     const codChargeAmount = systemConfig && systemConfig.codChargeAmount !== undefined ? systemConfig.codChargeAmount : 150;

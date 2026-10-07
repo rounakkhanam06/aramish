@@ -27,6 +27,7 @@ const Settings = () => {
   const [codChargeEnabled, setCodChargeEnabled] = useState(true);
   const [codChargeAmount, setCodChargeAmount] = useState(150);
   const [prepaidDiscountEnabled, setPrepaidDiscountEnabled] = useState(true);
+  const [freeShippingEnabled, setFreeShippingEnabled] = useState(true);
   const [prepaidDiscountAmount, setPrepaidDiscountAmount] = useState(100);
 
   // Coins settings states
@@ -109,6 +110,7 @@ const Settings = () => {
         setCodChargeEnabled(s.codChargeEnabled ?? true);
         setCodChargeAmount(s.codChargeAmount ?? 150);
         setPrepaidDiscountEnabled(s.prepaidDiscountEnabled ?? true);
+        setFreeShippingEnabled(s.freeShippingEnabled ?? true);
         setPrepaidDiscountAmount(s.prepaidDiscountAmount ?? 100);
         setWelcomeBonusEnabled(s.welcomeBonusEnabled ?? true);
         setWelcomeBonusCoins(s.welcomeBonusCoins ?? '');
@@ -234,6 +236,7 @@ const Settings = () => {
             codChargeEnabled,
             codChargeAmount: Number(codChargeAmount),
             prepaidDiscountEnabled,
+            freeShippingEnabled,
             prepaidDiscountAmount: Number(prepaidDiscountAmount)
           })
         });
@@ -521,6 +524,25 @@ const Settings = () => {
                           className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
                           required 
                         />
+                      </div>
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-50">
+                      <h3 className="text-sm font-bold text-slate-900 font-montserrat uppercase mb-4">Shipping</h3>
+                      <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 flex items-start justify-between gap-6">
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-widest">Free Shipping for Customers</h4>
+                          <p className="text-[10px] text-slate-500 mt-1 leading-relaxed max-w-xl">
+                            {freeShippingEnabled
+                              ? 'On: customers pay ₹0 delivery everywhere (product page, cart, checkout). Shiprocket freight is paid from your Shiprocket account and tracked as an expense under Finance → Earnings.'
+                              : 'Off: customers are charged the live Shiprocket delivery charge at checkout.'}
+                            {' '}Pincode serviceability is checked either way. Applies to new orders only.
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                          <input type="checkbox" className="sr-only peer" checked={freeShippingEnabled} onChange={(e) => setFreeShippingEnabled(e.target.checked)} />
+                          <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                        </label>
                       </div>
                     </div>
 

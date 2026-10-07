@@ -71,7 +71,8 @@ afterAll(stopTestDb);
 beforeEach(async () => {
   await clearTestDb();
   jest.clearAllMocks();
-  await SystemConfig.create({ returnWindowDays: 2, commission: 0, codChargeEnabled: false, prepaidDiscountEnabled: false });
+  // Paid-shipping pricing (Free Shipping for Customers is covered in financeService.test.js)
+  await SystemConfig.create({ returnWindowDays: 2, commission: 0, codChargeEnabled: false, prepaidDiscountEnabled: false, freeShippingEnabled: false });
   shiprocketService.checkServiceability.mockResolvedValue({ data: { available_courier_companies: COURIERS } });
   shiprocketService.createShiprocketOrder.mockResolvedValue({ order_id: 111, shipment_id: 222 });
 });

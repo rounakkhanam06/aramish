@@ -147,7 +147,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await clearTestDb();
-  await SystemConfig.create({ returnWindowDays: 7 });
+  // Paid-shipping pricing (Free Shipping for Customers is covered in financeService.test.js)
+  await SystemConfig.create({ returnWindowDays: 7, freeShippingEnabled: false });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

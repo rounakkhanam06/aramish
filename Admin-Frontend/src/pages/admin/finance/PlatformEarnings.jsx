@@ -325,7 +325,11 @@ const PlatformEarnings = () => {
               <Line label="Collected online" value={prepaid.collected} kind="total" />
             </Card>
 
-            <Card title="Shipping" icon={Truck}>
+            <Card title="Shipping" icon={Truck}
+              note={shipping.freeShippingOrders > 0 ? `${shipping.freeShippingOrders} order(s) had free shipping — their Shiprocket freight (${inr(shipping.freightAbsorbedOnFreeShipping)}) was paid by the business. A negative margin here is that cost.` : undefined}>
+              <CountLine label="Free-shipping orders" value={shipping.freeShippingOrders} />
+              <CountLine label="Paid-shipping orders" value={shipping.paidShippingOrders} />
+              {shipping.olderOrdersWithoutDeliveryCharge > 0 && <CountLine label="Older orders (no delivery charge recorded)" value={shipping.olderOrdersWithoutDeliveryCharge} />}
               <Line label="Delivery charged to customers" value={shipping.deliveryCharged} />
               <Line label="Shiprocket freight" value={shipping.shiprocketFreight} kind="less" />
               <Line label="RTO freight" value={shipping.rtoFreight} kind="less" />

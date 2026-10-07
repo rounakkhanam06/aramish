@@ -11,6 +11,9 @@ const systemConfigSchema = new mongoose.Schema({
   codChargeAmount: { type: Number, default: 150 },
   prepaidDiscountEnabled: { type: Boolean, default: true },
   prepaidDiscountAmount: { type: Number, default: 100 },
+  // Free Shipping for Customers: delivery is billed at ₹0 and the business pays Shiprocket's
+  // freight from its own account (recorded per order as Order.shippingCost for finance).
+  freeShippingEnabled: { type: Boolean, default: true },
   returnWindowDays: { type: Number, default: 2 },
   // ---- Wallet / reward rules (read ONLY through utils/walletService.getWalletConfig) ----
   welcomeBonusEnabled: { type: Boolean, default: true },
