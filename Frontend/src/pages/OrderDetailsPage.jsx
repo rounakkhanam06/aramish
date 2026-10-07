@@ -1895,19 +1895,24 @@ export default function OrderDetailsPage() {
               {returnSelectedItems.length > 0 && (() => {
                 const baseRefund = returnSelectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
                 let estimatedRefundText = `₹${baseRefund.toLocaleString()}`;
-                
-                if (refundMethodOption === 'Wallet') {
-                  const isFullReturn = globalOrder && returnSelectedItems.length === globalOrder.items.length && returnSelectedItems.every(rItem => {
-                    const oItem = globalOrder.items.find(i => (i.productId._id || i.productId) === rItem.productId);
-                    return oItem && rItem.quantity === oItem.quantity;
-                  });
-                  
-                  if (isFullReturn) {
-                    estimatedRefundText = `₹${globalOrder.total.toLocaleString()} (Full Refund)`;
-                  } else {
-                    const proportionalGst = globalOrder && globalOrder.subtotal > 0 ? (baseRefund / globalOrder.subtotal) * (globalOrder.gstAmount || 0) : 0;
-                    estimatedRefundText = `₹${Math.round(baseRefund + proportionalGst).toLocaleString()}`;
+
+                const isFullReturn = globalOrder && returnSelectedItems.length === globalOrder.items.length && returnSelectedItems.every(rItem => {
+                  const oItem = globalOrder.items.find(i => (i.productId._id || i.productId) === rItem.productId);
+                  return oItem && rItem.quantity === oItem.quantity;
+                });
+
+                if (refundMethodOption === 'Wallet' && isFullReturn) {
+                  estimatedRefundText = `₹${globalOrder.total.toLocaleString()} (Full Refund)`;
+                } else if (!isFullReturn && globalOrder && globalOrder.subtotal > 0) {
+                  // Partial return: mirrors the server — the returned items' share of the coupon and
+                  // prepaid discounts is deducted, capped at the money actually paid.
+                  const orderDiscounts = (globalOrder.discountAmount || 0) + (globalOrder.prepaidDiscount || 0);
+                  let partialRefund = Math.max(0, baseRefund - (baseRefund / globalOrder.subtotal) * orderDiscounts);
+                  if (refundMethodOption === 'Wallet') {
+                    partialRefund += (baseRefund / globalOrder.subtotal) * (globalOrder.gstAmount || 0);
                   }
+                  const moneyPaid = (globalOrder.total || 0) + (globalOrder.refundWalletUsed || 0);
+                  estimatedRefundText = `₹${Math.round(Math.min(partialRefund, moneyPaid)).toLocaleString()}`;
                 }
                 
                 return (

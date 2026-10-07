@@ -111,19 +111,30 @@ const bookReturnPickup = async (returnRequest) => {
 };
 
 // Most the customer can get back for `returnItems` (prices taken from the order, never from the
-// request): the items' value; for a Wallet refund also their share of GST, plus delivery and
-// platform fee on a full return. Never more than the money actually paid (cash/online + Refund
-// Wallet) — coins redeemed on the order are non-returnable.
+// request): the items' value, less their share of the coupon and prepaid discounts on a partial
+// return; for a Wallet refund also their share of GST, plus delivery and platform fee on a full
+// return. Never more than the money actually paid (cash/online + Refund Wallet) — coins redeemed
+// on the order are non-returnable.
 const calculateEligibleRefund = (order, returnItems, refundMethod) => {
   const itemsValue = returnItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  // Return lines saved before they recorded a variant match their order line by product alone.
+  const returnedQty = (orderItem) => returnItems
+    .filter(r => String(r.productId) === String(orderItem.productId) &&
+      (!r.variationSku || r.variationSku === orderItem.variationSku))
+    .reduce((sum, r) => sum + r.quantity, 0);
+  const isFullReturn = order.items.every(orderItem => returnedQty(orderItem) === orderItem.quantity);
+
   let eligible = itemsValue;
+  // Partial return: the order-level coupon and prepaid discounts were spread over every item, so
+  // the returned items only give back their discounted share. (A full return is already bounded
+  // by the money-paid cap below.)
+  if (!isFullReturn && order.subtotal > 0) {
+    const orderDiscounts = (order.discountAmount || 0) + (order.prepaidDiscount || 0);
+    const discountShare = (itemsValue / order.subtotal) * orderDiscounts;
+    eligible = Math.max(0, itemsValue - discountShare);
+  }
+
   if (refundMethod === 'Wallet') {
-    // Return lines saved before they recorded a variant match their order line by product alone.
-    const returnedQty = (orderItem) => returnItems
-      .filter(r => String(r.productId) === String(orderItem.productId) &&
-        (!r.variationSku || r.variationSku === orderItem.variationSku))
-      .reduce((sum, r) => sum + r.quantity, 0);
-    const isFullReturn = order.items.every(orderItem => returnedQty(orderItem) === orderItem.quantity);
     const proportionalGst = (order.subtotal && order.subtotal > 0) ? (itemsValue / order.subtotal) * (order.gstAmount || 0) : 0;
     eligible += proportionalGst;
     if (isFullReturn) {
