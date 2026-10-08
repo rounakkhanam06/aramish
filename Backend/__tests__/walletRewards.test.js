@@ -142,7 +142,7 @@ describe('Pure money calculations (integer paise, floor)', () => {
     const eligible = walletService.calculateEligibleProductValue([{ price: 333.33, quantity: 3 }]);
     expect(eligible).toBe(999.99); // plain JS: 333.33 * 3 === 999.9899999999999
     expect(walletService.calculateEligibleProductValue([{ price: 0.1, quantity: 1 }, { price: 0.2, quantity: 1 }])).toBe(0.3);
-    expect(walletService.calculateMaxRedeemable({ availableBalance: 1000, eligibleProductValue: 999.99, walletRedemptionPercentage: 25 })).toBe(249.99);
+    expect(walletService.calculateMaxRedeemable({ availableBalance: 1000, eligibleProductValue: 999.99, walletRedemptionPercentage: 25 })).toBe(250); // ₹249.9975 limit -> 250 whole coins
     expect(walletService.calculateOrderRewardCoins(0.29 * 1000, { orderRewardPercentage: 10, orderRewardMaxCap: 400 })).toBe(29);
   });
 });
@@ -199,14 +199,14 @@ describe('Checkout (createOrder) — selling price, 25% redemption, single walle
     });
   });
 
-  test('14. decimal checkout: ₹333.33 x 3 with ₹1,000 wallet -> ₹249.99 redeemed, ₹750.01 left, 99 coins earned', async () => {
+  test('14. decimal checkout: ₹333.33 x 3 with ₹1,000 wallet -> 250 whole coins redeemed, ₹750 left, 99 coins earned', async () => {
     const user = await makeUser({ walletBalance: 1000 });
     const product = await makeProduct({ sellingPrice: 333.33, mrp: 400 });
     const res = await checkout(user, product, { quantity: 3 });
     expect(res.body.order.eligibleProductValue).toBe(999.99);
-    expect(res.body.order.walletUsed).toBe(249.99);
+    expect(res.body.order.walletUsed).toBe(250);
     expect(res.body.order.rewardCoinsExpected).toBe(99);
-    expect(await balance(user._id)).toBe(750.01);
+    expect(await balance(user._id)).toBe(750);
   });
 
   test('locked reward coins cannot be redeemed', async () => {

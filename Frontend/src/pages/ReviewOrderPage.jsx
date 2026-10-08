@@ -45,7 +45,7 @@ export default function ReviewOrderPage() {
   const [walletPreview, setWalletPreview] = useState(null);
   
   // Payment states
-  const [paymentMethod, setPaymentMethod] = useState('COD'); // 'COD' | 'ONLINE'
+  const [paymentMethod, setPaymentMethod] = useState('ONLINE'); // 'COD' | 'ONLINE'
   const [isPaymentDropdownOpen, setIsPaymentDropdownOpen] = useState(false);
   const [isPlacingOrder, setIsPlacingOrderState] = useState(false);
   // The ref blocks a second tap before React re-renders (state alone lets a fast double tap through)
@@ -543,7 +543,7 @@ export default function ReviewOrderPage() {
   const walletBalance = walletPreview?.walletBalance ?? 0;
   const availableWalletBalance = walletPreview?.availableBalance ?? 0;
   const lockedRewardCoins = walletPreview?.lockedBalance ?? 0;
-  const walletUsedAmount = redeemWallet ? Math.min(walletPreview?.maxRedeemable ?? 0, grandTotalBeforeCoins) : 0;
+  const walletUsedAmount = redeemWallet ? Math.min(walletPreview?.maxRedeemable ?? 0, Math.floor(grandTotalBeforeCoins)) : 0; // whole coins only
 
   // Refund Wallet (actual money, separate from coins): no % limit — the backend applies it
   // after the coins, up to whatever is still payable.
@@ -785,7 +785,7 @@ export default function ReviewOrderPage() {
                 {redeemWallet && (
                   <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-600">
                     <div>
-                      <p>Coins to use: <span className="text-emerald-600">₹{walletUsedAmount.toFixed(2)}</span></p>
+                      <p>Coins to use: <span className="text-emerald-600">{walletUsedAmount} coins (₹{walletUsedAmount})</span></p>
                     </div>
                     <div>
                       <p>Remaining Wallet: <span className="text-slate-700">₹{Math.max(0, walletBalance - walletUsedAmount).toFixed(2)}</span></p>
@@ -974,7 +974,7 @@ export default function ReviewOrderPage() {
             {redeemWallet && walletUsedAmount > 0 && (
               <div className="flex justify-between items-center text-xs font-bold text-emerald-600">
                 <span>Coins (Main Wallet)</span>
-                <span>- ₹{Number(walletUsedAmount).toFixed(2)}</span>
+                <span>- ₹{walletUsedAmount}</span>
               </div>
             )}
             {redeemRefundWallet && refundWalletUsedAmount > 0 && (
@@ -985,7 +985,7 @@ export default function ReviewOrderPage() {
             )}
             <div className="border-t border-white/10 pt-3.5 flex justify-between items-center text-base font-black text-[#02006c]">
               <span>Net Payable</span>
-              <span>₹{Number(grandTotal).toFixed(2)}</span>
+              <span>₹{Number.isInteger(grandTotal) ? grandTotal : Number(grandTotal).toFixed(2)}</span>
             </div>
             <p className="-mt-3 text-right text-[10px] font-semibold text-slate-500">Inclusive of all taxes (GST)</p>
 

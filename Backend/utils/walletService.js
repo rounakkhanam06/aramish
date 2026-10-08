@@ -124,15 +124,17 @@ const calculateOrderRewardCoins = (eligibleProductValue, { orderRewardPercentage
 };
 
 /**
- * Maximum coins redeemable on one order:
+ * Maximum coins redeemable on one order, in whole coins (no paise):
  * min(available balance, redemption% of eligible product value[, payable total]).
- * Floored to the paisa so the limit is never exceeded.
+ * The % limit is rounded UP to the next whole coin so the amount left to pay is a whole
+ * rupee (limit ₹874.50 on ₹3408 -> 875 coins, ₹2533 payable); the balance and payable
+ * total are floored so neither is ever exceeded.
  */
 const calculateMaxRedeemable = ({ availableBalance, eligibleProductValue, walletRedemptionPercentage, payableTotal = null }) => {
   const limitPaise = Math.floor((toPaise(eligibleProductValue) * toBasisPoints(walletRedemptionPercentage)) / 10000);
-  const candidates = [Math.floor(Number(availableBalance) * 100 + 1e-6), limitPaise];
-  if (payableTotal !== null && payableTotal !== undefined) candidates.push(toPaise(payableTotal));
-  return fromPaise(Math.max(0, Math.min(...candidates)));
+  const candidates = [Math.floor(Number(availableBalance) + 1e-6), Math.ceil(limitPaise / 100)];
+  if (payableTotal !== null && payableTotal !== undefined) candidates.push(Math.floor(toPaise(payableTotal) / 100));
+  return Math.max(0, Math.min(...candidates));
 };
 
 // ─── Transaction runner ─────────────────────────────────────────────────────
