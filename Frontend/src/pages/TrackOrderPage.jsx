@@ -3,12 +3,31 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, CheckCircle2, Package, Truck, Home, MapPin, Loader2, AlertCircle } from 'lucide-react';
 import toast from '../utils/toast';
 
+// Shiprocket sends "YYYY-MM-DD HH:mm:ss", which Safari/iOS can't parse with new Date().
+const parseCourierDate = (value) => {
+  if (value instanceof Date) return value;
+  const d = new Date(typeof value === 'string' ? value.replace(' ', 'T') : value);
+  return isNaN(d) ? new Date(value) : d;
+};
+
+// Oldest-first courier scans, with back-to-back repeats of the same status at the same
+// hub collapsed into the latest one (couriers re-scan "In Transit" at every sort).
+const toChronologicalScans = (scans, getStatus, getLocation, getDate) => {
+  const sorted = [...scans].sort((a, b) => parseCourierDate(getDate(a)) - parseCourierDate(getDate(b)));
+  return sorted.filter((scan, i) => {
+    const next = sorted[i + 1];
+    if (!next) return true;
+    const same = (fn) => String(fn(scan) || '').trim().toUpperCase() === String(fn(next) || '').trim().toUpperCase();
+    return !(same(getStatus) && same(getLocation));
+  });
+};
+
 export default function TrackOrderPage() {
   const navigate = useNavigate();
   const { orderId } = useParams();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [exchange, setExchange] = useState(null);
+  const [exchangeRequest, setExchange] = useState(null);
   const [returnRequest, setReturnRequest] = useState(null);
 
   const [liveTracking, setLiveTracking] = useState(null);
@@ -88,6 +107,11 @@ export default function TrackOrderPage() {
       <button onClick={() => navigate(-1)} className="text-[#02006c] underline mt-2 text-sm">Go Back</button>
     </div>;
   }
+
+  // A rejected/cancelled/failed exchange is history once the customer has filed a return after it;
+  // the return is then what this page tracks.
+  const exchange = exchangeRequest && !(['Rejected', 'Cancelled', 'Failed'].includes(exchangeRequest.status) && returnRequest)
+    ? exchangeRequest : null;
 
   const isDelivered = ['Delivered', 'Return Requested', 'Refunded', 'Partially Refunded'].includes(order.status);
   const isCancelled = order.status === 'Cancelled' && !returnRequest;
@@ -217,7 +241,7 @@ export default function TrackOrderPage() {
         id: `exchange_${idx}`,
         title: step.title,
         desc: step.desc,
-        date: info.dateText,
+        date: info.completed ? info.dateText : (isCompleted ? '' : info.dateText),
         icon: step.icon,
         status: isCompleted ? 'completed' : (isActive ? 'active' : 'pending')
       };
@@ -228,26 +252,27 @@ export default function TrackOrderPage() {
       { id: 'cancelled', title: 'Order Cancelled', desc: 'Your order has been cancelled', date: order.updatedAt ? new Date(order.updatedAt).toLocaleString() : '', icon: AlertCircle, status: 'active' }
     ];
   } else if (liveTracking && liveTracking.activities && liveTracking.activities.length > 0) {
-    // Merge live tracking data
+    // Merge live tracking data. Shiprocket returns scans newest-first, so put them in
+    // chronological order to read top-to-bottom after "Order Placed".
     steps = [
       { id: 'placed', title: 'Order Placed', desc: 'We have received your order', date: new Date(order.createdAt).toLocaleString(), icon: CheckCircle2, status: 'completed' },
-      ...liveTracking.activities.map((history, idx) => ({
+      ...toChronologicalScans(liveTracking.activities, a => a.activity, a => a.location, a => a.date).map((history, idx) => ({
         id: `live_${idx}`,
         title: history.activity,
         desc: history.location || 'Update from courier',
-        date: new Date(history.date).toLocaleString(),
+        date: parseCourierDate(history.date).toLocaleString(),
         icon: history.activity.toUpperCase().includes('DELIVERED') ? Home : (history.activity.toUpperCase().includes('OUT FOR DELIVERY') ? MapPin : Truck),
         status: 'completed'
       }))
     ];
-  } else if (trackingHistory.length > 0 && !returnRequest && !['Return Requested', 'Refunded', 'Partially Refunded'].includes(order.status)) {
+  } else if (trackingHistory.length > 0) {
     steps = [
       { id: 'placed', title: 'Order Placed', desc: 'We have received your order', date: new Date(order.createdAt).toLocaleString(), icon: CheckCircle2, status: 'completed' },
-      ...trackingHistory.map((history, idx) => ({
+      ...toChronologicalScans(trackingHistory, h => h.status, h => h.location, h => h.timestamp).map((history, idx) => ({
         id: `hist_${idx}`,
         title: history.status,
         desc: history.activity || history.location || 'Update from courier',
-        date: new Date(history.timestamp).toLocaleString(),
+        date: parseCourierDate(history.timestamp).toLocaleString(),
         icon: history.status.toUpperCase().includes('DELIVERED') ? Home : (history.status.toUpperCase().includes('OUT FOR DELIVERY') ? MapPin : Truck),
         status: 'completed'
       }))
@@ -260,49 +285,35 @@ export default function TrackOrderPage() {
       { id: 4, title: 'Out for Delivery', desc: 'Delivery partner is on the way', date: '', icon: MapPin, status: isDelivered ? 'completed' : (order.status === 'Out for Delivery' ? 'active' : 'pending') },
       { id: 5, title: 'Delivered', desc: 'Package arrived', date: '', icon: Home, status: isDelivered ? 'completed' : 'pending' },
     ];
+  }
 
-    if (returnRequest || ['Return Requested', 'Refunded', 'Partially Refunded'].includes(order.status)) {
-      const rStatus = returnRequest?.status || order.status;
-      const isReqCompleted = true;
-      const isAppCompleted = ['Approved', 'Pick-up Scheduled', 'Received', 'Refunded'].includes(rStatus);
-      const isPickupCompleted = ['Pick-up Scheduled', 'Received', 'Refunded'].includes(rStatus);
-      const isRefundCompleted = rStatus === 'Refunded';
+  // Return progress goes after the delivery timeline, whichever source that timeline came from
+  // (live Shiprocket scans, stored history, or the generic steps).
+  if (!exchange && !isCancelled && (returnRequest || ['Return Requested', 'Refunded', 'Partially Refunded'].includes(order.status))) {
+    const RETURN_STAGES = ['Requested', 'Approved', 'Pick-up Scheduled', 'Received', 'Refunded'];
+    const rStatus = returnRequest?.status || (order.status === 'Return Requested' ? 'Requested' : 'Refunded');
+    const stage = RETURN_STAGES.indexOf(rStatus);
+    const stepStatus = (idx) => (idx <= stage ? 'completed' : (idx === stage + 1 ? 'active' : 'pending'));
+    // Time each stage was reached (latest entry wins). Returns made before history was recorded
+    // only have their request date.
+    const stageDate = (status) => {
+      const entry = [...(returnRequest?.statusHistory || [])].reverse().find(h => h.status === status);
+      if (entry) return new Date(entry.timestamp).toLocaleString();
+      return status === 'Requested' && returnRequest?.createdAt ? new Date(returnRequest.createdAt).toLocaleString() : '';
+    };
+    const refundDesc = returnRequest?.refundMethod === 'Bank'
+      ? 'Refund transferred to Bank/UPI'
+      : returnRequest?.refundMethod === 'Wallet'
+        ? 'Refund credited to Aramish Wallet'
+        : 'Refund to your original payment method';
 
-      steps.push(
-        { 
-          id: 6, 
-          title: 'Return Requested', 
-          desc: returnRequest?.reason ? `Reason: ${returnRequest.reason}` : 'Return request submitted', 
-          date: returnRequest?.createdAt ? new Date(returnRequest.createdAt).toLocaleString() : '', 
-          icon: CheckCircle2, 
-          status: isAppCompleted ? 'completed' : 'active' 
-        },
-        { 
-          id: 7, 
-          title: 'Return Approved', 
-          desc: 'Your return request was reviewed and approved.', 
-          date: '', 
-          icon: Package, 
-          status: isPickupCompleted ? 'completed' : (isAppCompleted ? 'active' : 'pending') 
-        },
-        { 
-          id: 8, 
-          title: 'Pickup Scheduled / Collected', 
-          desc: returnRequest?.courierName ? `Courier: ${returnRequest.courierName}` : 'Item pickup by courier partner', 
-          date: '', 
-          icon: Truck, 
-          status: isRefundCompleted ? 'completed' : (isPickupCompleted ? 'active' : 'pending') 
-        },
-        { 
-          id: 9, 
-          title: 'Refund Processed', 
-          desc: returnRequest?.refundMethod === 'Bank' ? 'Refund transferred to Bank/UPI' : 'Refund credited to Aramish Wallet', 
-          date: '', 
-          icon: CheckCircle2, 
-          status: isRefundCompleted ? 'completed' : 'pending' 
-        }
-      );
-    }
+    steps.push(
+      { id: 'ret_requested', title: 'Return Requested', desc: returnRequest?.reason ? `Reason: ${returnRequest.reason}` : 'Return request submitted', date: stageDate('Requested'), icon: CheckCircle2, status: stepStatus(0) },
+      { id: 'ret_approved', title: 'Return Approved', desc: 'Your return request was reviewed and approved.', date: stageDate('Approved'), icon: Package, status: stepStatus(1) },
+      { id: 'ret_pickup', title: 'Pickup Scheduled', desc: returnRequest?.courierName ? `Courier: ${returnRequest.courierName}` : 'Item pickup by courier partner', date: stageDate('Pick-up Scheduled'), icon: Truck, status: stepStatus(2) },
+      { id: 'ret_received', title: 'Item Received', desc: 'Your returned item reached our warehouse.', date: stageDate('Received'), icon: Home, status: stepStatus(3) },
+      { id: 'ret_refunded', title: 'Refund Processed', desc: refundDesc, date: stageDate('Refunded'), icon: CheckCircle2, status: stepStatus(4) }
+    );
   }
 
   // Estimated delivery based on order ETD, live tracking, or fallback

@@ -121,6 +121,31 @@ const releaseReservedStock = async (exchange) => {
   }
 };
 
+// True once either parcel has started moving: the old item is on its way to us or the replacement
+// is on its way to the customer. From then on the exchange can't simply be called off.
+const LEG_MOVING = /PICKED UP|IN TRANSIT|OUT FOR DELIVERY|REACHED|SHIPPED|DELIVERED/;
+const exchangeShipmentStarted = (exchange) =>
+  (exchange.timeline || []).some(e => ['Old Item Picked Up', 'Replacement Dispatched'].includes(e.status)) ||
+  ['reverse', 'forward'].some(leg => LEG_MOVING.test(String(exchange[leg]?.status || '').toUpperCase().replace(/_/g, ' ')));
+
+// Calls off the exchange's Shiprocket shipments so no courier turns up for them. Best-effort, like
+// the order cancel: a leg Shiprocket wouldn't cancel is returned so admin can cancel it there.
+const cancelExchangeShipments = async (exchange) => {
+  const notCancelled = [];
+  for (const leg of ['reverse', 'forward']) {
+    const legData = exchange[leg];
+    if (!legData?.orderId) continue;
+    const result = await shiprocketService.cancelShiprocketOrder(legData.orderId);
+    if (result) {
+      legData.status = 'Cancelled';
+    } else {
+      notCancelled.push(leg);
+      exchange.shipmentErrors.push({ leg, error: `Shiprocket order ${legData.orderId} could not be cancelled automatically. Cancel it in the Shiprocket panel.`, timestamp: new Date() });
+    }
+  }
+  return notCancelled;
+};
+
 // HSN codes (set per product in admin) for the old and the replacement item of an exchange.
 const exchangeHsnCodes = async (exchange) => {
   const items = [exchange.originalItem, exchange.requestedVariant].filter(i => i && i.productId);
@@ -587,6 +612,12 @@ exports.updateExchangeStatus = async (req, res) => {
     if (status === 'Cancelled' && !adminNotes) {
       return res.status(400).json({ success: false, message: 'adminNotes is mandatory when cancelling an exchange' });
     }
+    if (status === 'Cancelled' && exchangeShipmentStarted(exchange)) {
+      return res.status(400).json({
+        success: false,
+        message: 'A parcel for this exchange is already with the courier, so it can no longer be cancelled. Complete it, or mark it Failed once both items are accounted for.'
+      });
+    }
 
     // Claim the transition before any stock side effect, so a double-click or a webhook racing
     // this request can't reserve/release/restock twice.
@@ -715,10 +746,14 @@ exports.updateExchangeStatus = async (req, res) => {
       else if (status === 'Cancelled') {
         await refundExchangeDifference(exchange);
         await releaseReservedStock(exchange);
+        const notCancelled = await cancelExchangeShipments(exchange);
         exchange.status = 'Cancelled';
         exchange.adminNotes = adminNotes;
-        order.status = 'Exchange Cancelled';
-        addTimeline(exchange, 'Cancelled', 'admin', admin?._id, adminNotes);
+        // The customer still has the original item, so the order is simply delivered again: they
+        // can ask for a return or a new exchange while the window (from delivery) is open.
+        order.status = 'Delivered';
+        addTimeline(exchange, 'Cancelled', 'admin', admin?._id,
+          notCancelled.length ? `${adminNotes} (cancel the ${notCancelled.join(' and ')} shipment in Shiprocket)` : adminNotes);
         addAudit(exchange, 'cancelled', admin, fromStatus, 'Cancelled', adminNotes);
       }
 

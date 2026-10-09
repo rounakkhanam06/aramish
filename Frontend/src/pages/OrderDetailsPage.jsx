@@ -205,14 +205,28 @@ export default function OrderDetailsPage() {
     rewardCredited: orderData.rewardCredited,
     rewardDeducted: orderData.rewardDeducted,
     rewardCoinsAmount: orderData.rewardCoinsAmount,
-    rewardCoinsExpected: orderData.rewardCoinsExpected
+    rewardCoinsExpected: orderData.rewardCoinsExpected,
+    // Mirrors the backend's getDeliveredAt (utils/orderHelper.js): latest courier DELIVERED
+    // scan, falling back to the last status update.
+    deliveredAt: (() => {
+      const delivered = (orderData.trackingHistory || [])
+        .filter(t => t && t.timestamp && String(t.status || '').toUpperCase() === 'DELIVERED')
+        .map(t => new Date(t.timestamp).getTime());
+      return delivered.length > 0 ? new Date(Math.max(...delivered)) : (orderData.updatedAt ? new Date(orderData.updatedAt) : null);
+    })()
   } : null;
   // Backend-calculated reward for this order (credited amount, or the checkout estimate before delivery)
   const orderRewardCoins = globalOrder
     ? (globalOrder.rewardCredited ? globalOrder.rewardCoinsAmount : globalOrder.rewardCoinsExpected) || 0
     : 0;
 
-  const isDelivered = globalOrder ? ['Delivered', 'Return Requested', 'Refunded', 'Partially Refunded'].includes(globalOrder.status) : id !== 'ORD-8X92-K1';
+  // Every return/exchange status comes after delivery, so the order still counts as delivered.
+  const POST_DELIVERY_STATUSES = [
+    'Delivered', 'Return Requested', 'Refunded', 'Partially Refunded',
+    'Exchange Requested', 'Exchange Approved', 'Pickup Scheduled', 'Old Item Picked Up', 'Replacement Dispatched',
+    'Exchange Completed', 'Exchange Rejected', 'Exchange Cancelled', 'Exchange Failed', 'Manual Review'
+  ];
+  const isDelivered = globalOrder ? POST_DELIVERY_STATUSES.includes(globalOrder.status) : id !== 'ORD-8X92-K1';
 
   // Return request state
   const [showReturnSheet, setShowReturnSheet] = useState(false);
@@ -233,7 +247,10 @@ export default function OrderDetailsPage() {
   const [upiId, setUpiId] = useState('');
 
   // Exchange states
-  const [existingExchange, setExistingExchange] = useState(null);
+  const [latestExchange, setExistingExchange] = useState(null);
+  // A rejected/cancelled/failed exchange is history once the customer has filed a return after it.
+  const existingExchange = latestExchange && !(['Rejected', 'Cancelled', 'Failed'].includes(latestExchange.status) && existingReturn)
+    ? latestExchange : null;
   const [checkingExchange, setCheckingExchange] = useState(false);
   const [exchangeImages, setExchangeImages] = useState([]);
 
@@ -889,9 +906,10 @@ export default function OrderDetailsPage() {
   // before this field existed fall back to the selling price (no fabricated markup).
   const actualPrice = orderItems.reduce((acc, curr) => acc + ((curr.mrp || curr.price) * curr.quantity), 0);
 
-  const returnWindowExpiry = globalOrder?.createdAt ? (() => {
-    const expiry = new Date(globalOrder.createdAt);
-    expiry.setDate(expiry.getDate() + 7);
+  // Return window runs from the delivery date (same rule the backend enforces), not the order date.
+  const returnWindowDays = systemSettings?.returnWindowDays ?? 2;
+  const returnWindowExpiry = globalOrder?.deliveredAt ? (() => {
+    const expiry = new Date(globalOrder.deliveredAt.getTime() + returnWindowDays * 24 * 60 * 60 * 1000);
     const now = new Date();
     const formattedDate = expiry.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
     return {
@@ -899,6 +917,9 @@ export default function OrderDetailsPage() {
       dateText: formattedDate
     };
   })() : { expired: true, dateText: 'Apr 23' };
+
+  // Same rule the backend enforces for both returns and exchanges.
+  const canRequestReturnOrExchange = globalOrder?.status === 'Delivered' && !returnWindowExpiry.expired;
 
   const handleDownload = () => {
     setIsDownloading(true);
@@ -1224,7 +1245,7 @@ export default function OrderDetailsPage() {
                              : (globalOrder?.status === 'Return Requested' ? 'Return Requested' :
                                 globalOrder?.status === 'Refunded' ? 'Order Refunded' :
                                 globalOrder?.status === 'Partially Refunded' ? 'Partially Refunded' :
-                                (isDelivered ? `Delivered, ${globalOrder?.date || 'Apr 13'}` : (globalOrder?.etd ? `Estimated Delivery: ${globalOrder.etd}` : 'Processing Order'))))}
+                                (isDelivered ? `Delivered, ${globalOrder?.deliveredAt ? globalOrder.deliveredAt.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : globalOrder?.date}` : (globalOrder?.etd ? `Estimated Delivery: ${globalOrder.etd}` : 'Processing Order'))))}
                      </h2>
                      {existingExchange ? (
                         <div className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -1319,7 +1340,7 @@ export default function OrderDetailsPage() {
               )}
 
               {/* Return Request Button */}
-              {isDelivered && !existingReturn && !checkingReturn && !hasActiveExchange && (
+              {canRequestReturnOrExchange && !existingReturn && !checkingReturn && !hasActiveExchange && (
                 <button 
                   onClick={() => {
                     setReturnSelectedItems(orderItems || []);
@@ -1333,7 +1354,7 @@ export default function OrderDetailsPage() {
               )}
 
               {/* Exchange Request Button */}
-              {isDelivered && !hasActiveExchange && !checkingExchange && !existingReturn && (
+              {canRequestReturnOrExchange && !hasActiveExchange && !checkingExchange && !existingReturn && (
                 <div className="w-full">
                   {hasFailedExchange && (
                     <div className="px-5 py-2.5 bg-amber-50 text-amber-700 text-[10px] font-bold border-b border-amber-200 flex items-center gap-1.5 leading-tight">

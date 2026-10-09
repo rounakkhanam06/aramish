@@ -91,7 +91,17 @@ const returnRequestSchema = new mongoose.Schema({
       timestamp: { type: Date, default: Date.now }
     }
   ],
-  lastShipmentRetryAt: { type: Date, default: null }
+  lastShipmentRetryAt: { type: Date, default: null },
+
+  // When each status was reached, shown to the customer on the tracking page.
+  statusHistory: [
+    {
+      status: { type: String },
+      actor: { type: String, enum: ['customer', 'admin', 'courier', 'system'] },
+      note: { type: String, default: '' },
+      timestamp: { type: Date, default: Date.now }
+    }
+  ]
 }, { timestamps: true });
 
 returnRequestSchema.index({ orderId: 1 });

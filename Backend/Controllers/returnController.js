@@ -6,6 +6,11 @@ const { loadShippingDetails, toOrderItem, toShiprocketDate, getReturnWarehouse, 
 const { handleReturnRefund, getDeliveredAt } = require('../utils/orderHelper');
 const { srErrorMessage, readAwbResult, requestPickupChecked, PICKUP_BOOKED_OR_LATER } = require('../utils/shiprocketResults');
 
+// Records when the return reached `status`, for the customer's tracking timeline.
+const addReturnHistory = (returnRequest, status, actor, note = '') => {
+  returnRequest.statusHistory.push({ status, actor, note, timestamp: new Date() });
+};
+
 // Builds the Shiprocket reverse-pickup order and attempts AWB assignment for a return
 // request, mutating the passed returnRequest document's shipment fields in place. Used both
 // on initial 'Approved' transition and by the admin retry endpoint below, so a Shiprocket
@@ -105,7 +110,10 @@ const bookReturnPickup = async (returnRequest) => {
     const { scheduled, error } = await requestPickupChecked(shiprocketService, returnRequest.shiprocketReturnShipmentId);
     if (!scheduled) return fail(`Courier assigned (AWB ${returnRequest.awbCode}) but pickup not scheduled: ${error}`);
     returnRequest.pickupScheduled = true;
-    if (returnRequest.status === 'Approved') returnRequest.status = 'Pick-up Scheduled';
+    if (returnRequest.status === 'Approved') {
+      returnRequest.status = 'Pick-up Scheduled';
+      addReturnHistory(returnRequest, 'Pick-up Scheduled', 'system', `Courier pickup booked${returnRequest.courierName ? ` with ${returnRequest.courierName}` : ''}`);
+    }
   }
   return true;
 };
@@ -280,7 +288,8 @@ exports.createReturnRequest = async (req, res) => {
       refundMethod: finalRefundMethod,
       bankDetails: parsedBankDetails,
       images: imagePaths,
-      status: 'Requested'
+      status: 'Requested',
+      statusHistory: [{ status: 'Requested', actor: 'customer', note: reason, timestamp: new Date() }]
     });
 
     // Update order status
@@ -553,6 +562,7 @@ exports.updateReturnStatus = async (req, res) => {
 
     // Update local variables
     returnRequest.status = status;
+    addReturnHistory(returnRequest, status, 'admin', adminNotes || '');
     if (adminNotes !== undefined) returnRequest.adminNotes = adminNotes;
     if (adminRefundAmount !== undefined) returnRequest.refundAmount = adminRefundAmount;
 
@@ -691,7 +701,10 @@ exports.handleReturnWebhook = async (payload) => {
   // the same moment always wins and nothing is moved twice.
   const moveStatus = async (from, to) => {
     if (!from.includes(returnRequest.status)) return;
-    const moved = await ReturnRequest.updateOne({ _id: returnRequest._id, status: returnRequest.status }, { $set: { status: to } });
+    const moved = await ReturnRequest.updateOne(
+      { _id: returnRequest._id, status: returnRequest.status },
+      { $set: { status: to }, $push: { statusHistory: { status: to, actor: 'courier', note: `Shiprocket: ${srStatus}`, timestamp: new Date() } } }
+    );
     if (moved.modifiedCount === 1) returnRequest.status = to;
   };
 
