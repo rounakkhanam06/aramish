@@ -315,10 +315,13 @@ export default function InventoryList() {
   // Filter
   const filtered = allProductsCombined
     .filter(p => {
-      const searchLower = search.toLowerCase();
+      // Trim so a SKU copied with stray whitespace (e.g. from the order page) still matches
+      const searchLower = search.trim().toLowerCase();
       const matchSearch = !searchLower ||
         p.name.toLowerCase().includes(searchLower) ||
         p.sku?.toLowerCase().includes(searchLower) ||
+        // Full product ID or the short 8-char ID shown on the order page
+        String(p.id || '').toLowerCase().includes(searchLower) ||
         (p.variations || []).some(v =>
           v.sku?.toLowerCase().includes(searchLower) ||
           v.color?.toLowerCase().includes(searchLower) ||
@@ -668,7 +671,7 @@ export default function InventoryList() {
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search by product name, SKU or variant (color/size)..."
+              placeholder="Search by product name, SKU, product ID or variant (color/size)..."
               className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 pl-11 pr-5 text-sm font-bold focus:ring-4 focus:ring-orange-50 outline-none transition-all text-slate-900 placeholder:text-slate-300"
             />
           </div>
