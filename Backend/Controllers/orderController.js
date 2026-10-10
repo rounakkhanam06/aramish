@@ -844,7 +844,17 @@ exports.getAdminOrderById = async (req, res) => {
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
-    res.status(200).json({ success: true, order });
+    // Attach the product-level SKU/article so admins can identify the exact item
+    // (variationSku is only set for variant products; older orders may lack article).
+    const products = await Product.find({ _id: { $in: order.items.map(i => i.productId) } })
+      .select('sku article').lean();
+    const productById = new Map(products.map(p => [p._id.toString(), p]));
+    const orderObj = order.toObject({ flattenMaps: true });
+    orderObj.items = orderObj.items.map(item => {
+      const p = productById.get(String(item.productId));
+      return { ...item, productSku: p?.sku || null, article: item.article || p?.article || null };
+    });
+    res.status(200).json({ success: true, order: orderObj });
   } catch (error) {
     console.error("Error fetching order for admin:", error);
     res.status(500).json({ success: false, message: error.message });

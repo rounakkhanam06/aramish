@@ -429,7 +429,13 @@ const OrderDetail = () => {
                        </div>
                        <div className="flex-1">
                           <h4 className="font-black text-slate-900 font-montserrat uppercase tracking-tight text-sm">{item.name}</h4>
-                          <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest">Product ID: {item.productId?.substring(item.productId.length - 8).toUpperCase() || 'N/A'}</p>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+                            <p className="text-[10px] text-slate-700 font-black uppercase tracking-widest">SKU: {item.variationSku || item.productSku || 'N/A'}</p>
+                            {item.article && (
+                              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Article: {item.article}</p>
+                            )}
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Product ID: {item.productId?.substring(item.productId.length - 8).toUpperCase() || 'N/A'}</p>
+                          </div>
                           {item.attributes && Object.keys(item.attributes).length > 0 && (
                             <div className="flex flex-wrap gap-1.5 mt-2">
                               {Object.entries(item.attributes).map(([key, val], idx) => (
