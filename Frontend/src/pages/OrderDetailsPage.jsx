@@ -227,6 +227,7 @@ export default function OrderDetailsPage() {
     'Exchange Completed', 'Exchange Rejected', 'Exchange Cancelled', 'Exchange Failed', 'Manual Review'
   ];
   const isDelivered = globalOrder ? POST_DELIVERY_STATUSES.includes(globalOrder.status) : id !== 'ORD-8X92-K1';
+  const isCancelledOrder = globalOrder?.status === 'Cancelled';
 
   // Return request state
   const [showReturnSheet, setShowReturnSheet] = useState(false);
@@ -1237,12 +1238,13 @@ export default function OrderDetailsPage() {
               <div className="p-4 flex flex-col gap-3">
                  <div className="flex items-center justify-between">
                    <div>
-                     <h2 className={`text-sm font-bold ${existingExchange ? 'text-[#02006c]' : (existingReturn || ['Return Requested', 'Refunded', 'Partially Refunded'].includes(globalOrder?.status) ? 'text-amber-600' : (isDelivered ? 'text-emerald-700' : 'text-[#0B132B]'))} mb-0.5`}>
-                       {existingExchange 
-                         ? getHeaderTitle() 
-                         : (existingReturn 
-                             ? `Return ${existingReturn.status}` 
-                             : (globalOrder?.status === 'Return Requested' ? 'Return Requested' :
+                     <h2 className={`text-sm font-bold ${existingExchange ? 'text-[#02006c]' : (existingReturn || ['Return Requested', 'Refunded', 'Partially Refunded'].includes(globalOrder?.status) ? 'text-amber-600' : (isCancelledOrder ? 'text-red-600' : (isDelivered ? 'text-emerald-700' : 'text-[#0B132B]')))} mb-0.5`}>
+                       {existingExchange
+                         ? getHeaderTitle()
+                         : (existingReturn
+                             ? `Return ${existingReturn.status}`
+                             : (isCancelledOrder ? 'Order Cancelled' :
+                                globalOrder?.status === 'Return Requested' ? 'Return Requested' :
                                 globalOrder?.status === 'Refunded' ? 'Order Refunded' :
                                 globalOrder?.status === 'Partially Refunded' ? 'Partially Refunded' :
                                 (isDelivered ? `Delivered, ${globalOrder?.deliveredAt ? globalOrder.deliveredAt.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : globalOrder?.date}` : (globalOrder?.etd ? `Estimated Delivery: ${globalOrder.etd}` : 'Processing Order'))))}
@@ -1263,6 +1265,13 @@ export default function OrderDetailsPage() {
                           {returnWindowExpiry.expired 
                             ? `Return window expired on ${returnWindowExpiry.dateText}` 
                             : `Return window active until ${returnWindowExpiry.dateText}`}
+                        </div>
+                      ) : isCancelledOrder ? (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                          <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
+                          {globalOrder?.paymentStatus === 'Refunded' && globalOrder?.total > 0
+                            ? `Order is cancelled • ₹${globalOrder.total} refunded`
+                            : 'Order is cancelled'}
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5 text-xs text-slate-500">
