@@ -376,6 +376,10 @@ export default function ReviewOrderPage() {
     
     if (paymentMethod === 'ONLINE' && unplacedPaymentIdRef.current) {
       executeOrderPlacement("Online", unplacedPaymentIdRef.current);
+    } else if (paymentMethod === 'ONLINE' && grandTotal <= 0) {
+      // Prepaid discount / wallet cover everything: nothing to pay, so no Razorpay checkout
+      // (it would still charge its ₹1 minimum).
+      executeOrderPlacement("Online");
     } else if (paymentMethod === 'ONLINE') {
       const loaded = await loadRazorpay();
       if (!loaded) {
@@ -386,7 +390,8 @@ export default function ReviewOrderPage() {
       
       const options = {
         key: import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_mockkey",
-        amount: grandTotal * 100,
+        amount: Math.round(grandTotal * 100), // Razorpay takes whole paise
+
         currency: "INR",
         name: "Aramish",
         description: "Purchase Transaction",
@@ -508,8 +513,8 @@ export default function ReviewOrderPage() {
       } else if (method === 'Online' && res.status >= 500) {
         toast.error("Your payment was received but we couldn't confirm the order. Tap Place order to try again. You won't be charged twice.");
       } else {
-        // The order was rejected (stock, amount, coupon...): the payment is not used, and Razorpay
-        // refunds an uncaptured payment automatically.
+        // The order was rejected (stock, amount, coupon...): the payment is not used, and the
+        // backend refunds it (its message says so).
         unplacedPaymentIdRef.current = null;
         toast.error(data.message || "Failed to place order.");
       }

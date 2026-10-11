@@ -40,4 +40,22 @@ const verifyAndCapturePayment = async (paymentId, expectedAmount) => {
   return payment;
 };
 
-module.exports = { isRazorpayConfigured, verifyAndCapturePayment };
+const getPayment = async (paymentId) => {
+  const { data } = await axios.get(`${RAZORPAY_API}/payments/${paymentId}`, { auth: getAuth() });
+  return data;
+};
+
+/**
+ * Refunds whatever is still unrefunded on a captured payment. Returns the refunded amount in
+ * rupees, or 0 when there is nothing to refund (not captured, or already fully refunded).
+ */
+const refundPayment = async (paymentId, notes = {}) => {
+  const payment = await getPayment(paymentId);
+  const refundable = payment.amount - (payment.amount_refunded || 0);
+  if (payment.status !== 'captured' || refundable <= 0) return 0;
+
+  await axios.post(`${RAZORPAY_API}/payments/${paymentId}/refund`, { amount: refundable, notes }, { auth: getAuth() });
+  return refundable / 100;
+};
+
+module.exports = { isRazorpayConfigured, verifyAndCapturePayment, getPayment, refundPayment };

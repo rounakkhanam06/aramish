@@ -11,7 +11,8 @@ jest.mock('../Router/shiprocketService', () => ({
 }));
 jest.mock('../utils/razorpayService', () => ({
   isRazorpayConfigured: () => true,
-  verifyAndCapturePayment: jest.fn().mockResolvedValue({ status: 'captured' })
+  verifyAndCapturePayment: jest.fn().mockResolvedValue({ status: 'captured' }),
+  refundPayment: jest.fn().mockResolvedValue(1)
 }));
 
 const jwt = require('jsonwebtoken');
@@ -22,6 +23,7 @@ const Product = require('../Models/Product');
 const SystemConfig = require('../Models/SystemConfig');
 const { createOrder } = require('../Controllers/orderController');
 const { protectUser } = require('../Middlewares/userAuthMiddleware');
+const { verifyAndCapturePayment, refundPayment } = require('../utils/razorpayService');
 
 jest.setTimeout(120000);
 
@@ -43,13 +45,13 @@ const mockRes = () => {
   res.json = (body) => { res.body = body; return res; };
   return res;
 };
-const placeOrder = async (user, product, { paymentMethod = 'COD', paymentId } = {}) => {
+const placeOrder = async (user, product, { paymentMethod = 'COD', paymentId, total = 1 } = {}) => {
   const res = mockRes();
   await createOrder({
     user: { _id: user._id },
     body: {
       items: [{ productId: product._id.toString(), name: product.name, quantity: 1 }],
-      total: 1,
+      total,
       deliveryAddress: { name: 'A', type: 'Home', address: 'Somewhere, Indore', pincode: '452001', phone: '9999999999' },
       paymentMethod,
       paymentId
@@ -110,6 +112,46 @@ describe('concurrent checkouts', () => {
     expect(retry.statusCode).toBe(409);
     expect(retry.body.code).toBe('PAYMENT_ALREADY_USED');
     expect((await Product.findById(product._id)).stock).toBe(9);
+  });
+});
+
+describe('online payment edge cases', () => {
+  beforeEach(() => { verifyAndCapturePayment.mockClear(); refundPayment.mockClear(); });
+
+  test('an online order with nothing left to pay (prepaid discount covers it) is placed without a payment', async () => {
+    await SystemConfig.updateOne({}, { commission: 10, prepaidDiscountEnabled: true, prepaidDiscountAmount: 100 });
+    const user = await makeUser();
+    const product = await makeProduct({ sellingPrice: 1, mrp: 1, stock: 5 });
+
+    const res = await placeOrder(user, product, { paymentMethod: 'Online', total: 0 });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.body.order.total).toBe(0);
+    expect(verifyAndCapturePayment).not.toHaveBeenCalled();
+  });
+
+  test('a paid order that is rejected gets its payment refunded', async () => {
+    const user = await makeUser();
+    const product = await makeProduct({ stock: 0 });
+
+    const res = await placeOrder(user, product, { paymentMethod: 'Online', paymentId: 'pay_REJECTED1' });
+
+    expect(res.statusCode).toBe(409);
+    expect(refundPayment).toHaveBeenCalledWith('pay_REJECTED1', expect.any(Object));
+    expect(res.body.paymentRefunded).toBe(true);
+    expect(res.body.message).toMatch(/refunded/);
+  });
+
+  test('a payment that already has an order is never refunded', async () => {
+    const user = await makeUser();
+    const product = await makeProduct({ stock: 1 });
+
+    expect((await placeOrder(user, product, { paymentMethod: 'Online', paymentId: 'pay_KEEP1' })).statusCode).toBe(201);
+    // Retry after the last pair sold: rejected, but the payment belongs to the first order
+    const retry = await placeOrder(user, product, { paymentMethod: 'Online', paymentId: 'pay_KEEP1' });
+
+    expect(retry.statusCode).toBeGreaterThanOrEqual(400);
+    expect(refundPayment).not.toHaveBeenCalled();
   });
 });
 

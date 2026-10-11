@@ -6,6 +6,7 @@ const CouponUsage = require('../Models/CouponUsage');
 const Cart = require('../Models/Cart');
 const shiprocketService = require('../Router/shiprocketService');
 const { loadShippingDetails, buildShiprocketOrderPayload } = require('../utils/shiprocketPayload');
+const { isRazorpayConfigured, getPayment } = require('../utils/razorpayService');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 
@@ -51,6 +52,16 @@ exports.webhookReceiver = async (req, res) => {
       if (order) {
         console.log(`💳 Order already exists for payment ${paymentId}. No reconciliation needed.`);
         return res.status(200).json({ success: true, message: 'Order already exists' });
+      }
+
+      // The checkout refunds a payment whose order it rejected; such a payment must not become an
+      // order here. (The event's payload is from capture time, so ask Razorpay for its state now.)
+      if (isRazorpayConfigured()) {
+        const latest = await getPayment(paymentId);
+        if (latest.amount_refunded > 0) {
+          console.log(`💳 Payment ${paymentId} was refunded. Not creating an order for it.`);
+          return res.status(200).json({ success: true, message: 'Payment refunded, no order created' });
+        }
       }
 
       // 2. Read notes to reconstruct order

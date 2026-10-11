@@ -8,7 +8,7 @@ const mongoose = require('mongoose');
 const CouponUsage = require('../Models/CouponUsage');
 const { handleOrderCancellationStockAndCoupon, handleOrderCancellationRefunds } = require('../utils/orderHelper');
 const walletService = require('../utils/walletService');
-const { isRazorpayConfigured, verifyAndCapturePayment } = require('../utils/razorpayService');
+const { isRazorpayConfigured, verifyAndCapturePayment, refundPayment } = require('../utils/razorpayService');
 const { loadShippingDetails, buildShiprocketOrderPayload, cheapestCourier, shiprocketCostsFor } = require('../utils/shiprocketPayload');
 
 // Resolves the price the customer actually pays for a line (admin selling price, or the
@@ -51,9 +51,11 @@ const createOrderAttempt = async (req, res) => {
   const walletUndo = [];
 
   try {
-    const { items, total, deliveryAddress, paymentMethod, paymentStatus, paymentId, couponCode, etd, redeemWallet, redeemReferralCoins, redeemRefundWallet } = req.body;
+    // The client's `total` is not used: the payable amount is always recalculated below (and can
+    // legitimately be ₹0, e.g. when the prepaid discount or wallet covers everything).
+    const { items, deliveryAddress, paymentMethod, paymentId, couponCode, etd, redeemWallet, redeemReferralCoins, redeemRefundWallet } = req.body;
 
-    if (!items || items.length === 0 || !total || !deliveryAddress || !paymentMethod) {
+    if (!items || items.length === 0 || !deliveryAddress || !paymentMethod) {
       return res.status(400).json({ success: false, message: 'Please provide all required fields' });
     }
 
@@ -306,8 +308,9 @@ const createOrderAttempt = async (req, res) => {
     // only when the courier actually collects cash — a COD order fully paid by wallet ships as Prepaid.
     const shiprocketCosts = shiprocketCostsFor(bestCourier.courier, { isCod: paymentMethod === 'COD' && finalPayableTotal > 0 });
 
-    // 6. Verify Razorpay payment if paymentMethod is Online
-    if (paymentMethod === 'Online') {
+    // 6. Verify Razorpay payment if paymentMethod is Online. Nothing left to pay (prepaid
+    // discount / wallet cover the total) needs no payment, but a payment that was made is checked.
+    if (paymentMethod === 'Online' && (finalPayableTotal > 0 || paymentId)) {
       if (isRazorpayConfigured()) {
         if (!paymentId) {
           throw checkoutError('Payment ID is required for Online payments.', 400);
@@ -512,7 +515,33 @@ exports.createOrder = async (req, res) => {
       await new Promise((resolve) => setTimeout(resolve, 20 * attempt + Math.random() * 80));
       continue;
     }
+    if (result.statusCode >= 400 && result.statusCode < 500) {
+      await refundRejectedPayment(req, result.body);
+    }
     return res.status(result.statusCode).json(result.body);
+  }
+};
+
+// Razorpay auto-captures payments, so the customer's money is already taken when the order is
+// sent. When the order is rejected for good (4xx: stock, coupon, amount...), give it back —
+// unless this payment does belong to an order (double submit, or the webhook created it).
+// 5xx answers are not refunded: the app keeps the payment and retries the same order.
+const refundRejectedPayment = async (req, body) => {
+  const { paymentMethod, paymentId } = req.body || {};
+  if (paymentMethod !== 'Online' || !paymentId || typeof paymentId !== 'string' || !isRazorpayConfigured()) return;
+  if (body?.code === 'PAYMENT_ALREADY_USED') return;
+
+  try {
+    if (await Order.exists({ paymentId })) return;
+    const refunded = await refundPayment(paymentId, { reason: 'Order rejected at checkout', userId: String(req.user._id) });
+    if (refunded > 0) {
+      console.log(`💸 Refunded ₹${refunded} of payment ${paymentId}: order rejected (${body?.message})`);
+      body.paymentRefunded = true;
+      body.message = `${body.message} Your payment of ₹${refunded} has been refunded and will reach your account in 5-7 working days.`;
+    }
+  } catch (refundErr) {
+    console.error(`CRITICAL: could not refund payment ${paymentId} of a rejected order. Refund it manually from the Razorpay dashboard.`,
+      refundErr.response?.data || refundErr.message);
   }
 };
 
