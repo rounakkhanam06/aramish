@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import toast from '../utils/toast';
 import OptimizedImage from '../components/ui/OptimizedImage';
 import analytics from '../utils/analytics';
+import { isMobileAppWebView } from '../utils/platform';
 
 export default function ReviewOrderPage() {
   const navigate = useNavigate();
@@ -413,6 +414,16 @@ export default function ReviewOrderPage() {
         theme: {
           color: "#0B132B"
         },
+        // Amazon Pay logs in through a popup window, which the app's WebView shows as a blank
+        // white screen. Hide it inside the app (it stays available on the website).
+        ...((isMobileAppWebView() || /; wv\)|InAppWebView|Flutter/i.test(navigator.userAgent)) && {
+          config: {
+            display: {
+              hide: [{ method: 'wallet', wallets: ['amazonpay'] }],
+              preferences: { show_default_blocks: true }
+            }
+          }
+        }),
         modal: {
           ondismiss: function() {
             setIsPlacingOrder(false);
