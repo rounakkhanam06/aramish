@@ -270,7 +270,13 @@ export default function CartPage() {
           setPromoError('This coupon has expired.');
           return;
         }
-        if (totalCartPrice < found.minOrder) {
+        if (found.conditionType === 'Quantity') {
+          const totalQuantity = cart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+          if (totalQuantity < (found.minQuantity || 0)) {
+            setPromoError(`Add at least ${found.minQuantity} items to use this coupon.`);
+            return;
+          }
+        } else if (totalCartPrice < found.minOrder) {
           setPromoError(`Minimum order amount of ₹${found.minOrder} required.`);
           return;
         }

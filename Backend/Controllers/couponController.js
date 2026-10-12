@@ -41,7 +41,7 @@ exports.getCoupons = async (req, res) => {
       const coupons = await Coupon.find({
         status: 'Active',
         expiry: { $gt: new Date() }
-      }).select('code type value minOrder expiry').sort({ createdAt: -1 });
+      }).select('code type value conditionType minOrder minQuantity expiry status').sort({ createdAt: -1 });
 
       return res.status(200).json({
         success: true,
@@ -63,13 +63,17 @@ exports.getCoupons = async (req, res) => {
 // @access Private (Admin only)
 exports.createCoupon = async (req, res) => {
   try {
-    const { code, type, value, minOrder, usageLimit, perUserLimit, expiry } = req.body;
+    const { code, type, value, conditionType, minOrder, minQuantity, usageLimit, perUserLimit, expiry } = req.body;
 
     if (!code || !value || !expiry) {
       return res.status(400).json({
         success: false,
         message: 'Please provide coupon code, discount value, and expiry date.'
       });
+    }
+
+    if (conditionType === 'Quantity' && !(Number(minQuantity) >= 1)) {
+      return res.status(400).json({ success: false, message: 'Please provide the minimum number of items (at least 1) for a quantity based coupon.' });
     }
 
     if (Number(value) < 0) {
@@ -80,6 +84,12 @@ exports.createCoupon = async (req, res) => {
     }
     if (minOrder !== undefined && Number(minOrder) < 0) {
       return res.status(400).json({ success: false, message: 'Minimum order amount cannot be negative.' });
+    }
+    if (conditionType !== undefined && !['Amount', 'Quantity'].includes(conditionType)) {
+      return res.status(400).json({ success: false, message: 'Coupon condition must be Amount or Quantity.' });
+    }
+    if (minQuantity !== undefined && minQuantity !== '' && (Number(minQuantity) < 0 || !Number.isInteger(Number(minQuantity)))) {
+      return res.status(400).json({ success: false, message: 'Minimum quantity must be a whole number and cannot be negative.' });
     }
     if (usageLimit !== undefined && Number(usageLimit) < 0) {
       return res.status(400).json({ success: false, message: 'Usage limit cannot be negative.' });
@@ -103,7 +113,9 @@ exports.createCoupon = async (req, res) => {
       code: uppercaseCode,
       type,
       value: Number(value),
-      minOrder: minOrder ? Number(minOrder) : 0,
+      conditionType: conditionType || 'Amount',
+      minOrder: conditionType === 'Quantity' ? 0 : (minOrder ? Number(minOrder) : 0),
+      minQuantity: conditionType === 'Quantity' ? Number(minQuantity) : 0,
       usageLimit: usageLimit ? Number(usageLimit) : 1000,
       perUserLimit: perUserLimit ? Number(perUserLimit) : 1,
       expiry: (() => { const d = new Date(expiry); d.setHours(23, 59, 59, 999); return d; })(),
@@ -195,17 +207,29 @@ exports.deleteCoupon = async (req, res) => {
 // @access Private (Admin only)
 exports.updateCoupon = async (req, res) => {
   try {
-    const { code, type, value, minOrder, usageLimit, perUserLimit, expiry } = req.body;
+    const { code, type, value, conditionType, minOrder, minQuantity, usageLimit, perUserLimit, expiry } = req.body;
 
     if (value !== undefined && Number(value) < 0) {
       return res.status(400).json({ success: false, message: 'Discount value cannot be negative.' });
     }
-    const finalType = type || (await Coupon.findById(req.params.id))?.type;
+    const existingCoupon = await Coupon.findById(req.params.id);
+    const finalType = type || existingCoupon?.type;
+    const finalConditionType = conditionType || existingCoupon?.conditionType || 'Amount';
+    const finalMinQuantity = minQuantity !== undefined && minQuantity !== '' ? Number(minQuantity) : existingCoupon?.minQuantity;
+    if (finalConditionType === 'Quantity' && !(finalMinQuantity >= 1)) {
+      return res.status(400).json({ success: false, message: 'Please provide the minimum number of items (at least 1) for a quantity based coupon.' });
+    }
     if (finalType === 'Percentage' && value !== undefined && Number(value) > 100) {
       return res.status(400).json({ success: false, message: 'Percentage discount cannot exceed 100%.' });
     }
     if (minOrder !== undefined && Number(minOrder) < 0) {
       return res.status(400).json({ success: false, message: 'Minimum order amount cannot be negative.' });
+    }
+    if (conditionType !== undefined && !['Amount', 'Quantity'].includes(conditionType)) {
+      return res.status(400).json({ success: false, message: 'Coupon condition must be Amount or Quantity.' });
+    }
+    if (minQuantity !== undefined && minQuantity !== '' && (Number(minQuantity) < 0 || !Number.isInteger(Number(minQuantity)))) {
+      return res.status(400).json({ success: false, message: 'Minimum quantity must be a whole number and cannot be negative.' });
     }
     if (usageLimit !== undefined && Number(usageLimit) < 0) {
       return res.status(400).json({ success: false, message: 'Usage limit cannot be negative.' });
@@ -231,7 +255,12 @@ exports.updateCoupon = async (req, res) => {
       ...(uppercaseCode && { code: uppercaseCode }),
       ...(type && { type }),
       ...(value !== undefined && { value: Number(value) }),
-      ...(minOrder !== undefined && { minOrder: Number(minOrder) }),
+      ...(conditionType && { conditionType }),
+      ...(minOrder !== undefined && { minOrder: Number(minOrder) || 0 }),
+      ...(minQuantity !== undefined && { minQuantity: Number(minQuantity) || 0 }),
+      // Clear the threshold that no longer applies so the coupon only has one active condition
+      ...(conditionType === 'Quantity' && { minOrder: 0 }),
+      ...(conditionType === 'Amount' && { minQuantity: 0 }),
       ...(usageLimit !== undefined && { usageLimit: Number(usageLimit) }),
       ...(perUserLimit !== undefined && { perUserLimit: Number(perUserLimit) }),
       ...(expiry && { expiry: (() => { const d = new Date(expiry); d.setHours(23, 59, 59, 999); return d; })() })
@@ -269,7 +298,7 @@ exports.updateCoupon = async (req, res) => {
 // @access Public
 exports.validateCoupon = async (req, res) => {
   try {
-    const { code, orderAmount } = req.body;
+    const { code, orderAmount, totalQuantity } = req.body;
 
     if (!code) {
       return res.status(400).json({
@@ -307,11 +336,12 @@ exports.validateCoupon = async (req, res) => {
       });
     }
 
-    // Check minimum order amount
-    if (orderAmount !== undefined && orderAmount < coupon.minOrder) {
+    // Check minimum order amount / minimum quantity (based on coupon condition)
+    const conditionError = Coupon.getConditionError(coupon, orderAmount, totalQuantity);
+    if (conditionError) {
       return res.status(400).json({
         success: false,
-        message: `Minimum order amount of ₹${coupon.minOrder} is required.`
+        message: conditionError
       });
     }
 
@@ -342,7 +372,9 @@ exports.validateCoupon = async (req, res) => {
         code: coupon.code,
         type: coupon.type,
         value: coupon.value,
+        conditionType: coupon.conditionType || 'Amount',
         minOrder: coupon.minOrder,
+        minQuantity: coupon.minQuantity || 0,
         maxDiscount: coupon.maxDiscount
       }
     });
@@ -377,7 +409,11 @@ exports.getUserCouponHistory = async (req, res) => {
         date: order.createdAt,
         code: order.couponCode,
         discount: coupon ? (coupon.type === 'Percentage' ? `${coupon.value}% OFF` : `₹${coupon.value} OFF`) : 'Discount Applied',
-        desc: coupon ? `Applied on order above ₹${coupon.minOrder}` : 'Applied on order',
+        desc: coupon
+          ? (coupon.conditionType === 'Quantity'
+            ? `Applied on order of ${coupon.minQuantity}+ items`
+            : `Applied on order above ₹${coupon.minOrder}`)
+          : 'Applied on order',
         total: order.total
       };
     });

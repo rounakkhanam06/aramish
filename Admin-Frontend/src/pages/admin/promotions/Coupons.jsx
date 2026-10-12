@@ -22,7 +22,9 @@ const Coupons = () => {
   const [code, setCode] = useState('');
   const [type, setType] = useState('Percentage');
   const [value, setValue] = useState('');
+  const [conditionType, setConditionType] = useState('Amount');
   const [minOrder, setMinOrder] = useState('');
+  const [minQuantity, setMinQuantity] = useState('');
   const [usageLimit, setUsageLimit] = useState('1000');
   const [perUserLimit, setPerUserLimit] = useState('1');
   const [expiry, setExpiry] = useState('');
@@ -82,6 +84,11 @@ const Coupons = () => {
       return;
     }
 
+    if (conditionType === 'Quantity' && (!Number.isInteger(Number(minQuantity)) || Number(minQuantity) < 1)) {
+      toast.info('Please enter the minimum number of items (at least 1)');
+      return;
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const selectedExpiry = new Date(expiry);
@@ -115,7 +122,9 @@ const Coupons = () => {
           code,
           type,
           value,
-          minOrder,
+          conditionType,
+          minOrder: conditionType === 'Amount' ? minOrder : 0,
+          minQuantity: conditionType === 'Quantity' ? minQuantity : 0,
           usageLimit,
           perUserLimit,
           expiry
@@ -131,6 +140,8 @@ const Coupons = () => {
         setType('Percentage');
         setValue('');
         setMinOrder('');
+        setConditionType('Amount');
+        setMinQuantity('');
         setUsageLimit('1000');
         setPerUserLimit('1');
         setExpiry('');
@@ -208,12 +219,14 @@ const Coupons = () => {
       toast.error('No coupons to export');
       return;
     }
-    const headers = ['Code', 'Type', 'Value', 'Min. Order', 'Expiry', 'Usage Limit', 'Status', 'Usage Count'];
+    const headers = ['Code', 'Type', 'Value', 'Condition', 'Min. Order', 'Min. Quantity', 'Expiry', 'Usage Limit', 'Status', 'Usage Count'];
     const rows = coupons.map(c => [
       c.code,
       c.type,
       c.type === 'Percentage' ? `${c.value}%` : `INR ${c.value}`,
-      c.minOrder || 0,
+      c.conditionType || 'Amount',
+      c.conditionType === 'Quantity' ? 0 : (c.minOrder || 0),
+      c.conditionType === 'Quantity' ? (c.minQuantity || 0) : 0,
       formatDate(c.expiry),
       c.usageLimit || 1,
       c.status,
@@ -338,7 +351,7 @@ const Coupons = () => {
               <tr className="bg-slate-50/50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 <th className="px-6 py-4">Coupon Info</th>
                 <th className="px-6 py-4">Value</th>
-                <th className="px-6 py-4">Min. Order</th>
+                <th className="px-6 py-4">Condition</th>
                 <th className="px-6 py-4">Expiry</th>
                 <th className="px-6 py-4">Usage</th>
                 <th className="px-6 py-4">Status</th>
@@ -384,7 +397,19 @@ const Coupons = () => {
                     <td className="px-6 py-5 font-black text-[#0B132B] font-roboto text-base">
                       {coupon.type === 'Percentage' ? `${coupon.value}%` : `₹${coupon.value}`}
                     </td>
-                    <td className="px-6 py-5 font-bold text-slate-700">₹{coupon.minOrder || 0}</td>
+                    <td className="px-6 py-5">
+                      {coupon.conditionType === 'Quantity' ? (
+                        <div className="flex flex-col gap-1">
+                          <span className="font-bold text-slate-700">{coupon.minQuantity || 0}+ Items</span>
+                          <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-tight">Min. Quantity</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-1">
+                          <span className="font-bold text-slate-700">₹{coupon.minOrder || 0}</span>
+                          <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-tight">Min. Amount</span>
+                        </div>
+                      )}
+                    </td>
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-bold">
                         <Calendar size={12} className="text-slate-300" />
@@ -419,7 +444,9 @@ const Coupons = () => {
                             setCode(coupon.code);
                             setType(coupon.type);
                             setValue(coupon.value);
+                            setConditionType(coupon.conditionType || 'Amount');
                             setMinOrder(coupon.minOrder || '');
+                            setMinQuantity(coupon.minQuantity ? String(coupon.minQuantity) : '');
                             setUsageLimit(String(coupon.usageLimit || 1000));
                             setPerUserLimit(String(coupon.perUserLimit || 1));
                             setExpiry(new Date(coupon.expiry).toISOString().split('T')[0]);
@@ -467,6 +494,8 @@ const Coupons = () => {
                     setType('Percentage');
                     setValue('');
                     setMinOrder('');
+                    setConditionType('Amount');
+                    setMinQuantity('');
                     setUsageLimit('1000');
                     setPerUserLimit('1');
                     setExpiry('');
@@ -521,19 +550,58 @@ const Coupons = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Min. Order Requirement (₹)</label>
-                    <input 
-                      type="number" 
-                      placeholder="e.g. 500" 
-                      className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold outline-none" 
-                      value={minOrder}
-                      onChange={e => {
-                        const val = e.target.value;
-                        if (val === '' || Number(val) >= 0) setMinOrder(val);
-                      }}
-                      min="0"
-                    />
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Coupon Applies On</label>
+                    <div className="grid grid-cols-2 gap-2 p-1 bg-slate-50 border border-slate-100 rounded-xl">
+                      {[
+                        { key: 'Amount', label: 'Order Amount (₹)' },
+                        { key: 'Quantity', label: 'Item Quantity' }
+                      ].map(opt => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setConditionType(opt.key)}
+                          className={`py-3 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${conditionType === opt.key ? 'bg-[#0B132B] text-white shadow' : 'text-slate-400 hover:text-slate-700'}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+
+                  {conditionType === 'Amount' ? (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Min. Order Requirement (₹)</label>
+                      <input 
+                        type="number" 
+                        placeholder="e.g. 500" 
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold outline-none" 
+                        value={minOrder}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === '' || Number(val) >= 0) setMinOrder(val);
+                        }}
+                        min="0"
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Min. Items / Units in Order</label>
+                      <input 
+                        type="number" 
+                        placeholder="e.g. 4" 
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold outline-none" 
+                        value={minQuantity}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === '' || (Number(val) >= 0 && Number.isInteger(Number(val)))) setMinQuantity(val);
+                        }}
+                        min="1"
+                        step="1"
+                        required
+                      />
+                      <p className="text-[10px] text-slate-400 font-medium">Customer can apply this coupon only when the total units in the cart are at least this number.</p>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -589,6 +657,8 @@ const Coupons = () => {
                       setType('Percentage');
                       setValue('');
                       setMinOrder('');
+                      setConditionType('Amount');
+                      setMinQuantity('');
                       setUsageLimit('1000');
                       setPerUserLimit('1');
                       setExpiry('');

@@ -228,7 +228,8 @@ exports.webhookReceiver = async (req, res) => {
             { new: true }
           );
 
-          if (coupon && calculatedSubtotal >= coupon.minOrder) {
+          const totalQuantity = validatedItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+          if (coupon && !Coupon.getConditionError(coupon, calculatedSubtotal, totalQuantity)) {
             // Record coupon usage
             await CouponUsage.findOneAndUpdate(
               { couponId: coupon._id, userId },

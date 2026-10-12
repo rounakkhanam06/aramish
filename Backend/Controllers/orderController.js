@@ -231,8 +231,10 @@ const createOrderAttempt = async (req, res) => {
         throw checkoutError('You have already used this coupon.', 400);
       }
 
-      // Apply discount based on coupon rules
-      if (calculatedSubtotal >= coupon.minOrder) {
+      // Apply discount based on coupon rules (min amount or min quantity)
+      const totalQuantity = validatedItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+      const conditionError = Coupon.getConditionError(coupon, calculatedSubtotal, totalQuantity);
+      if (!conditionError) {
         if (coupon.type === 'Percentage') {
           discountAmount = Math.round((calculatedSubtotal * coupon.value) / 100);
           if (coupon.maxDiscount && discountAmount > coupon.maxDiscount) {
@@ -243,7 +245,7 @@ const createOrderAttempt = async (req, res) => {
         }
         discountAmount = Math.min(discountAmount, calculatedSubtotal);
       } else {
-        throw checkoutError(`Minimum order amount of ₹${coupon.minOrder} is required to use this coupon.`, 400);
+        throw checkoutError(conditionError, 400);
       }
     }
 

@@ -302,7 +302,8 @@ export default function ReviewOrderPage() {
         },
         body: JSON.stringify({
           code: code,
-          orderAmount: totalCartPrice
+          orderAmount: totalCartPrice,
+          totalQuantity: cart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
         })
       });
       const data = await res.json();
@@ -749,7 +750,9 @@ export default function ReviewOrderPage() {
                           </span>
                           <span className="text-[10px] text-slate-500 font-medium">
                             {coupon.type === 'Percentage' ? `${coupon.value}% Off` : `₹${coupon.value} Off`}
-                            {coupon.minOrder > 0 && ` on orders above ₹${coupon.minOrder}`}
+                            {coupon.conditionType === 'Quantity'
+                              ? coupon.minQuantity > 0 && ` on ${coupon.minQuantity}+ items`
+                              : coupon.minOrder > 0 && ` on orders above ₹${coupon.minOrder}`}
                           </span>
                         </div>
                         <button className="text-[10px] font-black text-blue-600 hover:text-blue-700 pointer-events-none">
