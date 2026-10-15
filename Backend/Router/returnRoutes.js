@@ -10,7 +10,8 @@ const {
   updateReturnStatus,
   getReturnByOrderId,
   retryReturnShipment,
-  syncReturnShipment
+  syncReturnShipment,
+  getRefundEstimate
 } = require('../Controllers/returnController');
 
 const { uploadImages, processImages, handleUploadError } = require('../Middlewares/uploadMiddleware');
@@ -21,6 +22,7 @@ router.route('/')
   .post(protectUser, uploadImages, processImages, handleUploadError, createReturnRequest);
 
 router.get('/by-order/:orderId', protectUser, getReturnByOrderId);
+router.post('/refund-estimate', protectUser, getRefundEstimate);
 
 // Admin routes
 router.get('/admin/all', protectAdmin, getAllReturns);

@@ -151,6 +151,89 @@ const calculateEligibleRefund = (order, returnItems, refundMethod) => {
   return Math.round(Math.min(eligible, moneyPaid) * 100) / 100;
 };
 
+// Validates the customer's return lines against the order: { items } (one line per order line,
+// prices from the order — never from the request) or { error }. Several lines of an order can
+// share a productId (different sizes/colours), so each return line is matched to an order line by
+// variant too, and quantities are summed per order line so duplicates can't exceed what was bought.
+const validateReturnItems = (order, rawItems) => {
+  let parsedItems;
+  try {
+    parsedItems = typeof rawItems === 'string' ? JSON.parse(rawItems) : rawItems;
+  } catch (e) {
+    return { error: 'Invalid items format' };
+  }
+  if (!Array.isArray(parsedItems) || parsedItems.length === 0) {
+    return { error: 'Items list cannot be empty' };
+  }
+
+  const returnedQtyByLine = new Map();
+  for (const returnItem of parsedItems) {
+    const qty = Number(returnItem && returnItem.quantity);
+    if (!returnItem || !returnItem.productId || !Number.isInteger(qty) || qty <= 0) {
+      return { error: 'Invalid product or quantity in return request' };
+    }
+    const orderItem = order.items.find(item =>
+      item.productId.toString() === returnItem.productId.toString() &&
+      (returnItem.variationSku ? item.variationSku === returnItem.variationSku : true)
+    );
+    if (!orderItem) {
+      return { error: `Item ${returnItem.productId} is not part of this order` };
+    }
+    const lineQty = (returnedQtyByLine.get(orderItem) || 0) + qty;
+    if (lineQty > orderItem.quantity) {
+      return { error: `Return quantity (${lineQty}) for "${orderItem.name}" exceeds ordered quantity (${orderItem.quantity})` };
+    }
+    returnedQtyByLine.set(orderItem, lineQty);
+  }
+
+  const items = [];
+  for (const [orderItem, quantity] of returnedQtyByLine) {
+    items.push({
+      productId: orderItem.productId,
+      variationSku: orderItem.variationSku || null,
+      name: orderItem.name,
+      price: orderItem.price,
+      quantity,
+      image: orderItem.image
+    });
+  }
+  return { items };
+};
+
+// @desc    Refund the customer would get for the selected items, per refund destination — the same
+//          calculation the return request uses, so the return screen never promises another amount.
+// @route   POST /returns/refund-estimate   { orderId, items: [{ productId, variationSku?, quantity }] }
+// @access  Private (User)
+exports.getRefundEstimate = async (req, res) => {
+  try {
+    const { orderId, items } = req.body || {};
+    if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ success: false, message: 'A valid orderId is required' });
+    }
+    const order = await Order.findById(orderId);
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    if (order.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Not authorized for this order' });
+    }
+    const { items: returnItems, error } = validateReturnItems(order, items);
+    if (error) return res.status(400).json({ success: false, message: error });
+
+    const wallet = calculateEligibleRefund(order, returnItems, 'Wallet');
+    const bank = calculateEligibleRefund(order, returnItems, 'Bank');
+    const isFullReturn = order.items.every(oi => returnItems.some(ri =>
+      String(ri.productId) === String(oi.productId) && (ri.variationSku || null) === (oi.variationSku || null) && ri.quantity === oi.quantity));
+    res.status(200).json({
+      success: true,
+      isFullReturn,
+      refunds: { wallet, bank, upi: bank },
+      walletExtra: Math.max(0, Math.round((wallet - bank) * 100) / 100)
+    });
+  } catch (error) {
+    console.error('getRefundEstimate error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @desc    Create a return request (User)
 // @route   POST /returns
 // @access  Private (User)
@@ -203,57 +286,10 @@ exports.createReturnRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: 'A return request already exists for this order' });
     }
 
-    let parsedItems = [];
-    try {
-      parsedItems = typeof items === 'string' ? JSON.parse(items) : items;
-    } catch (e) {
-      return res.status(400).json({ success: false, message: 'Invalid items format' });
-    }
-
-    if (!Array.isArray(parsedItems) || parsedItems.length === 0) {
-      return res.status(400).json({ success: false, message: 'Items list cannot be empty' });
-    }
-
     // Validate return items and calculate refund amount securely (H-04 return amount security, M-13 return item validation)
-    const validatedReturnItems = [];
-
-    // Several lines of an order can share a productId (different sizes/colours), so each return
-    // line is matched to an order line by variant too, and quantities are summed per order line
-    // so duplicate return lines can't exceed what was bought.
-    const returnedQtyByLine = new Map();
-    for (const returnItem of parsedItems) {
-      const qty = Number(returnItem.quantity);
-      if (!returnItem.productId || !Number.isInteger(qty) || qty <= 0) {
-        return res.status(400).json({ success: false, message: 'Invalid product or quantity in return request' });
-      }
-
-      // Find item in original order
-      const orderItem = order.items.find(item =>
-        item.productId.toString() === returnItem.productId.toString() &&
-        (returnItem.variationSku ? item.variationSku === returnItem.variationSku : true)
-      );
-      if (!orderItem) {
-        return res.status(400).json({ success: false, message: `Item ${returnItem.productId} is not part of this order` });
-      }
-
-      // Check return quantity against ordered quantity
-      const lineQty = (returnedQtyByLine.get(orderItem) || 0) + qty;
-      if (lineQty > orderItem.quantity) {
-        return res.status(400).json({ success: false, message: `Return quantity (${lineQty}) for "${orderItem.name}" exceeds ordered quantity (${orderItem.quantity})` });
-      }
-      returnedQtyByLine.set(orderItem, lineQty);
-
-    }
-
-    for (const [orderItem, quantity] of returnedQtyByLine) {
-      validatedReturnItems.push({
-        productId: orderItem.productId,
-        variationSku: orderItem.variationSku || null,
-        name: orderItem.name,
-        price: orderItem.price,
-        quantity,
-        image: orderItem.image
-      });
+    const { items: validatedReturnItems, error: itemsError } = validateReturnItems(order, items);
+    if (itemsError) {
+      return res.status(400).json({ success: false, message: itemsError });
     }
 
     let parsedBankDetails = null;
