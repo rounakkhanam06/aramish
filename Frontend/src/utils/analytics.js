@@ -1,3 +1,5 @@
+import metaPixel from './metaPixel';
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 class AnalyticsTracker {
@@ -153,6 +155,7 @@ class AnalyticsTracker {
   // Helper ecommerce functions
   trackProductView(productId, productName, category = '') {
     this.track('product_view', 'commerce', { productId, productName, category });
+    metaPixel.viewContent(productId, productName, category);
   }
 
   trackAddToCart(product) {
@@ -162,6 +165,7 @@ class AnalyticsTracker {
       price: product.price || product.sellingPrice,
       quantity: product.quantity || 1
     });
+    metaPixel.addToCart(product);
   }
 
   trackRemoveFromCart(productId) {
@@ -173,6 +177,7 @@ class AnalyticsTracker {
       itemsCount: cartItems.length,
       totalPrice
     });
+    metaPixel.initiateCheckout(cartItems, totalPrice);
   }
 
   trackShippingAdded(addressType, pincode) {
@@ -194,6 +199,7 @@ class AnalyticsTracker {
       itemsCount: order.items ? order.items.length : 0,
       paymentMethod: order.paymentMethod
     });
+    metaPixel.purchase({ orderId: order.id || order._id, total: order.total, items: order.items });
   }
 
   trackSearch(query, resultsCount = 0) {

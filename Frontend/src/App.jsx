@@ -86,6 +86,7 @@ const PageSkeleton = () => (
 
 import './App.css';
 import analytics from './utils/analytics';
+import metaPixel from './utils/metaPixel';
 
 
 import SplashScreen from './components/ui/SplashScreen';
@@ -100,6 +101,7 @@ function AppContent() {
   // Initialize analytics on app mount
   useEffect(() => {
     analytics.init();
+    metaPixel.init();
   }, []);
 
   // Track page views on route changes
@@ -108,6 +110,7 @@ function AppContent() {
       path: location.pathname,
       search: location.search
     });
+    metaPixel.pageView();
   }, [location.pathname, location.search]);
 
   // Remember a referral code from any shared link (?ref=CODE) so it is auto-applied at signup
