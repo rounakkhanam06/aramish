@@ -4,8 +4,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import toast from '../utils/toast';
 import OptimizedImage from '../components/ui/OptimizedImage';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
 
 export default function OrderDetailsPage() {
   const navigate = useNavigate();
@@ -895,8 +893,6 @@ export default function OrderDetailsPage() {
   const gstAmount = globalOrder?.gstAmount || 0;
   const gstPercentage = subtotal > 0 ? Math.round((gstAmount / subtotal) * 100) : 0;
   const deliveryCharge = globalOrder?.deliveryCharge || 0;
-  const codCharge = globalOrder?.codCharge || 0;
-  const prepaidDiscount = globalOrder?.prepaidDiscount || 0;
   const coinsRedeemed = globalOrder?.coinsRedeemed || 0;
   const walletUsed = globalOrder?.walletUsed || 0;
   const refundWalletUsed = globalOrder?.refundWalletUsed || 0;
@@ -922,197 +918,38 @@ export default function OrderDetailsPage() {
   // Same rule the backend enforces for both returns and exchanges.
   const canRequestReturnOrExchange = globalOrder?.status === 'Delivered' && !returnWindowExpiry.expired;
 
-  const handleDownload = () => {
+  // GST tax invoice: generated and numbered by the server, downloadable once delivered.
+  const handleDownload = async () => {
+    if (!globalOrder?.id) return;
     setIsDownloading(true);
-    const invoiceSupportEmail = systemSettings?.supportEmail || 'Info@aramishshoes.com';
-    
-    // Create a temporary container
-    const container = document.createElement('div');
-    container.style.position = 'absolute';
-    container.style.left = '-9999px';
-    container.style.top = '-9999px';
-    container.style.width = '700px'; // fixed width for clean rendering
-    container.style.background = '#ffffff';
-    container.style.padding = '40px';
-    container.style.fontFamily = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
-    container.style.color = '#1e293b';
-    container.style.lineHeight = '1.5';
-    
-    const itemsRowsHtml = orderItems.map(item => `
-      <tr>
-        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; text-align: left; font-size: 13px;">
-          <div style="font-weight: 600; color: #1e293b;">${item.name}</div>
-          ${(item.variationSku || item.sku) ? `<div style="font-size: 11px; color: #64748b; font-family: monospace; margin-top: 2px;">SKU: ${item.variationSku || item.sku}</div>` : ''}
-        </td>
-        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; text-align: center; font-size: 13px;">${item.quantity}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; text-align: right; font-size: 13px;">₹${item.price}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; text-align: right; font-size: 13px;">₹${item.price * item.quantity}</td>
-      </tr>
-    `).join('');
-
-    container.innerHTML = `
-      <div style="border: 1px solid #e2e8f0; border-radius: 20px; padding: 40px; background: #ffffff;">
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #02006c; padding-bottom: 24px; margin-bottom: 30px;">
-          <div style="text-align: left;">
-            <h1 style="margin: 0; font-size: 26px; font-weight: 900; color: #02006c; letter-spacing: 0.5px;">INVOICE</h1>
-            <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b; font-weight: 600;">Order ID: #${id?.slice(0, 5)}</p>
-          </div>
-          <div style="text-align: right;">
-            <img src="/aramish-logo.png" style={{ maxHeight: '50px', width: 'auto', objectFit: 'contain' }} alt="Aramish Logo" />
-          </div>
-        </div>
-        
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 35px;">
-          <div style="flex: 1.5;">
-            <div style="font-size: 13px; margin-bottom: 8px;">
-              <span style="font-weight: 800; color: #64748b; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">Invoice Date:</span>
-              <span style="color: #1e293b; font-weight: 600; margin-left: 8px;">${globalOrder?.date || new Date().toLocaleDateString()}</span>
-            </div>
-            <div style="font-size: 13px; margin-bottom: 8px; margin-top: 15px;">
-              <span style="display: block; font-weight: 800; color: #64748b; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; margin-bottom: 5px;">Shipping To:</span>
-              <div style="background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 12px; padding: 16px; display: inline-block; text-align: left; min-width: 250px;">
-                <strong style="color: #02006c; font-size: 14px;">${deliveryAddress.name}</strong><br/>
-                <span style="display: block; margin-top: 4px; color: #475569; font-weight: 500; line-height: 1.4;">
-                  ${deliveryAddress.address}<br/>
-                  Pincode: ${deliveryAddress.pincode}
-                </span>
-                <span style="display: block; margin-top: 6px; color: #64748b; font-size: 12px;">
-                  Phone: ${deliveryAddress.phone || user?.phone || ''}
-                </span>
-              </div>
-            </div>
-          </div>
-          
-          <div style="flex: 1; text-align: right; display: flex; flex-direction: column; align-items: flex-end;">
-            <div style="font-size: 13px; margin-bottom: 8px;">
-              <span style="display: block; font-weight: 800; color: #64748b; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; margin-bottom: 4px;">Payment Method:</span>
-              <span style="font-size: 14px; font-weight: 900; color: #02006c;">${globalOrder?.paymentMethod || 'COD'}</span>
-            </div>
-          </div>
-        </div>
-        
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
-          <thead>
-            <tr>
-              <th style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; padding: 12px; text-align: left; font-size: 12px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Item Description</th>
-              <th style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; padding: 12px; text-align: center; font-size: 12px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; width: 60px;">Qty</th>
-              <th style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; padding: 12px; text-align: right; font-size: 12px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; width: 100px;">Unit Price</th>
-              <th style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; padding: 12px; text-align: right; font-size: 12px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; width: 100px;">Total Price</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsRowsHtml}
-          </tbody>
-        </table>
-        
-        <table style="width: 320px; margin-left: auto; margin-bottom: 30px; border-collapse: collapse;">
-          <tr>
-            <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569;">Items Subtotal:</td>
-            <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569; text-align: right;">₹${subtotal}</td>
-          </tr>
-          ${gstAmount > 0 ? `<tr>
-            <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569;">GST (${gstPercentage}%):</td>
-            <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569; text-align: right;">₹${gstAmount}</td>
-          </tr>` : ''}
-          <tr>
-            <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569;">Platform Fee:</td>
-            <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569; text-align: right;">₹${platformCommission}</td>
-          </tr>
-          ${deliveryCharge > 0 ? `
-            <tr>
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569;">Delivery Charge:</td>
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569; text-align: right;">₹${Number(deliveryCharge).toFixed(2)}</td>
-            </tr>
-          ` : ''}
-          ${codCharge > 0 ? `
-            <tr>
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569;">COD Charge:</td>
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #475569; text-align: right;">₹${codCharge}</td>
-            </tr>
-          ` : ''}
-          ${prepaidDiscount > 0 ? `
-            <tr style="color: #16a34a;">
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600;">Prepaid Discount:</td>
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; text-align: right;">-₹${prepaidDiscount}</td>
-            </tr>
-          ` : ''}
-          ${deducedDiscount > 0 ? `
-            <tr style="color: #16a34a;">
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600;">Discount / Coupon:</td>
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; text-align: right;">-₹${deducedDiscount}</td>
-            </tr>
-          ` : ''}
-          ${coinsRedeemed > 0 ? `
-            <tr style="color: #16a34a;">
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600;">Coins Redeemed:</td>
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; text-align: right;">-₹${coinsRedeemed}</td>
-            </tr>
-          ` : ''}
-          ${walletUsed > 0 ? `
-            <tr style="color: #16a34a;">
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600;">Coins Used (Main Wallet):</td>
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; text-align: right;">-₹${walletUsed}</td>
-            </tr>
-          ` : ''}
-          ${refundWalletUsed > 0 ? `
-            <tr style="color: #0369a1;">
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600;">Refund Wallet Used:</td>
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; text-align: right;">-₹${refundWalletUsed}</td>
-            </tr>
-          ` : ''}
-          ${referralCoinsUsed > 0 ? `
-            <tr style="color: #16a34a;">
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600;">Referral Coins Used:</td>
-              <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; text-align: right;">-₹${referralCoinsUsed}</td>
-            </tr>
-          ` : ''}
-          <tr style="font-size: 16px; font-weight: 900; color: #02006c; background-color: #f8fafc; border-top: 2px solid #02006c;">
-            <td style="padding: 12px; color: #02006c;">Total Paid:</td>
-            <td style="padding: 12px; color: #02006c; text-align: right;">₹${orderTotal}</td>
-          </tr>
-        </table>
-        
-        <div style="text-align: center; margin-top: 60px; font-size: 11px; color: #94a3b8; font-weight: 600; border-top: 1px solid #e2e8f0; padding-top: 24px;">
-          Thank you for shopping with Aramish!<br/>
-          For support or other queries, write to ${invoiceSupportEmail}
-        </div>
-      </div>
-    `;
-    
-    document.body.appendChild(container);
-
-    // Wait for images/styles to be completely layouted
-    setTimeout(async () => {
-      try {
-        const canvas = await html2canvas(container, {
-          scale: 2, // high resolution
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false
-        });
-        const imgData = canvas.toDataURL('image/jpeg', 0.98);
-        
-        // Calculate page size to match layout aspect ratio
-        const pdfWidth = canvas.width / 2;
-        const pdfHeight = canvas.height / 2;
-        
-        const pdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'px',
-          format: [pdfWidth, pdfHeight]
-        });
-        
-        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`Invoice_${id?.slice(0, 5)}.pdf`);
-        toast.success('Invoice downloaded successfully!');
-      } catch (err) {
-        console.error('Error generating PDF:', err);
-        toast.error('Failed to download invoice PDF. Please try again.');
-      } finally {
-        document.body.removeChild(container);
-        setIsDownloading(false);
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const token = localStorage.getItem('userToken');
+      const res = await fetch(`${apiBase}/orders/${globalOrder.id}/invoice`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.message || 'Failed to download the invoice. Please try again.');
+        return;
       }
-    }, 600);
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const fileName = (disposition.match(/filename="([^"]+)"/) || [])[1] || `Invoice_${id?.slice(-6)}.pdf`;
+      const url = URL.createObjectURL(await res.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success('Invoice downloaded successfully!');
+    } catch (err) {
+      console.error('Error downloading invoice:', err);
+      toast.error('Failed to download the invoice. Please try again.');
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handleCopyId = () => {
@@ -1683,14 +1520,20 @@ export default function OrderDetailsPage() {
                    </div>
                  </div>
 
-                 <button 
-                   onClick={handleDownload}
-                   disabled={isDownloading}
-                   className="w-full mt-4 flex items-center justify-center gap-2 border border-white/10 rounded-xl py-3 text-xs font-black text-slate-705 hover:bg-surface transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-3xs cursor-pointer uppercase tracking-wider"
-                 >
-                   <Download className="w-4 h-4" /> 
-                   {isDownloading ? 'Downloading...' : 'Download Invoice'}
-                 </button>
+                 {isDelivered ? (
+                   <button 
+                     onClick={handleDownload}
+                     disabled={isDownloading}
+                     className="w-full mt-4 flex items-center justify-center gap-2 border border-white/10 rounded-xl py-3 text-xs font-black text-slate-705 hover:bg-surface transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-3xs cursor-pointer uppercase tracking-wider"
+                   >
+                     <Download className="w-4 h-4" /> 
+                     {isDownloading ? 'Downloading...' : 'Download GST Invoice'}
+                   </button>
+                 ) : !isCancelledOrder && (
+                   <p className="mt-4 text-center text-[11px] font-semibold text-slate-500">
+                     Your GST invoice can be downloaded once the order is delivered.
+                   </p>
+                 )}
               </div>
             </div>
 

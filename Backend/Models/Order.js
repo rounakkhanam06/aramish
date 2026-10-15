@@ -22,7 +22,11 @@ const orderSchema = new mongoose.Schema({
       article: { type: String, default: null },
       attributes: { type: Map, of: String, default: {} },
       // Product cost price at checkout (admin-entered, for profit reporting). null = not set.
-      costPrice: { type: Number, default: null }
+      costPrice: { type: Number, default: null },
+      // Tax classification snapshotted at checkout for the GST invoice: HSN code and an admin
+      // per-product GST rate override (null = rate from the footwear slab rules on the invoice date).
+      hsnCode: { type: String, default: null },
+      gstRateOverride: { type: Number, default: null }
     }
   ],
   subtotal: {
@@ -50,7 +54,27 @@ const orderSchema = new mongoose.Schema({
     type: { type: String, required: true },
     address: { type: String, required: true },
     pincode: { type: String, required: true },
-    phone: { type: String, default: '' }
+    phone: { type: String, default: '' },
+    // Place of supply for GST. stateSource: 'customer' (chosen by the customer) or 'pincode'
+    // (derived from the pincode for an address saved before the state was collected).
+    state: { type: String, default: null },
+    stateCode: { type: String, default: null },
+    stateSource: { type: String, default: null }
+  },
+  // Optional B2B billing details entered at checkout (validated GSTIN)
+  buyerGstin: { type: String, default: null },
+  buyerBusinessName: { type: String, default: null },
+  // Set when the order was placed with the tax snapshot above. Orders without it (placed before
+  // GST invoicing) are never auto-invoiced: their historical tax data needs separate review.
+  taxDataCapturedAt: { type: Date, default: null },
+  // GST tax invoice, assigned exactly once (number never changes or gets reused). `data` is the
+  // complete immutable snapshot the PDF is rendered from (seller, buyer, lines, totals).
+  invoice: {
+    number: { type: String },
+    sequence: { type: Number },
+    financialYear: { type: String },
+    date: { type: Date },
+    data: { type: mongoose.Schema.Types.Mixed }
   },
   paymentMethod: {
     type: String,
@@ -245,6 +269,7 @@ orderSchema.index({ couponCode: 1 }, { sparse: true }); // Coupon usage
 orderSchema.index({ referrerId: 1 }, { sparse: true }); // Referrer locked-reward lookup
 
 orderSchema.index({ paymentId: 1 }, { sparse: true, unique: true });
+orderSchema.index({ 'invoice.number': 1 }, { unique: true, partialFilterExpression: { 'invoice.number': { $type: 'string' } } });
 
 orderSchema.pre('save', function () {
   if (this.paymentId === null || this.paymentId === '') {

@@ -10,6 +10,7 @@ const { handleOrderCancellationStockAndCoupon, handleOrderCancellationRefunds } 
 const walletService = require('../utils/walletService');
 const { isRazorpayConfigured, verifyAndCapturePayment, refundPayment } = require('../utils/razorpayService');
 const { loadShippingDetails, buildShiprocketOrderPayload, cheapestCourier, shiprocketCostsFor } = require('../utils/shiprocketPayload');
+const { checkoutBillingDetails, applyItemTaxSnapshot, orderDeliveryAddress, issueInvoiceSafely, isDeliveredForInvoice } = require('../utils/invoiceService');
 
 // Resolves the price the customer actually pays for a line (admin selling price, or the
 // variation's own selling price) — never the MRP.
@@ -35,6 +36,10 @@ const toCustomerOrder = (order) => {
   delete o.shippingCost;
   delete o.shiprocketCodFee;
   o.items = (o.items || []).map(({ costPrice, ...item }) => item);
+  // Invoice: number/date only (the snapshot is rendered server-side), and whether the customer
+  // can download it yet (only after delivery).
+  o.invoice = o.invoice && o.invoice.number ? { number: o.invoice.number, date: o.invoice.date } : null;
+  o.invoiceAvailable = isDeliveredForInvoice(o.status) && (!!o.invoice || !!o.taxDataCapturedAt);
   return o;
 };
 
@@ -57,6 +62,12 @@ const createOrderAttempt = async (req, res) => {
 
     if (!items || items.length === 0 || !deliveryAddress || !paymentMethod) {
       return res.status(400).json({ success: false, message: 'Please provide all required fields' });
+    }
+
+    // Optional GSTIN for a B2B tax invoice: rejected up front if invalid, never silently dropped.
+    const billing = checkoutBillingDetails(req.body);
+    if (billing.error) {
+      return res.status(400).json({ success: false, message: billing.error });
     }
 
     // Try starting transaction (if replica set supports it)
@@ -252,6 +263,8 @@ const createOrderAttempt = async (req, res) => {
     // 4. Calculate platform fee (no GST is charged on orders)
     const SystemConfig = require('../Models/SystemConfig');
     const systemConfig = await SystemConfig.findOne({}, null, sessionOpt);
+    // GST invoice data: each line's HSN / rate override as of checkout
+    validatedItems.forEach(item => applyItemTaxSnapshot(item, productMap[item.productId], systemConfig));
     const platformCommission = systemConfig && systemConfig.commission !== undefined ? systemConfig.commission : 15;
     const gstAmount = 0;
 
@@ -346,7 +359,10 @@ const createOrderAttempt = async (req, res) => {
       refundWalletUsed: refundWalletUsedAmount,
       eligibleProductValue,
       rewardCoinsExpected,
-      deliveryAddress,
+      deliveryAddress: orderDeliveryAddress(deliveryAddress),
+      buyerGstin: billing.buyerGstin,
+      buyerBusinessName: billing.buyerBusinessName,
+      taxDataCapturedAt: new Date(),
       paymentMethod,
       paymentStatus: paymentMethod === 'Online' ? 'Paid' : 'Pending',
       status: 'Pending',
@@ -590,6 +606,7 @@ exports.getUserOrders = async (req, res) => {
 
     const [orders, total] = await Promise.all([
       Order.find({ userId: req.user._id })
+        .select('-invoice.data')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -637,6 +654,7 @@ exports.getAllOrders = async (req, res) => {
 
     const [orders, total, statusStats] = await Promise.all([
       Order.find(match)
+        .select('-invoice.data')
         .populate('userId', 'name email phone')
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -824,6 +842,12 @@ exports.updateOrderStatus = async (req, res) => {
     // (customer's locked order reward + referrer's per-order referral reward).
     if (order.status === 'Delivered') {
       await walletService.processDeliveredOrderRewards(order._id);
+    }
+
+    // GST invoice is issued at dispatch (Shipped), or on delivery if it was missed then.
+    if (status && status !== previousStatus && ['Shipped', 'Out for Delivery', 'Delivered'].includes(order.status)) {
+      const issued = await issueInvoiceSafely(order._id);
+      if (issued) order.invoice = issued.order.invoice;
     }
 
     res.status(200).json({ success: true, message: 'Order status updated successfully', order });

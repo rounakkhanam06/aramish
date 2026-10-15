@@ -30,6 +30,109 @@ const StatusBadge = ({ status }) => {
   );
 };
 
+const INVOICE_STATE_TEXT = {
+  issued: 'Issued',
+  issued_cancelled: 'Issued — order cancelled after dispatch (a credit note / cancellation is needed in your GST records)',
+  historical: 'Historical order (placed before GST invoicing) — not auto-invoiced; needs a separate review',
+  due: 'Due — issue it when the parcel is handed to the courier (auto-issued on pickup/dispatch)',
+  not_due: 'Not due yet — issued at dispatch'
+};
+
+// GST tax invoice: state, issue at dispatch, download.
+const InvoicePanel = ({ orderId, orderStatus }) => {
+  const [info, setInfo] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const authHeader = () => ({ 'Authorization': `Bearer ${localStorage.getItem('adminToken')}` });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${apiBase}/orders/admin/${orderId}/invoice-status`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('adminToken')}` } })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => { if (!cancelled && ok && data.success) setInfo(data); })
+      .catch(err => console.error('Invoice status error:', err));
+    return () => { cancelled = true; };
+  }, [apiBase, orderId, orderStatus, reloadKey]);
+
+  const issue = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch(`${apiBase}/orders/admin/${orderId}/invoice`, { method: 'POST', headers: authHeader() });
+      const data = await res.json();
+      if (res.ok && data.success) toast.success(data.message);
+      else toast.error(data.message || 'Could not issue the invoice');
+      setReloadKey(k => k + 1);
+    } catch {
+      toast.error('Could not issue the invoice');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const download = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch(`${apiBase}/orders/admin/${orderId}/invoice`, { headers: authHeader() });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.message || 'Could not download the invoice');
+        return;
+      }
+      const fileName = ((res.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/) || [])[1] || 'Invoice.pdf';
+      const url = URL.createObjectURL(await res.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      toast.error('Could not download the invoice');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!info) return null;
+  const issued = info.state === 'issued' || info.state === 'issued_cancelled';
+  return (
+    <div className="pt-3 border-t border-dashed border-slate-200 space-y-2">
+      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">GST Tax Invoice</p>
+      {issued && (
+        <div className="flex justify-between text-xs font-bold text-slate-700">
+          <span>{info.invoice.number}</span>
+          <span className="text-slate-500 font-semibold">{formatDateTime(info.invoice.date)}</span>
+        </div>
+      )}
+      <p className={`text-[11px] font-semibold ${info.state === 'issued_cancelled' || info.state === 'historical' ? 'text-amber-600' : 'text-slate-500'}`}>
+        {INVOICE_STATE_TEXT[info.state]}
+      </p>
+      {info.placeOfSupplySource === 'pincode' && !issued && (
+        <p className="text-[11px] font-semibold text-amber-600">Place of supply will be taken from the delivery pincode (the customer's address has no state).</p>
+      )}
+      {!issued && info.state !== 'historical' && info.settingsProblems.length > 0 && (
+        <p className="text-[11px] font-semibold text-red-600">
+          Invoices cannot be issued until Settings → Business &amp; Tax is complete: {info.settingsProblems.join('; ')}.
+        </p>
+      )}
+      <div className="flex gap-2">
+        {info.state === 'due' && (
+          <button onClick={issue} disabled={busy || info.settingsProblems.length > 0} className="flex-1 py-2 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed">
+            Issue Invoice
+          </button>
+        )}
+        {issued && (
+          <button onClick={download} disabled={busy} className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 disabled:opacity-40">
+            <Download size={12} /> Download Invoice
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const OrderDetail = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
@@ -594,6 +697,8 @@ const OrderDetail = () => {
                          </div>
                       )}
                    </div>
+
+                   <InvoicePanel orderId={orderId} orderStatus={order.status} />
                 </div>
             </div>
 

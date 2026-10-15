@@ -71,6 +71,11 @@ const productSchema = new mongoose.Schema({
   hsnCode: {
     type: String
   },
+  // GST rate override (%) for this product; null = footwear slab rules from Business & Tax settings
+  gstRate: {
+    type: Number,
+    default: null
+  },
   images: [{
     type: String
   }],

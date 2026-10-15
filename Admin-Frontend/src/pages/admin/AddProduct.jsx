@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '../../utils/toast';
+import { GST_RATE_OPTIONS } from '../../utils/gstStates';
 import { useParams, useNavigate } from 'react-router-dom';
 import OptimizedImage from '../../components/common/OptimizedImage';
 
@@ -158,6 +159,7 @@ const AddProduct = () => {
 
   // Tax compliance
   const [hsnCode, setHsnCode] = useState('');
+  const [gstRate, setGstRate] = useState(''); // '' = Auto (footwear slab rules)
 
   // Variations state
   const [variations, setVariations] = useState([]);
@@ -213,6 +215,7 @@ const AddProduct = () => {
           setTags(Array.isArray(p.tags) ? p.tags.join(', ') : '');
           setManufacturerInfo(p.manufacturerInfo || '');
           setHsnCode(p.hsnCode || '');
+          setGstRate(p.gstRate === null || p.gstRate === undefined ? '' : String(p.gstRate));
           setImages(p.images || []);
           setDescriptionImages(p.descriptionImages || []);
           
@@ -645,6 +648,7 @@ const AddProduct = () => {
       bodyFormData.append('sku', sku);
       bodyFormData.append('article', article);
       bodyFormData.append('hsnCode', hsnCode);
+      bodyFormData.append('gstRate', gstRate);
       bodyFormData.append('brandName', brandName || 'Generic');
       bodyFormData.append('brandId', brandId || '');
       bodyFormData.append('isTrending', isTrending);
@@ -1470,9 +1474,16 @@ const AddProduct = () => {
                   type="text" 
                   value={hsnCode}
                   onChange={e => setHsnCode(e.target.value)}
-                  placeholder="e.g. 4202" 
+                  placeholder="e.g. 6403" 
                   className={inputCls} 
                 />
+              </div>
+              <div>
+                <Label>GST Rate</Label>
+                <select value={gstRate} onChange={e => setGstRate(e.target.value)} className={inputCls}>
+                  <option value="">Auto (footwear slabs in Business &amp; Tax)</option>
+                  {GST_RATE_OPTIONS.map(rate => <option key={rate} value={String(rate)}>{rate}% (override)</option>)}
+                </select>
               </div>
             </div>
           </section>

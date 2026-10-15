@@ -6,6 +6,17 @@ const { processDeliveredOrderRewards } = require('../utils/walletService');
 const { verifyWebhookToken } = require('../utils/shiprocketWebhookAuth');
 const { loadShippingDetails, buildShiprocketOrderPayload, cheapestCourier, shiprocketCostsFor } = require('../utils/shiprocketPayload');
 const { srErrorMessage, readAwbResult, readLabelResult, requestPickupChecked } = require('../utils/shiprocketResults');
+const { issueInvoiceSafely } = require('../utils/invoiceService');
+
+// The goods leave our hands when the courier picks them up: the GST invoice is due then
+// (CGST Act s.31(1)(a)). PICKED UP still maps the order to 'Processing', hence allowProcessing.
+const DISPATCHED_SR_STATUSES = ['PICKED UP', 'PICKED_UP', 'SHIPPED', 'IN TRANSIT', 'IN_TRANSIT', 'DISPATCHED', 'OUT FOR DELIVERY', 'OUT_FOR_DELIVERY', 'DELIVERED'];
+const issueInvoiceOnDispatch = (order, srStatus) => {
+    if (DISPATCHED_SR_STATUSES.includes(srStatus) || ['Shipped', 'Out for Delivery', 'Delivered'].includes(order.status)) {
+        return issueInvoiceSafely(order._id, { allowProcessing: true });
+    }
+    return null;
+};
 
 // Forward-shipping updates (Processing/Shipped/Out for Delivery/Delivered) must never pull an
 // order back out of a cancelled or post-delivery state — e.g. a late or duplicate DELIVERED
@@ -495,6 +506,7 @@ exports.syncOrderStatus = async (req, res) => {
                 if (order.status === 'Delivered') {
                     await processDeliveredOrderRewards(order._id);
                 }
+                await issueInvoiceOnDispatch(order, srStatus);
                 // Reward clawback for a Cancelled/RTO'd order is handled inside
                 // handleOrderCancellationRefunds above.
             }
@@ -622,6 +634,7 @@ exports.webhookReceiver = async (req, res) => {
             if (order.status === 'Delivered') {
                 await processDeliveredOrderRewards(order._id);
             }
+            await issueInvoiceOnDispatch(order, srStatus);
             // Reward clawback for a Cancelled/RTO'd order is handled inside
             // handleOrderCancellationRefunds above.
 

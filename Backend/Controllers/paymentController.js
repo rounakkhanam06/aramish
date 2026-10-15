@@ -7,6 +7,7 @@ const Cart = require('../Models/Cart');
 const shiprocketService = require('../Router/shiprocketService');
 const { loadShippingDetails, buildShiprocketOrderPayload } = require('../utils/shiprocketPayload');
 const { isRazorpayConfigured, getPayment } = require('../utils/razorpayService');
+const { checkoutBillingDetails, applyItemTaxSnapshot, orderDeliveryAddress } = require('../utils/invoiceService');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 
@@ -252,6 +253,10 @@ exports.webhookReceiver = async (req, res) => {
         const SystemConfig = require('../Models/SystemConfig');
         const systemConfig = await SystemConfig.findOne({});
         const platformCommission = systemConfig && systemConfig.commission !== undefined ? systemConfig.commission : 15;
+        // GST invoice data, as at checkout. An invalid GSTIN in the notes is dropped (the payment
+        // is already taken), and the invoice is then issued as B2C.
+        validatedItems.forEach(item => applyItemTaxSnapshot(item, productMap[item.productId], systemConfig));
+        const billing = checkoutBillingDetails(notes);
 
         // No GST is charged on orders
         const gstAmount = 0;
@@ -294,13 +299,10 @@ exports.webhookReceiver = async (req, res) => {
           userId,
           items: validatedItems,
           total: finalCalculatedTotal,
-          deliveryAddress: {
-            name: addressDoc.name,
-            type: addressDoc.type,
-            address: addressDoc.address,
-            pincode: addressDoc.pincode,
-            phone: addressDoc.phone || ''
-          },
+          deliveryAddress: orderDeliveryAddress(addressDoc),
+          buyerGstin: billing.error ? null : billing.buyerGstin,
+          buyerBusinessName: billing.error ? null : billing.buyerBusinessName,
+          taxDataCapturedAt: new Date(),
           paymentMethod: 'Online',
           paymentStatus: 'Paid',
           paymentId,

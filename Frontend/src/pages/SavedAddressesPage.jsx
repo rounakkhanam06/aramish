@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Home, MapPin, MoreHorizontal, Plus, Edit2, Trash2, X, Briefcase, Loader2, AlertCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import toast from '../utils/toast';
+import { INDIAN_STATES } from '../utils/indianStates';
 
 export default function SavedAddressesPage() {
   const navigate = useNavigate();
@@ -17,13 +18,14 @@ export default function SavedAddressesPage() {
     phone: '',
     address: '',
     pincode: '',
+    state: '',
     type: 'Home',
     isDefault: false
   });
 
   const openAddModal = () => {
     setEditingAddress(null);
-    setFormData({ name: '', phone: '', address: '', pincode: '', type: 'Home', isDefault: false });
+    setFormData({ name: '', phone: '', address: '', pincode: '', state: '', type: 'Home', isDefault: false });
     setIsModalOpen(true);
   };
 
@@ -35,6 +37,7 @@ export default function SavedAddressesPage() {
       phone: addr.phone || '',
       address: addr.address || '',
       pincode: addr.pincode || '',
+      state: addr.state || '',
       type: addr.type || 'Home',
       isDefault: addr.isDefault || false
     });
@@ -42,8 +45,8 @@ export default function SavedAddressesPage() {
   };
 
   const handleSaveAddress = async () => {
-    if (!formData.name.trim() || !formData.phone.trim() || !formData.address.trim() || !formData.pincode.trim()) {
-      toast.info('Name, Phone, Address, and Pincode are required!');
+    if (!formData.name.trim() || !formData.phone.trim() || !formData.address.trim() || !formData.pincode.trim() || !formData.state) {
+      toast.info('Name, Phone, Address, Pincode and State are required!');
       return;
     }
     if (/\d/.test(formData.name)) {
@@ -74,6 +77,7 @@ export default function SavedAddressesPage() {
           phone: cleanedPhone,
           address: formData.address.trim(),
           pincode: formData.pincode.trim(),
+          state: formData.state,
           type: formData.type,
           isDefault: formData.isDefault || false
         });
@@ -90,6 +94,7 @@ export default function SavedAddressesPage() {
           phone: cleanedPhone,
           address: formData.address.trim(),
           pincode: formData.pincode.trim(),
+          state: formData.state,
           type: formData.type,
           isDefault: formData.isDefault || false
         });
@@ -229,6 +234,7 @@ export default function SavedAddressesPage() {
                   <p className="text-[12px] text-slate-500 leading-relaxed mb-1.5">
                     {addr.address}
                     {addr.pincode && <span> - <span className="font-semibold text-slate-700">{addr.pincode}</span></span>}
+                    {addr.state && <span>, {addr.state}</span>}
                   </p>
                   <p className="text-[12px] font-bold text-slate-600">+91 {addr.phone}</p>
                 </div>
@@ -357,6 +363,19 @@ export default function SavedAddressesPage() {
                   placeholder="6-digit pincode"
                   maxLength={6}
                 />
+              </div>
+
+              {/* State (GST place of supply) */}
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-bold text-slate-700">State</label>
+                <select
+                  value={formData.state}
+                  onChange={e => setFormData({ ...formData, state: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-surface border border-white/10 rounded-lg text-[13px] focus:outline-none focus:border-[#0B132B] focus:ring-1 focus:ring-[#0B132B]/20 transition-all"
+                >
+                  <option value="">Select state</option>
+                  {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
               </div>
 
               {/* Address Type */}

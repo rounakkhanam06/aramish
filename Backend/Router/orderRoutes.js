@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { createOrder, getUserOrders, getAllOrders, updateOrderStatus, getUserOrderById, trackOrderById, getAdminOrderById, deleteOrder, cancelOrder, getWalletPreview } = require('../Controllers/orderController');
+const { downloadMyInvoice, adminDownloadInvoice, adminIssueInvoice, adminInvoiceStatus } = require('../Controllers/invoiceController');
 const { protectUser } = require('../Middlewares/userAuthMiddleware');
 const { protectAdmin } = require('../Middlewares/authMiddleware');
 
@@ -20,6 +21,8 @@ router.route('/:id')
 router.route('/:id/cancel')
   .post(protectUser, cancelOrder);
 
+router.get('/:id/invoice', protectUser, downloadMyInvoice);
+
 // Admin routes
 router.route('/admin/all')
   .get(protectAdmin, getAllOrders);
@@ -30,6 +33,11 @@ router.route('/admin/:id')
 
 router.route('/admin/:id/status')
   .put(protectAdmin, updateOrderStatus);
+
+router.route('/admin/:id/invoice')
+  .get(protectAdmin, adminDownloadInvoice)
+  .post(protectAdmin, adminIssueInvoice);
+router.get('/admin/:id/invoice-status', protectAdmin, adminInvoiceStatus);
 
 module.exports = router;
 

@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  User, Shield, Lock, Save, CheckCircle2, ChevronRight, AlertCircle, Camera, Eye, EyeOff, Coins, Tag
+  User, Shield, Lock, Save, CheckCircle2, ChevronRight, AlertCircle, Camera, Eye, EyeOff, Coins, Tag, Plus, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from '../../utils/toast';
 import OptimizedImage from '../../components/common/OptimizedImage';
+import { GST_STATES, GST_RATE_OPTIONS } from '../../utils/gstStates';
+
+// GST rate rule dates are IST calendar days (the backend stores them as IST midnight).
+const IST_MS = 330 * 60 * 1000;
+const toIstDay = (date) => (date ? new Date(new Date(date).getTime() + IST_MS).toISOString().slice(0, 10) : '');
 
 const Settings = () => {
   const [activeSection, setActiveSection] = useState('Profile');
@@ -23,6 +28,15 @@ const Settings = () => {
   const [helpline, setHelpline] = useState('');
   const [supportEmail, setSupportEmail] = useState('');
   const [gstNo, setGstNo] = useState('');
+  // GST invoice (seller) details
+  const [businessLegalName, setBusinessLegalName] = useState('');
+  const [businessTradeName, setBusinessTradeName] = useState('');
+  const [businessAddress, setBusinessAddress] = useState('');
+  const [businessStateCode, setBusinessStateCode] = useState('');
+  const [businessPan, setBusinessPan] = useState('');
+  const [invoicePrefix, setInvoicePrefix] = useState('ARM');
+  const [defaultHsnCode, setDefaultHsnCode] = useState('');
+  const [gstRateRules, setGstRateRules] = useState([]);
   const [commission, setCommission] = useState(10);
   const [codChargeEnabled, setCodChargeEnabled] = useState(true);
   const [codChargeAmount, setCodChargeAmount] = useState(150);
@@ -106,6 +120,19 @@ const Settings = () => {
         setHelpline(s.helpline || '');
         setSupportEmail(s.supportEmail || '');
         setGstNo(s.gstNo || '');
+        setBusinessLegalName(s.businessLegalName || '');
+        setBusinessTradeName(s.businessTradeName || '');
+        setBusinessAddress(s.businessAddress || '');
+        setBusinessStateCode(s.businessStateCode || '');
+        setBusinessPan(s.businessPan || '');
+        setInvoicePrefix(s.invoicePrefix || 'ARM');
+        setDefaultHsnCode(s.defaultHsnCode || '');
+        setGstRateRules((s.gstRateRules || []).map(r => ({
+          effectiveFrom: toIstDay(r.effectiveFrom),
+          threshold: r.threshold ?? 0,
+          rateUpToThreshold: r.rateUpToThreshold,
+          rateAboveThreshold: r.rateAboveThreshold
+        })));
         setCommission(s.commission ?? 10);
         setCodChargeEnabled(s.codChargeEnabled ?? true);
         setCodChargeAmount(s.codChargeAmount ?? 150);
@@ -202,7 +229,6 @@ const Settings = () => {
           body: JSON.stringify({
             helpline,
             supportEmail,
-            gstNo,
             commission
           })
         });
@@ -231,7 +257,20 @@ const Settings = () => {
           },
           body: JSON.stringify({
             helpline,
-            gstNo,
+            gstNo: gstNo.trim().toUpperCase(),
+            businessLegalName,
+            businessTradeName,
+            businessAddress,
+            businessStateCode,
+            businessPan: businessPan.trim().toUpperCase(),
+            invoicePrefix: invoicePrefix.trim().toUpperCase(),
+            defaultHsnCode: defaultHsnCode.trim(),
+            gstRateRules: gstRateRules.map(r => ({
+              effectiveFrom: `${r.effectiveFrom}T00:00:00+05:30`,
+              threshold: Number(r.threshold) || 0,
+              rateUpToThreshold: Number(r.rateUpToThreshold),
+              rateAboveThreshold: Number(r.rateAboveThreshold)
+            })),
             commission,
             codChargeEnabled,
             codChargeAmount: Number(codChargeAmount),
@@ -499,21 +538,97 @@ const Settings = () => {
                           className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
                         />
                       </div>
-                      <div className="space-y-2 md:col-span-2">
-                        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Tax Registration Number (GSTIN)</label>
-                        <input 
-                          type="text" 
-                          value={gstNo} 
-                          onChange={e => setGstNo(e.target.value)} 
-                          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-bold focus:ring-4 focus:ring-blue-50 transition-all outline-none" 
-                        />
-                      </div>
                     </div>
                   </div>
                 )}
 
                 {activeSection === 'Business' && (
                   <div className="space-y-8">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 font-montserrat uppercase mb-1">GST Invoice Details</h3>
+                      <p className="text-[10px] text-slate-500 mb-4 leading-relaxed">
+                        Printed on every tax invoice. Invoices are issued at dispatch and only when these details are complete and valid.
+                        An issued invoice keeps the details it was issued with.
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Legal Business Name</label>
+                          <input type="text" value={businessLegalName} onChange={e => setBusinessLegalName(e.target.value)} placeholder="As registered under GST" className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Trade Name (optional)</label>
+                          <input type="text" value={businessTradeName} onChange={e => setBusinessTradeName(e.target.value)} placeholder="e.g. Aramish Shoes" className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none" />
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Registered Address</label>
+                          <textarea rows={2} value={businessAddress} onChange={e => setBusinessAddress(e.target.value)} placeholder="Principal place of business, as on the GST certificate" className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none resize-none" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">State</label>
+                          <select value={businessStateCode} onChange={e => setBusinessStateCode(e.target.value)} className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none">
+                            <option value="">Select state</option>
+                            {GST_STATES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">State Code</label>
+                          <select value={businessStateCode} onChange={e => setBusinessStateCode(e.target.value)} className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none">
+                            <option value="">--</option>
+                            {GST_STATES.map(([code]) => <option key={code} value={code}>{code}</option>)}
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">GSTIN</label>
+                          <input type="text" value={gstNo} maxLength={15} onChange={e => setGstNo(e.target.value.toUpperCase().replace(/\s/g, ''))} placeholder="15-character GSTIN" className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none uppercase" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">PAN</label>
+                          <input type="text" value={businessPan} maxLength={10} onChange={e => setBusinessPan(e.target.value.toUpperCase().replace(/\s/g, ''))} placeholder="Must match GSTIN characters 3-12" className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none uppercase" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Invoice Number Prefix</label>
+                          <input type="text" value={invoicePrefix} maxLength={10} onChange={e => setInvoicePrefix(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none uppercase" />
+                          <p className="text-[10px] text-slate-400">Numbers look like {invoicePrefix || 'ARM'}/26-27/000001 and restart each financial year. Changing the prefix starts a new series.</p>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Default HSN Code</label>
+                          <input type="text" value={defaultHsnCode} maxLength={8} onChange={e => setDefaultHsnCode(e.target.value.replace(/\D/g, ''))} placeholder="Used when a product has no HSN, e.g. 6403" className="w-full bg-slate-50 border border-slate-100 rounded-xl py-4 px-6 text-sm font-semibold focus:ring-4 focus:ring-blue-50 transition-all outline-none" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-50">
+                      <h3 className="text-sm font-bold text-slate-900 font-montserrat uppercase mb-1">Footwear GST Rates</h3>
+                      <p className="text-[10px] text-slate-500 mb-4 leading-relaxed max-w-2xl">
+                        Prices are GST-inclusive; tax is calculated out of the selling price. The rule in force on the invoice date applies:
+                        a pair whose sale value (taxable value after discounts) is up to the threshold is taxed at the first rate, above it at the second.
+                        A threshold of 0 applies the first rate to all values. A product-level GST rate (Add/Edit Product) overrides these rules.
+                      </p>
+                      <div className="space-y-2">
+                        <div className="hidden md:grid grid-cols-[1.2fr_1fr_1fr_1fr_40px] gap-3 px-1 text-[10px] font-semibold text-slate-400 uppercase tracking-widest">
+                          <span>Effective From</span><span>Threshold per pair (₹)</span><span>Rate up to threshold</span><span>Rate above</span><span></span>
+                        </div>
+                        {gstRateRules.map((rule, idx) => (
+                          <div key={idx} className="grid grid-cols-2 md:grid-cols-[1.2fr_1fr_1fr_1fr_40px] gap-3 items-center bg-slate-50 rounded-xl p-3 border border-slate-100">
+                            <input type="date" value={rule.effectiveFrom} onChange={e => setGstRateRules(rules => rules.map((r, i) => i === idx ? { ...r, effectiveFrom: e.target.value } : r))} className="w-full bg-white border border-slate-200 rounded-lg py-2 px-3 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-50" />
+                            <input type="number" min="0" value={rule.threshold} onChange={e => setGstRateRules(rules => rules.map((r, i) => i === idx ? { ...r, threshold: e.target.value } : r))} className="w-full bg-white border border-slate-200 rounded-lg py-2 px-3 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-50" />
+                            <select value={rule.rateUpToThreshold} onChange={e => setGstRateRules(rules => rules.map((r, i) => i === idx ? { ...r, rateUpToThreshold: e.target.value } : r))} className="w-full bg-white border border-slate-200 rounded-lg py-2 px-3 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-50">
+                              {GST_RATE_OPTIONS.map(rate => <option key={rate} value={rate}>{rate}%</option>)}
+                            </select>
+                            <select value={rule.rateAboveThreshold} onChange={e => setGstRateRules(rules => rules.map((r, i) => i === idx ? { ...r, rateAboveThreshold: e.target.value } : r))} className="w-full bg-white border border-slate-200 rounded-lg py-2 px-3 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-50">
+                              {GST_RATE_OPTIONS.map(rate => <option key={rate} value={rate}>{rate}%</option>)}
+                            </select>
+                            <button type="button" title="Remove rule" disabled={gstRateRules.length <= 1} onClick={() => setGstRateRules(rules => rules.filter((_, i) => i !== idx))} className="p-2 text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => setGstRateRules(rules => [...rules, { effectiveFrom: '', threshold: 0, rateUpToThreshold: 5, rateAboveThreshold: 18 }])} className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 px-1 py-1">
+                          <Plus size={14} /> Add rate rule
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       <div className="space-y-2">
                         <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">Platform Commission (₹)</label>
@@ -603,7 +718,8 @@ const Settings = () => {
                       <div>
                         <p className="text-[10px] font-semibold text-slate-900 uppercase tracking-widest">Global Logic Policy</p>
                         <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
-                          Commission rates are applied automatically platform-wide. No GST is charged on products.
+                          Commission rates are applied automatically platform-wide. Selling prices include GST: no GST is added at checkout,
+                          and each invoice shows the GST contained in the price.
                         </p>
                       </div>
                     </div>

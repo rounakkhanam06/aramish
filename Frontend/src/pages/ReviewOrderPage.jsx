@@ -6,6 +6,7 @@ import toast from '../utils/toast';
 import OptimizedImage from '../components/ui/OptimizedImage';
 import analytics from '../utils/analytics';
 import { isMobileAppWebView } from '../utils/platform';
+import { INDIAN_STATES, GSTIN_PATTERN } from '../utils/indianStates';
 
 export default function ReviewOrderPage() {
   const navigate = useNavigate();
@@ -31,6 +32,12 @@ export default function ReviewOrderPage() {
   const [newAddrText, setNewAddrText] = useState('');
   const [newAddrPhone, setNewAddrPhone] = useState('');
   const [newAddrPincode, setNewAddrPincode] = useState('');
+  const [newAddrState, setNewAddrState] = useState('');
+
+  // Optional GSTIN for a business (B2B) tax invoice
+  const [useGstin, setUseGstin] = useState(false);
+  const [buyerGstin, setBuyerGstin] = useState('');
+  const [buyerBusinessName, setBuyerBusinessName] = useState('');
 
   // Promo code states
   const [promoInput, setPromoInput] = useState('');
@@ -164,6 +171,28 @@ export default function ReviewOrderPage() {
 
   const selectedAddress = addressesList.find(a => (a._id === selectedAddressId || a.id === selectedAddressId)) || addressesList[0];
 
+  // Addresses saved before the state was collected: ask for it once (GST place of supply).
+  const saveSelectedAddressState = async (state) => {
+    if (!state || !selectedAddress) return;
+    const addrId = selectedAddress._id || selectedAddress.id;
+    try {
+      const token = localStorage.getItem('userToken');
+      const res = await fetch(`${API_BASE}/addresses/${addrId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ state })
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setDbAddresses(prev => prev.map(a => ((a._id || a.id) === addrId ? { ...a, state: data.data.state } : a)));
+      } else {
+        toast.error(data.message || 'Could not save the state');
+      }
+    } catch {
+      toast.error('Could not save the state');
+    }
+  };
+
   useEffect(() => {
     if (selectedAddress && selectedAddress.pincode && cart.length > 0) {
       const estimateShipping = async () => {
@@ -205,7 +234,7 @@ export default function ReviewOrderPage() {
 
   const handleAddAddress = async (e) => {
     e.preventDefault();
-    if (!newAddrName || !newAddrText || !newAddrPincode || !newAddrPhone) {
+    if (!newAddrName || !newAddrText || !newAddrPincode || !newAddrPhone || !newAddrState) {
       alert("Please fill all required fields");
       return;
     }
@@ -242,7 +271,8 @@ export default function ReviewOrderPage() {
           phone: cleanedPhone,
           type: newAddrType,
           address: newAddrText,
-          pincode: newAddrPincode
+          pincode: newAddrPincode,
+          state: newAddrState
         })
       });
       const data = await res.json();
@@ -255,6 +285,7 @@ export default function ReviewOrderPage() {
         setNewAddrType('Home');
         setNewAddrText('');
         setNewAddrPincode('');
+        setNewAddrState('');
       } else {
         alert(data.message || "Failed to add address");
       }
@@ -363,6 +394,14 @@ export default function ReviewOrderPage() {
       toast.info("Please add a delivery address before placing order");
       return;
     }
+    if (!selectedAddress.state) {
+      toast.info("Please select the state for your delivery address");
+      return;
+    }
+    if (useGstin && buyerGstin && !GSTIN_PATTERN.test(buyerGstin.trim().toUpperCase())) {
+      toast.error("Please enter a valid 15-character GSTIN, or untick the GST invoice option");
+      return;
+    }
 
     // Don't take a payment until the delivery charge is known.
     if (isEstimatingDelivery) {
@@ -410,6 +449,8 @@ export default function ReviewOrderPage() {
           userId: user?.id || user?._id || "",
           addressId: selectedAddress?._id || selectedAddress?.id || "",
           couponCode: appliedCoupon ? appliedCoupon.code : "",
+          buyerGstin: useGstin ? buyerGstin.trim().toUpperCase() : "",
+          buyerBusinessName: useGstin ? buyerBusinessName.trim().slice(0, 150) : "",
           cartSummary: cart.map(item => `${item.id || item.productId}:${item.quantity}`).join(',')
         },
         theme: {
@@ -469,8 +510,11 @@ export default function ReviewOrderPage() {
             type: selectedAddress.type,
             address: selectedAddress.address,
             pincode: selectedAddress.pincode,
-            phone: selectedAddress.phone
+            phone: selectedAddress.phone,
+            state: selectedAddress.state
           },
+          buyerGstin: useGstin ? buyerGstin.trim().toUpperCase() : undefined,
+          buyerBusinessName: useGstin ? buyerBusinessName.trim() : undefined,
           paymentMethod: method === 'Online' ? 'Online' : 'COD',
           paymentStatus: method === 'Online' ? 'Paid' : 'Pending',
           paymentId: paymentId,
@@ -606,14 +650,58 @@ export default function ReviewOrderPage() {
               {selectedAddress ? (
                 <>
                   <p className="text-[13px] leading-snug text-slate-600 mb-3">
-                    <span className="font-bold text-slate-800">{selectedAddress.name}</span> ({selectedAddress.type}) - {selectedAddress.address}, {selectedAddress.pincode}
+                    <span className="font-bold text-slate-800">{selectedAddress.name}</span> ({selectedAddress.type}) - {selectedAddress.address}, {selectedAddress.pincode}{selectedAddress.state ? `, ${selectedAddress.state}` : ''}
                   </p>
+                  {!selectedAddress.state && (
+                    <div className="mb-3">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wide">State (required)</label>
+                      <select
+                        defaultValue=""
+                        onChange={(e) => saveSelectedAddressState(e.target.value)}
+                        className="mt-1 w-full border border-amber-300 rounded-lg p-2.5 text-xs font-semibold focus:outline-none focus:border-[#0B132B]"
+                      >
+                        <option value="">Select state</option>
+                        {INDIAN_STATES.map(st => <option key={st} value={st}>{st}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <button 
                     onClick={() => setIsAddressModalOpen(true)}
                     className="text-[#0B132B] text-xs font-bold mb-4 cursor-pointer hover:underline"
                   >
                     Change Address <span className="ml-1">›</span>
                   </button>
+
+                  {/* Optional GSTIN for a business tax invoice */}
+                  <div className="mb-4">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={useGstin}
+                        onChange={(e) => setUseGstin(e.target.checked)}
+                        className="w-4 h-4"
+                      />
+                      Add GSTIN for a business invoice (optional)
+                    </label>
+                    {useGstin && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                        <input
+                          type="text"
+                          placeholder="GSTIN (15 characters)"
+                          value={buyerGstin}
+                          onChange={(e) => setBuyerGstin(e.target.value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 15))}
+                          className={`w-full border rounded-lg p-2.5 text-xs font-semibold focus:outline-none focus:border-[#0B132B] ${buyerGstin && !GSTIN_PATTERN.test(buyerGstin) ? 'border-rose-300' : 'border-white/10'}`}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Registered business name"
+                          value={buyerBusinessName}
+                          onChange={(e) => setBuyerBusinessName(e.target.value.slice(0, 150))}
+                          className="w-full border border-white/10 rounded-lg p-2.5 text-xs font-semibold focus:outline-none focus:border-[#0B132B]"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </>
               ) : (
                 <div className="flex flex-col items-center justify-center py-4 bg-gold/10 rounded-lg border border-gold/20 mb-4">
@@ -1195,6 +1283,18 @@ export default function ReviewOrderPage() {
                       className="mt-1 w-full border border-white/10 rounded-lg p-2.5 text-xs font-semibold focus:outline-none focus:border-[#0B132B]"
                       required 
                     />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wide">State</label>
+                    <select
+                      value={newAddrState}
+                      onChange={(e) => setNewAddrState(e.target.value)}
+                      className="mt-1 w-full border border-white/10 rounded-lg p-2.5 text-xs font-semibold focus:outline-none focus:border-[#0B132B]"
+                      required
+                    >
+                      <option value="">Select state</option>
+                      {INDIAN_STATES.map(st => <option key={st} value={st}>{st}</option>)}
+                    </select>
                   </div>
                   <div className="flex gap-3 mt-4">
                     <button 

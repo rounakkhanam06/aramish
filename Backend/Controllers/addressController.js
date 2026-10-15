@@ -1,4 +1,12 @@
 const Address = require('../Models/Address');
+const { resolveState } = require('../utils/gstData');
+
+// Customer's state (GST place of supply): stored as the canonical state name. undefined = not sent.
+const cleanState = (state) => {
+  if (state === undefined || state === null || state === '') return { value: undefined };
+  const resolved = resolveState(state);
+  return resolved ? { value: resolved.name } : { error: 'Please select a valid state' };
+};
 
 // @desc    Get user addresses
 // @route   GET /api/addresses
@@ -19,6 +27,10 @@ const getAddresses = async (req, res) => {
 const createAddress = async (req, res) => {
   try {
     let { name, phone, type, address, pincode, isDefault } = req.body;
+    const state = cleanState(req.body.state);
+    if (state.error) {
+      return res.status(400).json({ success: false, message: state.error });
+    }
 
     // Fallback to logged-in user phone if not explicitly provided
     if (!phone && req.user && req.user.phone) {
@@ -55,6 +67,7 @@ const createAddress = async (req, res) => {
       type: type || 'Home',
       address,
       pincode: pincode || '',
+      state: state.value,
       isDefault: isDefault || req.body.isDefault || false
     });
 
@@ -70,6 +83,10 @@ const createAddress = async (req, res) => {
 const updateAddress = async (req, res) => {
   try {
     const { name, phone, type, address, pincode, isDefault } = req.body;
+    const state = cleanState(req.body.state);
+    if (state.error) {
+      return res.status(400).json({ success: false, message: state.error });
+    }
     let existingAddress = await Address.findOne({ _id: req.params.id, userId: req.user._id });
 
     if (!existingAddress) {
@@ -94,6 +111,7 @@ const updateAddress = async (req, res) => {
     existingAddress.type = type || existingAddress.type;
     existingAddress.address = address || existingAddress.address;
     if (pincode !== undefined) existingAddress.pincode = pincode;
+    if (state.value !== undefined) existingAddress.state = state.value;
     if (isDefault !== undefined) existingAddress.isDefault = isDefault;
 
     const updatedAddress = await existingAddress.save();

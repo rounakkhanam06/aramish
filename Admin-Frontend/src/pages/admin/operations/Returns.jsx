@@ -11,6 +11,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import OptimizedImage from '../../../components/common/OptimizedImage';
 import { formatDate, formatDateTime } from '../../../utils/date';
+import { getImageUrl } from '../../../utils/imageHelper';
+
+// Size/colour actually delivered for a returned line: taken from the matching order line
+// (same product + variant SKU), since the return only stores the SKU.
+const deliveredVariantText = (item, order) => {
+  const line = (order?.items || []).find(o =>
+    String(o.productId) === String(item.productId) && (o.variationSku || null) === (item.variationSku || null)
+  );
+  const attrs = Object.entries(line?.attributes || {}).filter(([, v]) => v);
+  if (attrs.length) return attrs.map(([k, v]) => `${k}: ${v}`).join(' • ');
+  return item.variationSku ? `SKU: ${item.variationSku}` : '';
+};
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -32,6 +44,7 @@ const Returns = () => {
   const [retryingShipment, setRetryingShipment] = useState(false);
   const [adminNotes, setAdminNotes] = useState('');
   const [editRefundAmount, setEditRefundAmount] = useState('');
+  const [previewImage, setPreviewImage] = useState(null); // full-size customer photo
 
   const tabs = ['All', 'Requested', 'Approved', 'Rejected', 'Pick-up Scheduled', 'Received', 'Refunded'];
 
@@ -516,6 +529,9 @@ const Returns = () => {
                             )}
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-bold text-slate-900 truncate">{item.name}</p>
+                              {deliveredVariantText(item, selectedReturn.orderId) && (
+                                <p className="text-[11px] text-slate-700 font-black mt-0.5">Delivered: {deliveredVariantText(item, selectedReturn.orderId)}</p>
+                              )}
                               <p className="text-[10px] text-slate-400 font-bold mt-0.5">Qty: {item.quantity} • ₹{item.price?.toLocaleString()}</p>
                             </div>
                             <p className="text-sm font-black text-blue-600 font-roboto">₹{(item.price * item.quantity).toLocaleString()}</p>
@@ -539,12 +555,17 @@ const Returns = () => {
                     {/* User uploaded images */}
                     {selectedReturn.images?.length > 0 && (
                       <div className="space-y-2">
-                        <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Customer Photos</p>
+                        <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Customer Photos <span className="text-slate-400 normal-case tracking-normal font-bold">(click to view full size)</span></p>
                         <div className="flex gap-2 flex-wrap">
                           {selectedReturn.images.map((img, idx) => (
-                            <div key={idx} className="w-20 h-20 rounded-xl overflow-hidden border border-slate-100">
+                            <button
+                              type="button"
+                              key={idx}
+                              onClick={() => setPreviewImage(img)}
+                              className="w-20 h-20 rounded-xl overflow-hidden border border-slate-100 cursor-zoom-in hover:ring-2 hover:ring-blue-300 transition-all"
+                            >
                               <OptimizedImage src={img} alt={`proof-${idx}`} type="default" className="w-full h-full object-cover" />
-                            </div>
+                            </button>
                           ))}
                         </div>
                       </div>
@@ -728,6 +749,40 @@ const Returns = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Full-size customer photo */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/85 flex items-center justify-center p-4"
+          onClick={() => setPreviewImage(null)}
+        >
+          <img
+            src={getImageUrl(previewImage)}
+            alt="Customer photo"
+            className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div className="absolute top-4 right-4 flex gap-2">
+            <a
+              href={getImageUrl(previewImage)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="px-3 py-2 bg-white/90 rounded-lg text-xs font-bold text-slate-800 hover:bg-white"
+            >
+              Open original
+            </a>
+            <button
+              type="button"
+              onClick={() => setPreviewImage(null)}
+              className="p-2 bg-white/90 rounded-lg text-slate-800 hover:bg-white"
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

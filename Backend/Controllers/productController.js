@@ -9,6 +9,15 @@ const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
 
+// Per-product GST rate override (%): '' / null / 'auto' = use the footwear slab rules.
+const ALLOWED_GST_RATES = [0, 0.25, 3, 5, 12, 18, 28, 40];
+const parseGstRate = (value) => {
+  if (value === undefined) return { skip: true };
+  if (value === null || value === '' || value === 'null' || value === 'auto') return { value: null };
+  const n = Number(value);
+  return ALLOWED_GST_RATES.includes(n) ? { value: n } : { error: `GST rate must be one of ${ALLOWED_GST_RATES.join(', ')}% or Auto` };
+};
+
 // Public list sizes: storefront requests never return the whole catalog in one response
 const MAX_PUBLIC_PAGE_SIZE = 100;
 const HOMEPAGE_PAGE_SIZE = 24;
@@ -257,6 +266,10 @@ const createProduct = async (req, res) => {
     if (!name || !category || sellingPrice === undefined || mrp === undefined) {
       return res.status(400).json({ success: false, message: 'Name, Category, MRP, and Selling Price are required' });
     }
+    const gstRate = parseGstRate(req.body.gstRate);
+    if (gstRate.error) {
+      return res.status(400).json({ success: false, message: gstRate.error });
+    }
 
     if (!article) {
       return res.status(400).json({ success: false, message: 'Article Number is required' });
@@ -374,6 +387,7 @@ const createProduct = async (req, res) => {
       shippingSpecs: parseJsonField(req.body.shippingSpecs),
       flags: parseJsonField(req.body.flags, { topSection: false, crazyDeals: false, flashSale: false }),
       hsnCode,
+      gstRate: gstRate.skip ? null : gstRate.value,
       images: imageUrls,
       brandId: brandId || undefined,
       brandName: resolvedBrandName,
@@ -440,6 +454,12 @@ const applyProductUpdate = async (req, res) => {
       'mrp', 'costPrice', 'stock', 'discountLabel', 'sku', 'article', 'hsnCode',
       'manufacturerInfo', 'status'
     ];
+
+    const gstRate = parseGstRate(req.body.gstRate);
+    if (gstRate.error) {
+      return res.status(400).json({ success: false, message: gstRate.error });
+    }
+    if (!gstRate.skip) product.gstRate = gstRate.value;
 
     fields.forEach(f => {
       if (req.body[f] !== undefined) {

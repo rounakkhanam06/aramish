@@ -25,6 +25,10 @@ const addressSchema = new mongoose.Schema({
   pincode: {
     type: String
   },
+  // Customer's state (GST place of supply). Older addresses may not have it.
+  state: {
+    type: String
+  },
   isDefault: {
     type: Boolean,
     default: false
