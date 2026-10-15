@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import toast from '../utils/toast';
 import OptimizedImage from '../components/ui/OptimizedImage';
 import analytics from '../utils/analytics';
+import metaPixel from '../utils/metaPixel';
 import { isMobileAppWebView } from '../utils/platform';
 import { INDIAN_STATES, GSTIN_PATTERN } from '../utils/indianStates';
 
@@ -532,6 +533,7 @@ export default function ReviewOrderPage() {
       // this request was in flight), so the purchase went through.
       if (data.code === 'PAYMENT_ALREADY_USED') {
         unplacedPaymentIdRef.current = null;
+        metaPixel.purchase({ total: grandTotal, items: cart });
         clearCart();
         refreshOrders();
         toast.success('Your order has been placed.');
