@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import OptimizedImage from '../../../components/common/OptimizedImage';
 import { formatDate, formatDateTime } from '../../../utils/date';
+import CourierPicker from '../../../components/common/CourierPicker';
 
 // A leg with its AWB whose courier pickup hasn't been requested yet (and that isn't moving yet).
 const LEG_NOT_YET_MOVING = ['PENDING', 'CREATED', 'AWB ASSIGNED', 'NEW'];
@@ -234,10 +235,12 @@ const Exchanges = () => {
     }
   };
 
-  const handleRetryShipment = async (leg) => {
-    if (!selectedExchange) return;
+  // Creates a failed leg's shipment again, books the courier the admin selected (`courierId`), or
+  // requests a missing pickup. `schedulePickup: false` books the replacement's courier only.
+  const handleRetryShipment = async (leg, { courierId, schedulePickup } = {}) => {
+    if (!selectedExchange) return false;
     const token = getToken();
-    if (!token) return;
+    if (!token) return false;
     try {
       setUpdatingStatus(true);
       const res = await fetch(`${API_BASE}/exchanges/admin/${selectedExchange._id}/retry-shipment`, {
@@ -246,19 +249,45 @@ const Exchanges = () => {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ leg })
+        body: JSON.stringify({ leg, ...(courierId ? { courierId } : {}), ...(schedulePickup === false ? { schedulePickup: false } : {}) })
       });
       const data = await res.json();
       if (res.ok && data.success) {
         toast.success(data.message || `Shipment retry successful for ${leg} leg`);
+        if (data.warning) toast.error(data.warning, { duration: 12000 });
         fetchDetail(selectedExchange._id);
         fetchExchanges();
       } else {
-        toast.error(data.message || `Retry failed for ${leg} leg`);
+        toast.error(data.message || `Retry failed for ${leg} leg`, { duration: 8000 });
         fetchDetail(selectedExchange._id);
       }
-    } catch (err) {
+      return !!(res.ok && data.success);
+    } catch {
       toast.error('Could not retry shipment');
+      return false;
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
+  // Pulls both legs' latest AWB, courier and status from Shiprocket (e.g. courier changed in its panel).
+  const handleSyncShipment = async () => {
+    if (!selectedExchange) return;
+    const token = getToken();
+    if (!token) return;
+    try {
+      setUpdatingStatus(true);
+      const res = await fetch(`${API_BASE}/exchanges/admin/${selectedExchange._id}/sync-shipment`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) toast.success(data.message || 'Synced with Shiprocket');
+      else toast.error(data.message || 'Sync failed', { duration: 8000 });
+      fetchDetail(selectedExchange._id);
+      fetchExchanges();
+    } catch {
+      toast.error('Could not sync with Shiprocket');
     } finally {
       setUpdatingStatus(false);
     }
@@ -663,6 +692,13 @@ const Exchanges = () => {
 
                     {/* Shipments */}
                     <div className="space-y-3">
+                      {(selectedExchange.reverse?.orderId || selectedExchange.forward?.orderId) && (
+                        <div className="flex justify-end">
+                          <button type="button" onClick={handleSyncShipment} disabled={updatingStatus} className="text-[10px] font-bold text-blue-600 hover:text-blue-700 disabled:opacity-40">
+                            🔄 Sync from Shiprocket
+                          </button>
+                        </div>
+                      )}
                       {/* Reverse */}
                       <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
                         <div className="flex items-center gap-2 mb-3">
@@ -673,15 +709,28 @@ const Exchanges = () => {
                         <AWBField label="Reverse AWB" awb={selectedExchange.reverse?.awb} trackingUrl={selectedExchange.reverse?.trackingUrl} />
                         {selectedExchange.reverse?.status && <p className="text-[10px] text-amber-600 mt-1.5 font-bold">Status: {selectedExchange.reverse.status}</p>}
                         {!selectedExchange.reverse?.awb && <p className="text-[10px] text-amber-500 italic">{selectedExchange.reverse?.shipmentId ? 'Shipment created — courier (AWB) not assigned yet' : 'Shipment not yet created'}</p>}
-                        {selectedExchange.reverse?.shipmentId && !selectedExchange.reverse?.failed && (!selectedExchange.reverse?.awb || legNeedsPickup(selectedExchange.reverse)) && (
+                        {selectedExchange.reverse?.courierName && <p className="text-[10px] text-amber-700 mt-1 font-semibold">Courier: {selectedExchange.reverse.courierName}{selectedExchange.reverse.courierSelection?.source === 'shiprocket_panel' ? (selectedExchange.reverse.courierSelection.reassignedFrom ? ` (changed in Shiprocket panel, was ${selectedExchange.reverse.courierSelection.reassignedFrom})` : ' (assigned in Shiprocket panel)') : ''}</p>}
+                        {selectedExchange.reverse?.shipmentId && !selectedExchange.reverse?.failed && !selectedExchange.reverse?.awb && (
+                          <div className="mt-3 pt-3 border-t border-amber-200/50">
+                            <CourierPicker
+                              type="exchange"
+                              id={selectedExchange._id}
+                              leg="reverse"
+                              bookLabel="Book pickup"
+                              disabled={updatingStatus}
+                              onBook={(courierId) => handleRetryShipment('reverse', { courierId })}
+                            />
+                          </div>
+                        )}
+                        {selectedExchange.reverse?.awb && !selectedExchange.reverse?.failed && legNeedsPickup(selectedExchange.reverse) && (
                           <div className="flex justify-between items-center mt-2 pt-2 border-t border-amber-200/50">
-                            <span className="text-[10px] text-red-600 font-medium">{!selectedExchange.reverse?.awb ? 'No courier booked' : 'Courier pickup not scheduled'}</span>
+                            <span className="text-[10px] text-red-600 font-medium">Courier pickup not scheduled</span>
                             <button
                               onClick={() => handleRetryShipment('reverse')}
                               disabled={updatingStatus}
                               className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-[9px] px-2 py-1 rounded disabled:opacity-50"
                             >
-                              {updatingStatus ? 'Working...' : (!selectedExchange.reverse?.awb ? 'Assign AWB' : 'Schedule Pickup')}
+                              {updatingStatus ? 'Working...' : 'Schedule Pickup'}
                             </button>
                           </div>
                         )}
@@ -708,15 +757,30 @@ const Exchanges = () => {
                         <AWBField label="Forward AWB" awb={selectedExchange.forward?.awb} trackingUrl={selectedExchange.forward?.trackingUrl} />
                         {selectedExchange.forward?.status && <p className="text-[10px] text-blue-600 mt-1.5 font-bold">Status: {selectedExchange.forward.status}</p>}
                         {!selectedExchange.forward?.awb && <p className="text-[10px] text-blue-500 italic">{selectedExchange.forward?.shipmentId ? 'Shipment created — courier (AWB) not assigned yet' : 'Shipment not yet created'}</p>}
-                        {selectedExchange.forward?.shipmentId && !selectedExchange.forward?.failed && (!selectedExchange.forward?.awb || legNeedsPickup(selectedExchange.forward)) && (
+                        {selectedExchange.forward?.courierName && <p className="text-[10px] text-blue-700 mt-1 font-semibold">Courier: {selectedExchange.forward.courierName}{selectedExchange.forward.courierSelection?.source === 'shiprocket_panel' ? (selectedExchange.forward.courierSelection.reassignedFrom ? ` (changed in Shiprocket panel, was ${selectedExchange.forward.courierSelection.reassignedFrom})` : ' (assigned in Shiprocket panel)') : ''}</p>}
+                        {selectedExchange.forward?.shipmentId && !selectedExchange.forward?.failed && !selectedExchange.forward?.awb && (
+                          <div className="mt-3 pt-3 border-t border-blue-200/50">
+                            <CourierPicker
+                              type="exchange"
+                              id={selectedExchange._id}
+                              leg="forward"
+                              disabled={updatingStatus}
+                              actions={[
+                                { label: 'Assign AWB', onBook: (courierId) => handleRetryShipment('forward', { courierId, schedulePickup: false }) },
+                                { label: 'AWB + pickup', onBook: (courierId) => handleRetryShipment('forward', { courierId }) }
+                              ]}
+                            />
+                          </div>
+                        )}
+                        {selectedExchange.forward?.awb && !selectedExchange.forward?.failed && legNeedsPickup(selectedExchange.forward) && (
                           <div className="flex justify-between items-center mt-2 pt-2 border-t border-blue-200/50">
-                            <span className="text-[10px] text-red-600 font-medium">{!selectedExchange.forward?.awb ? 'No courier booked' : 'Replacement: schedule once packed'}</span>
+                            <span className="text-[10px] text-red-600 font-medium">Replacement: schedule once packed</span>
                             <button
                               onClick={() => handleRetryShipment('forward')}
                               disabled={updatingStatus}
                               className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[9px] px-2 py-1 rounded disabled:opacity-50"
                             >
-                              {updatingStatus ? 'Working...' : (!selectedExchange.forward?.awb ? 'Assign AWB' : 'Schedule Pickup')}
+                              {updatingStatus ? 'Working...' : 'Schedule Pickup'}
                             </button>
                           </div>
                         )}

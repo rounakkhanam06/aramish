@@ -4,17 +4,19 @@ const Order = require('../Models/Order');
 const shiprocketService = require('../Router/shiprocketService');
 const { loadShippingDetails, toOrderItem, toShiprocketDate, getReturnWarehouse, fallbackEmail, FALLBACK_PHONE } = require('../utils/shiprocketPayload');
 const { handleReturnRefund, getDeliveredAt } = require('../utils/orderHelper');
-const { srErrorMessage, readAwbResult, requestPickupChecked, PICKUP_BOOKED_OR_LATER } = require('../utils/shiprocketResults');
+const { srErrorMessage, requestPickupChecked, PICKUP_BOOKED_OR_LATER } = require('../utils/shiprocketResults');
+const { returnShipment, resolveSelectedCourier, assignAwbWithCourier, mismatchWarning, getCourierConfig } = require('../utils/courierSelection');
+const { RETURN_FIELDS, isSupersededAwb, applyShiprocketCourier, fetchShiprocketShipment, isCancelledStatus } = require('../utils/shipmentSync');
 
 // Records when the return reached `status`, for the customer's tracking timeline.
 const addReturnHistory = (returnRequest, status, actor, note = '') => {
   returnRequest.statusHistory.push({ status, actor, note, timestamp: new Date() });
 };
 
-// Builds the Shiprocket reverse-pickup order and attempts AWB assignment for a return
-// request, mutating the passed returnRequest document's shipment fields in place. Used both
-// on initial 'Approved' transition and by the admin retry endpoint below, so a Shiprocket
-// outage on approval doesn't leave the return stuck with no way to (re)try the pickup.
+// Builds the Shiprocket reverse-pickup order for a return request, mutating the passed
+// returnRequest document's shipment fields in place. Used both on initial 'Approved' transition
+// and by the admin retry endpoint below, so a Shiprocket outage on approval doesn't leave the
+// return stuck. No courier is booked here: the admin selects one (bookReturnPickup).
 // Throws on failure — callers are responsible for recording the failure/retry state.
 const createReturnShipment = async (returnRequest, order) => {
   // Fails clearly (admin sees it and can retry) instead of sending the parcel to a made-up address.
@@ -75,18 +77,15 @@ const createReturnShipment = async (returnRequest, order) => {
   returnRequest.shiprocketReturnOrderId = srResponse.order_id;
   returnRequest.shiprocketReturnShipmentId = srResponse.shipment_id;
   returnRequest.shipmentStatus = 'Created';
-
-  if (srResponse.shipment_id) {
-    await bookReturnPickup(returnRequest);
-  }
 };
 
 // Books the courier for a return whose Shiprocket return order already exists. Shiprocket does
-// not do this by itself: the AWB (courier) is assigned first, then the pickup from the customer
-// is requested — without the second call no courier ever comes. Each step is skipped when it
-// is already done, so "Retry" from admin simply continues from wherever it stopped (it never
-// re-creates the return order). A failure is recorded for admin and returns false.
-const bookReturnPickup = async (returnRequest) => {
+// not do this by itself: the AWB is assigned with the admin-selected `courier` first, then the
+// pickup from the customer is requested — without the second call no courier ever comes. Each
+// step is skipped when it is already done, so "Retry" from admin simply continues from wherever
+// it stopped (it never re-creates the return order). A failure is recorded for admin and
+// returns false; no other courier is ever tried.
+const bookReturnPickup = async (returnRequest, { courier = null, admin = null } = {}) => {
   const fail = (message) => {
     console.error('Return pickup not booked:', message);
     returnRequest.shipmentErrors.push({ error: message, timestamp: new Date() });
@@ -94,16 +93,15 @@ const bookReturnPickup = async (returnRequest) => {
   };
 
   if (!returnRequest.awbCode) {
-    let awbResponse;
-    try {
-      awbResponse = await shiprocketService.assignAWB(returnRequest.shiprocketReturnShipmentId, null, { isReturn: true });
-    } catch (awbErr) {
-      return fail(`Return pickup AWB not assigned: ${srErrorMessage(awbErr)}`);
-    }
-    const { awbInfo, error } = readAwbResult(awbResponse);
-    if (error) return fail(`Return pickup AWB not assigned: ${error}`);
-    returnRequest.awbCode = awbInfo.awb_code;
-    returnRequest.courierName = awbInfo.courier_name;
+    if (!courier) return fail('Select a courier partner to book the return pickup.');
+    const result = await assignAwbWithCourier(returnRequest.shiprocketReturnShipmentId, courier, { isReturn: true, admin });
+    if (result.error) return fail(`Return pickup AWB not assigned with ${courier.name}: ${result.error}. No other courier was tried.`);
+    returnRequest.awbCode = result.awbInfo.awb_code;
+    returnRequest.courierName = result.awbInfo.courier_name || courier.name;
+    returnRequest.courierId = result.selection.assignedCourierId || courier.courierId;
+    returnRequest.courierSelection = result.selection;
+    const warning = mismatchWarning(result.selection);
+    if (warning) returnRequest.shipmentErrors.push({ error: warning, timestamp: new Date() });
   }
 
   if (!returnRequest.pickupScheduled) {
@@ -687,15 +685,32 @@ exports.handleReturnWebhook = async (payload) => {
     returnRequest = await ReturnRequest.findOne({ shiprocketReturnOrderId: String(payload.sr_order_id) });
   }
   if (!returnRequest && awb) {
-    returnRequest = await ReturnRequest.findOne({ awbCode: String(awb) });
+    returnRequest = await ReturnRequest.findOne({ $or: [{ awbCode: String(awb) }, { awbHistory: String(awb) }] });
   }
   if (!returnRequest) return false;
 
+  // A late event for an AWB replaced by a courier reassignment changes nothing.
+  if (isSupersededAwb(returnRequest, awb, RETURN_FIELDS)) return true;
+
   const srStatus = String(payload.current_status || payload.shipment_status || payload.status || '').toUpperCase().replace(/_/g, ' ').trim();
 
-  // An AWB assigned straight from the Shiprocket panel is only learnt from these updates.
-  if (awb && !returnRequest.awbCode) returnRequest.awbCode = String(awb);
-  if (payload.courier_name && !returnRequest.courierName) returnRequest.courierName = payload.courier_name;
+  // A cancelled AWB may only be the old one of a courier reassignment in the Shiprocket panel:
+  // ask Shiprocket for the current shipment before reporting a problem. (Non-destructive either way.)
+  let reassignedShipment = null;
+  if (isCancelledStatus(srStatus) && returnRequest.shiprocketReturnOrderId) {
+    try {
+      const shipment = await fetchShiprocketShipment(returnRequest.shiprocketReturnOrderId);
+      if (!isCancelledStatus(shipment.orderStatus)) reassignedShipment = shipment;
+    } catch (err) {
+      console.error('Could not check the return shipment with Shiprocket:', srErrorMessage(err));
+    }
+  }
+
+  // An AWB assigned or changed (courier reassigned) in the Shiprocket panel is learnt here.
+  applyShiprocketCourier(returnRequest, reassignedShipment
+    || { awb, courierName: payload.courier_name || payload.courier, courierId: payload.courier_company_id || payload.courier_id }, RETURN_FIELDS);
+  returnRequest.shiprocketStatus = (reassignedShipment && reassignedShipment.status) || srStatus || returnRequest.shiprocketStatus;
+  returnRequest.shiprocketStatusAt = new Date();
 
   // Status moves are made with a conditional update, so an admin changing the same return at
   // the same moment always wins and nothing is moved twice.
@@ -711,6 +726,8 @@ exports.handleReturnWebhook = async (payload) => {
   if (srStatus === 'DELIVERED' || srStatus === 'RETURN DELIVERED') {
     returnRequest.pickupScheduled = true;
     await moveStatus(['Approved', 'Pick-up Scheduled'], 'Received');
+  } else if (reassignedShipment) {
+    // Courier switched in Shiprocket: nothing went wrong with the return itself.
   } else if (RETURN_PICKUP_PROBLEM.test(srStatus)) {
     returnRequest.shipmentErrors.push({ error: `Shiprocket reports the return shipment as "${srStatus}". Check it in the Shiprocket panel.`, timestamp: new Date() });
   } else if (PICKUP_BOOKED_OR_LATER.test(srStatus)) {
@@ -720,9 +737,52 @@ exports.handleReturnWebhook = async (payload) => {
 
   // Save only the shipment fields; the status was already written by moveStatus above.
   await ReturnRequest.updateOne({ _id: returnRequest._id }, {
-    $set: { awbCode: returnRequest.awbCode, courierName: returnRequest.courierName, pickupScheduled: returnRequest.pickupScheduled, shipmentErrors: returnRequest.shipmentErrors }
+    $set: {
+      awbCode: returnRequest.awbCode, courierName: returnRequest.courierName, courierId: returnRequest.courierId,
+      courierSelection: returnRequest.courierSelection, awbHistory: returnRequest.awbHistory,
+      shiprocketStatus: returnRequest.shiprocketStatus, shiprocketStatusAt: returnRequest.shiprocketStatusAt,
+      pickupScheduled: returnRequest.pickupScheduled, shipmentErrors: returnRequest.shipmentErrors
+    }
   });
   return true;
+};
+
+// @desc    Pull the return shipment's current AWB, courier and status from Shiprocket (e.g. after a
+//          courier was reassigned in the Shiprocket panel and its webhook didn't arrive)
+// @route   POST /returns/admin/:id/sync-shipment
+// @access  Private (Admin)
+exports.syncReturnShipment = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ success: false, message: 'Return request not found' });
+    const returnRequest = await ReturnRequest.findById(req.params.id);
+    if (!returnRequest) return res.status(404).json({ success: false, message: 'Return request not found' });
+    if (!returnRequest.shiprocketReturnOrderId) {
+      return res.status(400).json({ success: false, message: 'This return has no Shiprocket return order yet.' });
+    }
+    let shipment;
+    try {
+      shipment = await fetchShiprocketShipment(returnRequest.shiprocketReturnOrderId);
+    } catch (err) {
+      return res.status(502).json({ success: false, message: `Could not reach Shiprocket: ${srErrorMessage(err)}` });
+    }
+    // Same handling as a Shiprocket webhook for this return.
+    await exports.handleReturnWebhook({
+      order_id: `RET_${returnRequest._id}`,
+      awb: shipment.awb || undefined,
+      courier_name: shipment.courierName || undefined,
+      courier_company_id: shipment.courierId || undefined,
+      current_status: shipment.status || ''
+    });
+    const fresh = await ReturnRequest.findById(returnRequest._id);
+    res.status(200).json({
+      success: true,
+      message: fresh.awbCode ? `Synced: ${fresh.courierName || 'courier'} (AWB ${fresh.awbCode}), ${fresh.shiprocketStatus || 'no status yet'}` : 'Synced: no courier assigned in Shiprocket yet',
+      returnRequest: fresh
+    });
+  } catch (error) {
+    console.error('syncReturnShipment error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 // @desc    Retry Shiprocket reverse-pickup shipment creation for an Approved return whose
@@ -740,35 +800,63 @@ exports.retryReturnShipment = async (req, res) => {
       return res.status(400).json({ success: false, message: `Cannot retry shipment for a return in status '${returnRequest.status}'.` });
     }
 
-    if (returnRequest.shipmentRetryInProgress) {
-      return res.status(409).json({ success: false, message: 'A retry attempt is already in progress for this return.' });
-    }
-
     if (returnRequest.awbCode && returnRequest.pickupScheduled) {
       return res.status(400).json({ success: false, message: `Return pickup is already booked (AWB ${returnRequest.awbCode}).` });
     }
 
     // The return order already exists in Shiprocket and only the courier (AWB) and/or the pickup
-    // request are missing — e.g. the wallet was low. Continue from there; never create a second
-    // return order.
+    // request are missing. Continue from there; never create a second return order. The AWB is
+    // only assigned with the courier the admin selected.
     if (returnRequest.shiprocketReturnShipmentId) {
-      returnRequest.shipmentRetryInProgress = true;
-      await returnRequest.save();
-      try {
-        const assigned = await bookReturnPickup(returnRequest);
-        returnRequest.lastShipmentRetryAt = new Date();
-        if (assigned) returnRequest.shipmentStatus = 'Created';
-        return res.status(assigned ? 200 : 502).json({
-          success: assigned,
-          message: assigned
-            ? `Return pickup scheduled with ${returnRequest.courierName || 'courier'} (AWB ${returnRequest.awbCode})`
-            : returnRequest.shipmentErrors[returnRequest.shipmentErrors.length - 1].error,
-          returnRequest
-        });
-      } finally {
-        returnRequest.shipmentRetryInProgress = false;
-        await returnRequest.save();
+      let courier = null;
+      if (!returnRequest.awbCode) {
+        if (!req.body.courierId) {
+          return res.status(400).json({ success: false, code: 'COURIER_REQUIRED', message: 'Please select a courier partner to book the return pickup.' });
+        }
+        try {
+          const order = await Order.findById(returnRequest.orderId);
+          if (!order) throw new Error('Original order not found for this return request');
+          courier = await resolveSelectedCourier(await returnShipment(returnRequest, order), req.body.courierId, await getCourierConfig());
+        } catch (courierErr) {
+          return res.status(courierErr.status || 500).json({ success: false, code: courierErr.code, message: courierErr.message });
+        }
       }
+      // Claim atomically: a double click / parallel request can't book twice.
+      const claimed = await ReturnRequest.findOneAndUpdate(
+        { _id: returnRequest._id, shipmentRetryInProgress: { $ne: true } },
+        { $set: { shipmentRetryInProgress: true } },
+        { new: true }
+      );
+      if (!claimed) {
+        return res.status(409).json({ success: false, message: 'A retry attempt is already in progress for this return.' });
+      }
+      if (!courier && !claimed.awbCode) {
+        await ReturnRequest.updateOne({ _id: claimed._id }, { $set: { shipmentRetryInProgress: false } });
+        return res.status(409).json({ success: false, message: 'This return changed while booking. Please refresh and try again.' });
+      }
+      // Everything is saved (and the lock released) BEFORE replying, so the admin panel's refresh
+      // right after the reply always sees the booking — and a failed save is never reported as success.
+      let assigned = false;
+      try {
+        assigned = await bookReturnPickup(claimed, { courier: claimed.awbCode ? null : courier, admin: req.admin || req.user });
+        claimed.lastShipmentRetryAt = new Date();
+        if (assigned) claimed.shipmentStatus = 'Created';
+      } finally {
+        claimed.shipmentRetryInProgress = false;
+        await claimed.save();
+      }
+      return res.status(assigned ? 200 : 502).json({
+        success: assigned,
+        message: assigned
+          ? `Return pickup scheduled with ${claimed.courierName || 'courier'} (AWB ${claimed.awbCode})`
+          : claimed.shipmentErrors[claimed.shipmentErrors.length - 1].error,
+        warning: mismatchWarning(claimed.courierSelection),
+        returnRequest: claimed
+      });
+    }
+
+    if (returnRequest.shipmentRetryInProgress) {
+      return res.status(409).json({ success: false, message: 'A retry attempt is already in progress for this return.' });
     }
 
     if (returnRequest.shipmentRetryCount >= 3) {
@@ -791,7 +879,7 @@ exports.retryReturnShipment = async (req, res) => {
       returnRequest.shipmentRetryInProgress = false;
       await returnRequest.save();
 
-      return res.status(200).json({ success: true, message: 'Return pickup shipment created successfully', returnRequest });
+      return res.status(200).json({ success: true, message: 'Return order created in Shiprocket. Select a courier partner to book the pickup.', returnRequest });
     } catch (srError) {
       console.error('retryReturnShipment failed:', srError.message);
       returnRequest.shipmentStatus = 'Failed';

@@ -83,14 +83,23 @@ const createShiprocketOrder = async (orderData) => {
     }
 };
 
-const checkServiceability = async (pickupPincode, deliveryPincode, weight, cod = 0) => {
+// `options` (all optional, per Shiprocket's serviceability API): length/breadth/height (cm),
+// declaredValue (Rs) and isReturn (reverse pickup couriers, is_return=1).
+const checkServiceability = async (pickupPincode, deliveryPincode, weight, cod = 0, options = {}) => {
     try {
+        const extra = {};
+        if (options.length) extra.length = options.length;
+        if (options.breadth) extra.breadth = options.breadth;
+        if (options.height) extra.height = options.height;
+        if (options.declaredValue) extra.declared_value = options.declaredValue;
+        if (options.isReturn) extra.is_return = 1;
         const response = await withToken((token) => axios.get(`${SHIPROCKET_API_BASE}/v1/external/courier/serviceability`, {
                 params: {
                     pickup_postcode: pickupPincode,
                     delivery_postcode: deliveryPincode,
                     weight: weight,
-                    cod: cod
+                    cod: cod,
+                    ...extra
                 },
                 headers: { Authorization: `Bearer ${token}` }
             }));
@@ -150,6 +159,20 @@ const generateLabel = async (shipmentId) => {
         return response.data;
     } catch (error) {
         console.error('Error generating label:', error.response?.data || error.message);
+        throw error;
+    }
+};
+
+// Current state of a Shiprocket order and its shipment (AWB, courier, status) — the source of
+// truth after a courier is reassigned in the Shiprocket panel. `srOrderId` = Shiprocket order id.
+const getOrderDetails = async (srOrderId) => {
+    try {
+        const response = await withToken((token) => axios.get(`${SHIPROCKET_API_BASE}/v1/external/orders/show/${srOrderId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            }));
+        return response.data && response.data.data;
+    } catch (error) {
+        console.error('Error fetching Shiprocket order details:', error.response?.data || error.message);
         throw error;
     }
 };
@@ -295,6 +318,7 @@ module.exports = {
     getShiprocketToken,
     createShiprocketOrder,
     checkServiceability,
+    getOrderDetails,
     assignAWB,
     requestPickup,
     generateLabel,

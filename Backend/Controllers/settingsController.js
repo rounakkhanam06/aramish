@@ -158,6 +158,10 @@ const updateSettings = async (req, res) => {
       return res.status(400).json({ success: false, message: taxError });
     }
 
+    // Blocked couriers are deliberately NOT written here: a whole-list save from a Settings page
+    // opened earlier would overwrite couriers blocked since (e.g. from a shipment's courier list).
+    // They change one courier at a time through blockCourier / unblockCourier below.
+
     await config.save();
     res.status(200).json({ success: true, message: 'Settings updated successfully', settings: config });
   } catch (error) {
@@ -166,7 +170,57 @@ const updateSettings = async (req, res) => {
   }
 };
 
+const loadConfig = async () => (await SystemConfig.findOne({})) || SystemConfig.create({});
+const blockedList = async (id) => ((await SystemConfig.findById(id).select('blockedCouriers').lean()) || {}).blockedCouriers || [];
+
+// @desc    Block one courier partner (never offered for booking). Atomic and idempotent.
+// @route   POST /admin/settings/blocked-couriers   { courierId, name?, reason? }
+// @access  Private (Admin)
+const blockCourier = async (req, res) => {
+  try {
+    const courierId = Number(req.body && req.body.courierId);
+    if (!Number.isInteger(courierId) || courierId <= 0) {
+      return res.status(400).json({ success: false, message: 'A valid Shiprocket courier ID is required' });
+    }
+    const config = await loadConfig();
+    // Only adds when absent, so parallel blocks never duplicate or drop each other.
+    await SystemConfig.updateOne(
+      { _id: config._id, 'blockedCouriers.courierId': { $ne: courierId } },
+      { $push: { blockedCouriers: {
+        courierId,
+        name: String(req.body.name || '').trim().slice(0, 100),
+        reason: String(req.body.reason || '').trim().slice(0, 200),
+        blockedAt: new Date()
+      } } }
+    );
+    res.status(200).json({ success: true, blockedCouriers: await blockedList(config._id) });
+  } catch (error) {
+    console.error('Block Courier Error:', error);
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+};
+
+// @desc    Unblock one courier partner. Atomic and idempotent.
+// @route   DELETE /admin/settings/blocked-couriers/:courierId
+// @access  Private (Admin)
+const unblockCourier = async (req, res) => {
+  try {
+    const courierId = Number(req.params.courierId);
+    if (!Number.isInteger(courierId) || courierId <= 0) {
+      return res.status(400).json({ success: false, message: 'A valid Shiprocket courier ID is required' });
+    }
+    const config = await loadConfig();
+    await SystemConfig.updateOne({ _id: config._id }, { $pull: { blockedCouriers: { courierId } } });
+    res.status(200).json({ success: true, blockedCouriers: await blockedList(config._id) });
+  } catch (error) {
+    console.error('Unblock Courier Error:', error);
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+};
+
 module.exports = {
   getSettings,
-  updateSettings
+  updateSettings,
+  blockCourier,
+  unblockCourier
 };

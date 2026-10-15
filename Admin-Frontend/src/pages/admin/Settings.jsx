@@ -37,6 +37,36 @@ const Settings = () => {
   const [invoicePrefix, setInvoicePrefix] = useState('ARM');
   const [defaultHsnCode, setDefaultHsnCode] = useState('');
   const [gstRateRules, setGstRateRules] = useState([]);
+  // Courier partners never offered for booking
+  const [blockedCouriers, setBlockedCouriers] = useState([]);
+  const [newBlocked, setNewBlocked] = useState({ courierId: '', name: '', reason: '' });
+  const [blockingBusy, setBlockingBusy] = useState(false);
+
+  // Blocked couriers change one at a time on the server (never saved as a whole list), so this
+  // page can't overwrite a courier blocked meanwhile from a shipment's courier list.
+  const changeBlockedCourier = async (method, path, body) => {
+    const token = localStorage.getItem('adminToken');
+    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    setBlockingBusy(true);
+    try {
+      const res = await fetch(`${apiBase}/admin/settings/blocked-couriers${path}`, {
+        method,
+        headers: { 'Authorization': `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setBlockedCouriers((data.blockedCouriers || []).map(({ courierId, name, reason }) => ({ courierId, name: name || '', reason: reason || '' })));
+        return true;
+      }
+      toast.error(data.message || 'Could not update blocked couriers');
+    } catch {
+      toast.error('Could not update blocked couriers');
+    } finally {
+      setBlockingBusy(false);
+    }
+    return false;
+  };
   const [commission, setCommission] = useState(10);
   const [codChargeEnabled, setCodChargeEnabled] = useState(true);
   const [codChargeAmount, setCodChargeAmount] = useState(150);
@@ -127,6 +157,7 @@ const Settings = () => {
         setBusinessPan(s.businessPan || '');
         setInvoicePrefix(s.invoicePrefix || 'ARM');
         setDefaultHsnCode(s.defaultHsnCode || '');
+        setBlockedCouriers((s.blockedCouriers || []).map(({ courierId, name, reason }) => ({ courierId, name: name || '', reason: reason || '' })));
         setGstRateRules((s.gstRateRules || []).map(r => ({
           effectiveFrom: toIstDay(r.effectiveFrom),
           threshold: r.threshold ?? 0,
@@ -658,6 +689,50 @@ const Settings = () => {
                           <input type="checkbox" className="sr-only peer" checked={freeShippingEnabled} onChange={(e) => setFreeShippingEnabled(e.target.checked)} />
                           <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
                         </label>
+                      </div>
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-50">
+                      <h3 className="text-sm font-bold text-slate-900 font-montserrat uppercase mb-1">Blocked Courier Partners</h3>
+                      <p className="text-[10px] text-slate-500 mb-4 leading-relaxed max-w-2xl">
+                        These couriers are never offered when booking an order, return or exchange shipment. You can also block a courier
+                        straight from the courier list on any shipment. Shiprocket courier IDs are shown in that list.
+                      </p>
+                      <div className="space-y-2">
+                        {blockedCouriers.length === 0 && <p className="text-xs text-slate-400">No couriers blocked.</p>}
+                        {blockedCouriers.map((b) => (
+                          <div key={b.courierId} className="flex items-center justify-between gap-3 bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-800">{b.name || 'Courier'} <span className="text-slate-400 font-semibold">#{b.courierId}</span></p>
+                              {b.reason && <p className="text-[10px] text-slate-500 truncate">{b.reason}</p>}
+                            </div>
+                            <button type="button" disabled={blockingBusy} onClick={async () => { if (await changeBlockedCourier('DELETE', `/${b.courierId}`)) toast.success(`${b.name || 'Courier'} unblocked`); }} className="text-[10px] font-bold text-blue-600 hover:text-blue-700 shrink-0 disabled:opacity-40">
+                              Unblock
+                            </button>
+                          </div>
+                        ))}
+                        <div className="grid grid-cols-1 md:grid-cols-[120px_1fr_1.5fr_auto] gap-2 pt-2">
+                          <input type="number" min="1" placeholder="Courier ID" value={newBlocked.courierId} onChange={e => setNewBlocked(v => ({ ...v, courierId: e.target.value }))} className="w-full bg-white border border-slate-200 rounded-lg py-2 px-3 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-50" />
+                          <input type="text" placeholder="Courier name" value={newBlocked.name} onChange={e => setNewBlocked(v => ({ ...v, name: e.target.value }))} className="w-full bg-white border border-slate-200 rounded-lg py-2 px-3 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-50" />
+                          <input type="text" placeholder="Reason (optional)" value={newBlocked.reason} onChange={e => setNewBlocked(v => ({ ...v, reason: e.target.value }))} className="w-full bg-white border border-slate-200 rounded-lg py-2 px-3 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-50" />
+                          <button
+                            type="button"
+                            disabled={blockingBusy}
+                            onClick={async () => {
+                              const id = Number(newBlocked.courierId);
+                              if (!Number.isInteger(id) || id <= 0) { toast.error('Enter a valid Shiprocket courier ID'); return; }
+                              if (blockedCouriers.some(b => Number(b.courierId) === id)) { toast.info('That courier is already blocked'); return; }
+                              if (await changeBlockedCourier('POST', '', { courierId: id, name: newBlocked.name.trim(), reason: newBlocked.reason.trim() })) {
+                                toast.success('Courier blocked');
+                                setNewBlocked({ courierId: '', name: '', reason: '' });
+                              }
+                            }}
+                            className="flex items-center justify-center gap-1.5 text-xs font-bold text-white bg-slate-900 rounded-lg px-4 py-2 disabled:opacity-40"
+                          >
+                            <Plus size={14} /> Block
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-slate-400">Block / Unblock applies immediately (no need to press Save).</p>
                       </div>
                     </div>
 

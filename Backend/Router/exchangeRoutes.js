@@ -12,7 +12,8 @@ const {
   updateExchangeStatus,
   handleExchangeWebhook,
   updateExchangeAddress,
-  retryExchangeShipment
+  retryExchangeShipment,
+  syncExchangeShipment
 } = require('../Controllers/exchangeController');
 
 // Webhook — no auth (must come before any auth middleware)
@@ -34,5 +35,6 @@ router.get('/admin/:id', protectAdmin, getExchangeById);
 router.put('/admin/:id/status', protectAdmin, updateExchangeStatus);
 router.put('/admin/:id/address', protectAdmin, updateExchangeAddress);
 router.post('/admin/:id/retry-shipment', protectAdmin, retryExchangeShipment);
+router.post('/admin/:id/sync-shipment', protectAdmin, syncExchangeShipment);
 
 module.exports = router;

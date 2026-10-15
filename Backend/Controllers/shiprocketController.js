@@ -7,6 +7,72 @@ const { verifyWebhookToken } = require('../utils/shiprocketWebhookAuth');
 const { loadShippingDetails, buildShiprocketOrderPayload, cheapestCourier, shiprocketCostsFor } = require('../utils/shiprocketPayload');
 const { srErrorMessage, readAwbResult, readLabelResult, requestPickupChecked } = require('../utils/shiprocketResults');
 const { issueInvoiceSafely } = require('../utils/invoiceService');
+const {
+    orderShipment, resolveSelectedCourier, assignAwbWithCourier, mismatchWarning, panelSelection,
+    acquireBookingLock, releaseBookingLock, getCourierConfig
+} = require('../utils/courierSelection');
+const { isSupersededAwb, applyShiprocketCourier, fetchShiprocketShipment, isCancelledStatus } = require('../utils/shipmentSync');
+
+/**
+ * A cancel event for an order still on its way: Shiprocket also cancels the OLD AWB when a courier
+ * is reassigned in its panel, while the order itself goes on with a new AWB. Only Shiprocket's own
+ * order status tells the two apart. Returns { cancelled: true } for a real cancellation, otherwise
+ * { cancelled: false, shipment } (the current shipment, to sync). Throws when Shiprocket can't be
+ * reached, so the caller can fail and be retried instead of refunding on a guess.
+ */
+const confirmOrderCancellation = async (order) => {
+    if (!order.shiprocketOrderId) return { cancelled: true }; // no Shiprocket order to ask: as before
+    const shipment = await fetchShiprocketShipment(order.shiprocketOrderId);
+    return { cancelled: isCancelledStatus(shipment.orderStatus), shipment };
+};
+
+/** Records a courier change learnt from Shiprocket on an order's timeline. */
+const noteCourierChange = (order, previous, sync) => {
+    if (!sync.changed) return;
+    order.trackingHistory.push({
+        status: sync.reassigned ? 'Courier Reassigned' : 'AWB Assigned',
+        timestamp: new Date(),
+        activity: sync.reassigned
+            ? `Courier changed in Shiprocket: ${previous.courierName || 'previous courier'}${previous.awb ? ` (AWB ${previous.awb})` : ''} → ${order.courierName || 'new courier'} (AWB ${order.awbCode})`
+            : `AWB ${order.awbCode} assigned in Shiprocket via ${order.courierName || 'courier'}`,
+        location: ''
+    });
+};
+
+/**
+ * Books the admin-selected courier for an order: validates the choice against Shiprocket's live
+ * list, assigns the AWB with exactly that courier and records it (with our real freight cost —
+ * the customer's bill never changes). Throws a courierError for a missing / blocked / no longer
+ * serviceable courier. Returns { error } when Shiprocket refused, else { warning }.
+ */
+const bookOrderCourier = async (order, courierId, admin) => {
+    const config = await getCourierConfig();
+    const shipment = await orderShipment(order);
+    const courier = await resolveSelectedCourier(shipment, courierId, config);
+    const result = await assignAwbWithCourier(order.shipmentId, courier, { admin });
+    if (result.error) {
+        order.shiprocketResponses.push({ type: 'AWB_ASSIGN_FAILED', data: { courierId: courier.courierId, courierName: courier.name, error: result.error, response: result.data || null } });
+        return { error: `AWB not assigned with ${courier.name}: ${result.error}. No other courier was tried — choose a courier and try again.` };
+    }
+    const { awbInfo, selection } = result;
+    order.awbCode = awbInfo.awb_code;
+    order.courierName = awbInfo.courier_name || courier.name;
+    order.courierId = selection.assignedCourierId || courier.courierId;
+    order.courierSelection = selection;
+    order.shipmentStatus = 'AWB Assigned';
+    // Our real Shiprocket cost is the booked courier's (finance only; the customer's bill is unchanged)
+    order.shippingCost = courier.freight;
+    order.shiprocketCodFee = shipment.cod ? courier.codCharges : 0;
+    order.shiprocketResponses.push({ type: 'AWB_ASSIGN', data: awbInfo });
+    order.trackingHistory.push({
+        status: 'AWB Assigned',
+        timestamp: new Date(),
+        activity: `AWB ${awbInfo.awb_code} assigned via ${order.courierName}`,
+        location: ''
+    });
+    return { warning: mismatchWarning(selection) };
+};
+
 
 // The goods leave our hands when the courier picks them up: the GST invoice is due then
 // (CGST Act s.31(1)(a)). PICKED UP still maps the order to 'Processing', hence allowProcessing.
@@ -83,58 +149,51 @@ exports.estimateShipping = async (req, res) => {
 
 // Phase 2: Assign AWB (by orderId from our DB)
 exports.assignAWB = async (req, res) => {
-    try {
-        const { orderId, courierId } = req.body;
-
-        // Support both: direct shipmentId or our DB orderId
-        let order = null;
-        let shipmentId = req.body.shipmentId;
-
-        if (orderId) {
-            order = await Order.findById(orderId);
-            if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
-            shipmentId = order.shipmentId;
-        }
-
-        if (!shipmentId) return res.status(400).json({ success: false, message: 'shipmentId is required' });
-
-        const data = await shiprocketService.assignAWB(shipmentId, courierId);
-        const { awbInfo, error } = readAwbResult(data);
-
-        if (error) {
-            if (order) {
-                order.shiprocketResponses.push({ type: 'AWB_ASSIGN_FAILED', data: data?.response?.data || data });
-                await order.save();
-            }
-            return res.status(400).json({ success: false, message: `AWB not assigned: ${error}`, data });
-        }
-
-        if (order) {
-            order.awbCode = awbInfo.awb_code;
-            if (awbInfo.courier_name) order.courierName = awbInfo.courier_name;
-            order.shipmentStatus = 'AWB Assigned';
-            order.shiprocketResponses.push({ type: 'AWB_ASSIGN', data: awbInfo });
-            order.trackingHistory.push({
-                status: 'AWB Assigned',
-                timestamp: new Date(),
-                activity: `AWB ${awbInfo.awb_code} assigned via ${awbInfo.courier_name || 'courier'}`,
-                location: ''
-            });
-            await order.save();
-        } else {
-            // Fallback: update by shipmentId directly
-            await Order.findOneAndUpdate(
-                { shipmentId: String(shipmentId) },
-                { awbCode: awbInfo.awb_code, courierName: awbInfo.courier_name, shipmentStatus: 'AWB Assigned' }
-            );
-        }
-
-        res.status(200).json({ success: true, data, order });
-    } catch (error) {
-        console.error('Error assigning AWB:', error.response?.data || error.message);
-        res.status(500).json({ success: false, message: `AWB not assigned: ${srErrorMessage(error)}` });
+    const { orderId, courierId } = req.body;
+    if (!orderId) return res.status(400).json({ success: false, message: 'orderId is required' });
+    if (!mongoose.Types.ObjectId.isValid(orderId)) return res.status(404).json({ success: false, message: 'Order not found' });
+    if (!courierId) {
+        return res.status(400).json({ success: false, code: 'COURIER_REQUIRED', message: 'Please select a courier partner before assigning the AWB.' });
     }
+    const order = await acquireBookingLock(Order, orderId).catch(() => null);
+    if (!order) {
+        const exists = await Order.exists({ _id: orderId });
+        return exists
+            ? res.status(409).json({ success: false, code: 'BOOKING_IN_PROGRESS', message: 'A courier booking for this order is already in progress. Please wait and refresh.' })
+            : res.status(404).json({ success: false, message: 'Order not found' });
+    }
+    // The booking is saved and the lock released BEFORE replying, so the admin panel's refresh
+    // (or a next click) right after the reply never sees a half-finished booking.
+    let reply;
+    try {
+        if (!order.shipmentId) {
+            reply = [400, { success: false, message: 'Create the Shiprocket order first (no shipment yet).' }];
+        } else if (order.awbCode) {
+            reply = [409, { success: false, code: 'AWB_EXISTS', message: `AWB ${order.awbCode} is already assigned with ${order.courierName || 'a courier'}.`, order }];
+        } else {
+            const { error, warning } = await bookOrderCourier(order, courierId, req.admin || req.user);
+            await order.save();
+            reply = error
+                ? [400, { success: false, message: error }]
+                : [200, { success: true, message: `AWB ${order.awbCode} assigned with ${order.courierName}`, warning, order }];
+        }
+    } catch (error) {
+        if (error.code) {
+            reply = [error.status || 500, { success: false, code: error.code, message: error.message }];
+        } else {
+            console.error('Error assigning AWB:', error.response?.data || error.message);
+            reply = [500, { success: false, message: `AWB not assigned: ${srErrorMessage(error)}` }];
+        }
+    } finally {
+        await releaseBookingLock(Order, order._id);
+        order.bookingLockAt = null;
+    }
+    res.status(reply[0]).json(reply[1]);
 };
+
+// List serviceable couriers for an order/return/exchange leg (manual courier selection).
+// @route GET /admin/shiprocket/couriers?type=order|return|exchange&id=<id>&leg=reverse|forward
+exports.getCourierOptions = (req, res) => require('./courierController').getCourierOptions(req, res);
 
 // Phase 2: Request Pickup (by orderId from our DB)
 exports.requestPickup = async (req, res) => {
@@ -236,73 +295,58 @@ exports.processOrder = async (req, res) => {
 
         if (!orderId) return res.status(400).json({ success: false, message: 'orderId is required' });
 
-        const order = await Order.findById(orderId);
+        if (!mongoose.Types.ObjectId.isValid(orderId)) return res.status(404).json({ success: false, message: 'Order not found' });
+        let order = await Order.findById(orderId);
         if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
         if (!order.shipmentId) return res.status(400).json({ success: false, message: 'Order has no Shiprocket shipmentId' });
 
         const results = { awb: null, pickup: null, label: null };
-        let finalCourierId = courierId;
-        // Shiprocket's charges for the courier we auto-book (applied only once the AWB is assigned)
-        let bookedCosts = null;
-
-        // Step 1: If no courier ID provided, pick the cheapest courier for the order's real
-        // weight — the same courier the customer's delivery charge was priced on at checkout.
-        if (!finalCourierId && !order.awbCode) {
-            try {
-                const isCod = order.paymentMethod === 'COD' && Number(order.total) > 0;
-                const pickupPincode = process.env.SHIPROCKET_PICKUP_PINCODE || '201301';
-                const { weight } = await loadShippingDetails(order.items);
-                const svcData = await shiprocketService.checkServiceability(pickupPincode, order.deliveryAddress.pincode, weight, isCod ? 1 : 0);
-                const best = cheapestCourier(svcData?.data?.available_courier_companies);
-                if (best && best.courier.courier_company_id) {
-                    finalCourierId = best.courier.courier_company_id;
-                    bookedCosts = shiprocketCostsFor(best.courier, { isCod });
-                }
-            } catch (svcErr) {
-                console.error('Could not auto-select courier, will let Shiprocket decide:', svcErr.message);
-            }
-        }
 
         // Each step needs the previous one to have really succeeded (no AWB → no pickup → no
         // label), and only a confirmed success updates the shipment status and timeline.
         let failure = null;
+        let warning = null;
 
-        // Step 2: Assign AWB
+        // Step 1: Assign the AWB with the courier the admin selected — never an automatic one.
         if (!order.awbCode) {
+            if (!courierId) {
+                return res.status(400).json({ success: false, code: 'COURIER_REQUIRED', message: 'Please select a courier partner before processing this order.' });
+            }
+            const locked = await acquireBookingLock(Order, order._id);
+            if (!locked) {
+                return res.status(409).json({ success: false, code: 'BOOKING_IN_PROGRESS', message: 'A courier booking for this order is already in progress. Please wait and refresh.' });
+            }
+            // Saved and unlocked before any reply (see assignAWB).
+            let bookingReply = null;
             try {
-                const awbData = await shiprocketService.assignAWB(order.shipmentId, finalCourierId);
-                results.awb = awbData;
-                const { awbInfo, error } = readAwbResult(awbData);
-                if (error) {
-                    failure = `AWB not assigned: ${error}`;
-                    order.shiprocketResponses.push({ type: 'AWB_ASSIGN_FAILED', data: awbData?.response?.data || awbData });
+                // A parallel request may have booked it between our read and the lock.
+                if (locked.awbCode) {
+                    bookingReply = [409, { success: false, code: 'AWB_EXISTS', message: `AWB ${locked.awbCode} is already assigned with ${locked.courierName || 'a courier'}.`, order: locked }];
                 } else {
-                    order.awbCode = awbInfo.awb_code;
-                    if (awbInfo.courier_name) order.courierName = awbInfo.courier_name;
-                    order.shipmentStatus = 'AWB Assigned';
-                    order.shiprocketResponses.push({ type: 'AWB_ASSIGN', data: awbInfo });
-                    order.trackingHistory.push({
-                        status: 'AWB Assigned',
-                        timestamp: new Date(),
-                        activity: `AWB ${awbInfo.awb_code} assigned via ${awbInfo.courier_name || 'courier'}`,
-                        location: ''
-                    });
-                    // Our real Shiprocket cost is the booked courier's (the customer's bill is unchanged)
-                    if (bookedCosts) {
-                        order.shippingCost = bookedCosts.shippingCost;
-                        order.shiprocketCodFee = bookedCosts.shiprocketCodFee;
+                    const booked = await bookOrderCourier(locked, courierId, req.admin || req.user);
+                    await locked.save();
+                    if (booked.error) {
+                        bookingReply = [400, { success: false, message: booked.error, results, order: locked }];
+                    } else {
+                        warning = booked.warning;
+                        results.awb = { awbCode: locked.awbCode, courierName: locked.courierName };
+                        // Pickup and label continue on the booked order
+                        order = locked;
                     }
                 }
-            } catch (awbErr) {
-                console.error('AWB assignment failed:', awbErr.response?.data || awbErr.message);
-                failure = `AWB not assigned: ${srErrorMessage(awbErr)}`;
-                results.awb = { error: srErrorMessage(awbErr) };
+            } catch (courierErr) {
+                if (!courierErr.code) throw courierErr;
+                bookingReply = [courierErr.status || 500, { success: false, code: courierErr.code, message: courierErr.message }];
+            } finally {
+                await releaseBookingLock(Order, locked._id);
+                locked.bookingLockAt = null;
             }
+            if (bookingReply) return res.status(bookingReply[0]).json(bookingReply[1]);
         } else {
             results.awb = { skipped: true, message: 'AWB already assigned', awbCode: order.awbCode };
         }
 
-        // Step 3: Request Pickup
+        // Step 2: Request Pickup
         if (!failure && !order.pickupScheduled) {
             const pickup = await requestPickupChecked(shiprocketService, order.shipmentId);
             const pickupData = pickup.data || (pickup.error ? { error: pickup.error } : null);
@@ -328,7 +372,7 @@ exports.processOrder = async (req, res) => {
             results.pickup = { skipped: true, message: 'Pickup already scheduled' };
         }
 
-        // Step 4: Generate Label
+        // Step 3: Generate Label
         if (!failure) {
             try {
                 const labelData = await shiprocketService.generateLabel(order.shipmentId);
@@ -358,6 +402,7 @@ exports.processOrder = async (req, res) => {
         res.status(failure ? 400 : 200).json({
             success: !failure,
             message: failure || 'Order processed: AWB assigned, pickup scheduled and label generated',
+            warning,
             order: {
                 _id: order._id,
                 status: order.status,
@@ -428,7 +473,21 @@ exports.syncOrderStatus = async (req, res) => {
         const order = await Order.findById(orderId);
         if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
 
+        // The courier may have been assigned or changed in the Shiprocket panel: take the current
+        // AWB/courier from Shiprocket first, so we never track (and act on) a replaced AWB.
+        let srShipment = null;
+        if (order.shiprocketOrderId) {
+            try {
+                srShipment = await fetchShiprocketShipment(order.shiprocketOrderId);
+                const previous = { awb: order.awbCode, courierName: order.courierName };
+                noteCourierChange(order, previous, applyShiprocketCourier(order, srShipment));
+            } catch (detailsErr) {
+                console.error('Could not refresh the courier from Shiprocket order details:', srErrorMessage(detailsErr));
+            }
+        }
+
         if (!order.awbCode) {
+            await order.save();
             return res.status(400).json({ success: false, message: 'Order has no AWB code to track' });
         }
 
@@ -453,7 +512,11 @@ exports.syncOrderStatus = async (req, res) => {
                 } else if (srStatus === 'DELIVERED') {
                     mappedStatus = 'Delivered';
                 } else if (SHIPMENT_ENDED_STATUSES.includes(srStatus) && !isPastForwardShipping(order.status)) {
-                    mappedStatus = 'Cancelled';
+                    // A cancelled AWB is only a cancelled order when Shiprocket's order says so
+                    // (a reassigned courier cancels the old AWB too). Unconfirmed: leave it as is.
+                    const confirmed = !isCancelledStatus(srStatus) || !order.shiprocketOrderId
+                        || (srShipment && isCancelledStatus(srShipment.orderStatus));
+                    if (confirmed) mappedStatus = 'Cancelled';
                 }
                 mappedStatus = keepFinalStatus(order.status, mappedStatus);
                 if (mappedStatus === 'Delivered' && order.paymentMethod === 'COD') {
@@ -576,9 +639,20 @@ exports.webhookReceiver = async (req, res) => {
         }
 
         if (order) {
+            // A late event for an AWB replaced by a courier reassignment: keep it for the record,
+            // change nothing (it must not switch the order back to the old AWB, or cancel it).
+            if (isSupersededAwb(order, awbCode)) {
+                order.shiprocketResponses.push({ type: 'WEBHOOK_STALE_AWB', data: payload });
+                await order.save();
+                return res.status(200).json({ success: true, ignored: 'superseded AWB' });
+            }
+
             // Map Shiprocket status to Aramish status
             let mappedStatus = order.status;
             const srStatus = currentStatus ? String(currentStatus).toUpperCase().trim() : '';
+            const previousCourier = { awb: order.awbCode, courierName: order.courierName };
+            // Set when a "cancel" turns out to be a courier reassignment (order goes on)
+            let reassignedShipment = null;
 
             if (['SHIPPED', 'IN TRANSIT', 'DISPATCHED', 'IN_TRANSIT'].includes(srStatus)) {
                 mappedStatus = 'Shipped';
@@ -592,16 +666,26 @@ exports.webhookReceiver = async (req, res) => {
                     // already went through a return/exchange) must not refund/restock again.
                     mappedStatus = order.status;
                 } else {
-                    if (order.status !== 'Cancelled') {
-                        // Stock/coupon restore and reward clawback happen atomically together
-                        // (redeemed coins are not restored). If this throws, it propagates to the outer webhook
-                        // try/catch (no local swallow here), so order.save() below is never
-                        // reached and order.status is never persisted as Cancelled without the
-                        // refund having actually succeeded — Shiprocket's webhook retry will then
-                        // safely re-attempt the whole thing.
-                        await handleOrderCancellationRefunds(order);
+                    // A cancel may only be the old AWB of a courier reassignment: confirm with
+                    // Shiprocket first (if it can't be reached this throws → 500 → Shiprocket retries).
+                    const check = (order.status !== 'Cancelled' && isCancelledStatus(srStatus))
+                        ? await confirmOrderCancellation(order)
+                        : { cancelled: true };
+                    if (!check.cancelled) {
+                        reassignedShipment = check.shipment;
+                        mappedStatus = order.status;
+                    } else {
+                        if (order.status !== 'Cancelled') {
+                            // Stock/coupon restore and reward clawback happen atomically together
+                            // (redeemed coins are not restored). If this throws, it propagates to the outer webhook
+                            // try/catch (no local swallow here), so order.save() below is never
+                            // reached and order.status is never persisted as Cancelled without the
+                            // refund having actually succeeded — Shiprocket's webhook retry will then
+                            // safely re-attempt the whole thing.
+                            await handleOrderCancellationRefunds(order);
+                        }
+                        mappedStatus = 'Cancelled';
                     }
-                    mappedStatus = 'Cancelled';
                 }
             } else if (['NEW', 'PICKUP SCHEDULED', 'AWB ASSIGNED', 'PICKUP GENERATED', 'OUT FOR PICKUP', 'PICKED UP', 'READY TO SHIP', 'AWB_ASSIGNED', 'PICKUP_SCHEDULED', 'PICKUP_GENERATED', 'OUT_FOR_PICKUP', 'PICKED_UP', 'READY_TO_SHIP'].includes(srStatus)) {
                 mappedStatus = 'Processing';
@@ -613,19 +697,30 @@ exports.webhookReceiver = async (req, res) => {
             }
 
             // Update order details
-            if (currentStatus) order.shipmentStatus = currentStatus;
             order.status = mappedStatus;
-            if (awbCode) order.awbCode = awbCode;
-            if (courierName) order.courierName = courierName;
+            let courierSync;
+            if (reassignedShipment) {
+                // The cancelled AWB was replaced: take the current shipment from Shiprocket.
+                courierSync = applyShiprocketCourier(order, reassignedShipment);
+                order.shipmentStatus = reassignedShipment.status || 'AWB Assigned';
+            } else {
+                if (currentStatus) order.shipmentStatus = currentStatus;
+                // An AWB assigned or reassigned (new AWB, or same AWB with another courier)
+                // directly in the Shiprocket panel is learnt here.
+                courierSync = applyShiprocketCourier(order, { awb: awbCode, courierName, courierId: payload.courier_company_id || payload.courier_id });
+            }
+            noteCourierChange(order, previousCourier, courierSync);
 
             // Log response and update tracking history
-            order.shiprocketResponses.push({ type: 'WEBHOOK_UPDATE', data: payload });
-            order.trackingHistory.push({
-                status: currentStatus || 'Updated',
-                timestamp: new Date(),
-                activity: payload.activity || currentStatus || 'Order Status Updated',
-                location: payload.location || ''
-            });
+            order.shiprocketResponses.push({ type: reassignedShipment ? 'WEBHOOK_REASSIGN_CANCEL' : 'WEBHOOK_UPDATE', data: payload });
+            if (!reassignedShipment) {
+                order.trackingHistory.push({
+                    status: currentStatus || 'Updated',
+                    timestamp: new Date(),
+                    activity: payload.activity || currentStatus || 'Order Status Updated',
+                    location: payload.location || ''
+                });
+            }
 
             await order.save();
 
@@ -643,7 +738,8 @@ exports.webhookReceiver = async (req, res) => {
             // Send SMS via SMS India Hub — to the phone on the delivery address (the person
             // receiving the parcel), falling back to the account phone.
             const smsPhone = (order.deliveryAddress && order.deliveryAddress.phone) || (order.userId && order.userId.phone);
-            if (smsPhone) {
+            // No tracking SMS for an internal courier switch (the "cancel" was only the old AWB).
+            if (smsPhone && !reassignedShipment) {
                 try {
                     const smsApiKey = process.env.SMS_INDIA_HUB_API_KEY || process.env.SMS_API_KEY;
                     if (!smsApiKey) {

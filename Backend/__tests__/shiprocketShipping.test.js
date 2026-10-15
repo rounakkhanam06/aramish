@@ -246,7 +246,7 @@ describe('Delivery charge at checkout comes only from Shiprocket', () => {
 });
 
 describe('Process Order courier choice', () => {
-  test('books the cheapest courier, checked at the order\'s real weight', async () => {
+  test('books only the courier the admin selected, checked at the order\'s real weight', async () => {
     const product = await makeProduct();
     const order = await Order.create({
       userId: new mongoose.Types.ObjectId(),
@@ -257,10 +257,26 @@ describe('Process Order courier choice', () => {
     shiprocketService.requestPickup.mockResolvedValue({ pickup_status: 1 });
     shiprocketService.generateLabel.mockResolvedValue({ label_created: 1, label_url: 'https://label.pdf' });
 
-    await processOrder({ body: { orderId: order._id } }, mockRes());
+    // No courier selected: nothing is booked (no automatic cheapest courier any more)
+    const none = mockRes();
+    await processOrder({ body: { orderId: order._id } }, none);
+    expect(none.statusCode).toBe(400);
+    expect(none.body.code).toBe('COURIER_REQUIRED');
+    expect(shiprocketService.assignAWB).not.toHaveBeenCalled();
 
-    expect(shiprocketService.checkServiceability).toHaveBeenCalledWith(expect.any(String), '282002', 1.6, 1);
-    expect(shiprocketService.assignAWB).toHaveBeenCalledWith('222', 20);
+    // The admin picks the pricier courier: exactly that one is booked
+    await processOrder({ body: { orderId: order._id, courierId: 10 } }, mockRes());
+
+    expect(shiprocketService.checkServiceability).toHaveBeenCalledWith(expect.any(String), '282002', 1.6, 1,
+      expect.objectContaining({ length: 10, breadth: 10, height: 10, declaredValue: 2080 }));
+    expect(shiprocketService.assignAWB).toHaveBeenCalledWith('222', 10, { isReturn: false });
+    const fresh = await Order.findById(order._id);
+    expect(fresh.courierId).toBe(10);
+    expect(fresh.courierSelection).toMatchObject({ courierId: 10, courierName: 'Pricey', freight: 90, source: 'admin' });
+    // Finance records our real cost; the customer's bill is untouched
+    expect(fresh.shippingCost).toBe(90);
+    expect(fresh.shiprocketCodFee).toBe(40);
+    expect(fresh.total).toBe(2080);
   });
 });
 
@@ -321,9 +337,14 @@ describe('Return pickup AWB failure', () => {
     shiprocketService.assignAWB.mockResolvedValue({ response: { data: { awb_assign_error: 'Please recharge your ShipRocket wallet' } } });
 
     await updateReturnStatus({ params: { id: rr._id }, body: { status: 'Approved' }, admin: { _id: new mongoose.Types.ObjectId() } }, mockRes());
+    // Approval creates the return order only; the admin then books the selected courier
+    expect(shiprocketService.assignAWB).not.toHaveBeenCalled();
+    const { retryReturnShipment } = require('../Controllers/returnController');
+    await retryReturnShipment({ params: { id: rr._id }, body: { courierId: 20 } }, mockRes());
 
     const fresh = await ReturnRequest.findById(rr._id);
     expect(fresh.shiprocketReturnOrderId).toBe('333');
+    expect(shiprocketService.assignAWB).toHaveBeenCalledWith('444', 20, { isReturn: true });
     expect(fresh.awbCode).toBeFalsy();
     expect(fresh.shipmentErrors.map(e => e.error).join(' ')).toMatch(/recharge your ShipRocket wallet/);
     const payload = shiprocketService.createShiprocketReturnOrder.mock.calls[0][0];

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const courierSelectionSchema = require('./courierSelectionSchema');
 
 const timelineEntrySchema = new mongoose.Schema({
   status:    { type: String, required: true },
@@ -38,7 +39,12 @@ const shipmentLegSchema = new mongoose.Schema({
   status:      { type: String, default: 'Pending' },
   failed:      { type: Boolean, default: false },
   // Courier pickup requested from Shiprocket (needed after the AWB, or no courier comes).
-  pickupScheduled: { type: Boolean, default: false }
+  pickupScheduled: { type: Boolean, default: false },
+  // Courier booked for this leg (chosen by admin, or assigned in the Shiprocket panel)
+  courierId:   { type: Number, default: null },
+  courierName: { type: String, default: null },
+  courierSelection: { type: courierSelectionSchema, default: null },
+  awbHistory:  { type: [String], default: [] }
 }, { _id: false });
 
 const exchangeRequestSchema = new mongoose.Schema({

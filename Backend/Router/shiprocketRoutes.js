@@ -8,6 +8,7 @@ router.post('/estimate', shiprocketController.estimateShipping);
 
 // Admin APIs - Individual steps
 router.post('/serviceability', protectAdmin, shiprocketController.checkServiceability);
+router.get('/couriers', protectAdmin, shiprocketController.getCourierOptions);         // Manual courier selection list
 router.post('/assign-awb', protectAdmin, shiprocketController.assignAWB);
 router.post('/request-pickup', protectAdmin, shiprocketController.requestPickup);
 router.post('/generate-label', protectAdmin, shiprocketController.generateLabel);

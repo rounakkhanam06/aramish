@@ -9,7 +9,8 @@ const {
   getReturnById,
   updateReturnStatus,
   getReturnByOrderId,
-  retryReturnShipment
+  retryReturnShipment,
+  syncReturnShipment
 } = require('../Controllers/returnController');
 
 const { uploadImages, processImages, handleUploadError } = require('../Middlewares/uploadMiddleware');
@@ -26,5 +27,6 @@ router.get('/admin/all', protectAdmin, getAllReturns);
 router.get('/admin/:id', protectAdmin, getReturnById);
 router.put('/admin/:id/status', protectAdmin, updateReturnStatus);
 router.post('/admin/:id/retry-shipment', protectAdmin, retryReturnShipment);
+router.post('/admin/:id/sync-shipment', protectAdmin, syncReturnShipment);
 
 module.exports = router;

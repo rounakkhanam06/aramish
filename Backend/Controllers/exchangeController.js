@@ -11,7 +11,9 @@ const { getDeliveredAt, refundOnlinePayment } = require('../utils/orderHelper');
 const { verifyWebhookToken } = require('../utils/shiprocketWebhookAuth');
 const { isRazorpayConfigured, verifyAndCapturePayment } = require('../utils/razorpayService');
 const { loadShippingDetails, toOrderItem, getReturnWarehouse, fallbackEmail } = require('../utils/shiprocketPayload');
-const { srErrorMessage, readAwbResult, requestPickupChecked, PICKUP_BOOKED_OR_LATER } = require('../utils/shiprocketResults');
+const { srErrorMessage, requestPickupChecked, PICKUP_BOOKED_OR_LATER } = require('../utils/shiprocketResults');
+const { exchangeShipment, resolveSelectedCourier, assignAwbWithCourier, mismatchWarning, getCourierConfig } = require('../utils/courierSelection');
+const { LEG_FIELDS, isSupersededAwb, applyShiprocketCourier, fetchShiprocketShipment, isCancelledStatus } = require('../utils/shipmentSync');
 
 // Verifies (and captures) a Razorpay payment covering `expectedAmount` (rupees) — the same check
 // checkout uses, applied to exchange price-difference payments.
@@ -160,12 +162,13 @@ const needsPickupRequest = (legData) =>
   !!legData?.awb && !legData.pickupScheduled &&
   LEG_NOT_YET_MOVING.includes(String(legData.status || '').toUpperCase().replace(/_/g, ' ').trim());
 
-// Books the courier for one exchange leg whose Shiprocket shipment exists: assigns the AWB, then
-// (when `schedulePickup`) requests the courier pickup — Shiprocket does neither by itself, and
-// without the pickup request no courier comes. Steps already done are skipped, so a retry just
-// continues. Shiprocket reports most failures (e.g. a low wallet balance) inside a normal reply;
-// they are recorded as shipment errors admin can see and retry. Returns true when all done.
-const bookExchangeLeg = async (exchange, leg, { schedulePickup = true } = {}) => {
+// Books the courier for one exchange leg whose Shiprocket shipment exists: assigns the AWB with
+// the admin-selected `courier`, then (when `schedulePickup`) requests the courier pickup —
+// Shiprocket does neither by itself, and without the pickup request no courier comes. Steps
+// already done are skipped, so a retry just continues. Shiprocket reports most failures (e.g. a
+// low wallet balance) inside a normal reply; they are recorded as shipment errors admin can see
+// and retry — no other courier is ever tried. Returns true when all done.
+const bookExchangeLeg = async (exchange, leg, { schedulePickup = true, courier = null, admin = null } = {}) => {
   const shipmentId = exchange[leg].shipmentId;
   const fail = (message) => {
     console.error(`Exchange ${leg} shipment not booked:`, message);
@@ -174,19 +177,20 @@ const bookExchangeLeg = async (exchange, leg, { schedulePickup = true } = {}) =>
   };
 
   if (!exchange[leg].awb) {
-    let awbResp;
-    try {
-      // The reverse leg is a return (pickup of the old item from the customer).
-      awbResp = await shiprocketService.assignAWB(shipmentId, null, { isReturn: leg === 'reverse' });
-    } catch (awbErr) {
-      return fail(`AWB not assigned: ${srErrorMessage(awbErr)}`);
-    }
-    const { awbInfo, error } = readAwbResult(awbResp);
-    if (error) return fail(`AWB not assigned: ${error}`);
+    if (!courier) return fail('Select a courier partner to book this shipment.');
+    // The reverse leg is a return (pickup of the old item from the customer).
+    const result = await assignAwbWithCourier(shipmentId, courier, { isReturn: leg === 'reverse', admin });
+    if (result.error) return fail(`AWB not assigned with ${courier.name}: ${result.error}. No other courier was tried.`);
+    const { awbInfo, selection } = result;
     exchange[leg].awb = awbInfo.awb_code;
     exchange[leg].trackingUrl = `https://shiprocket.co/tracking/${awbInfo.awb_code}`;
     exchange[leg].status = 'AWB Assigned';
-    if (leg === 'reverse' || !exchange.courierName) exchange.courierName = awbInfo.courier_name || null;
+    exchange[leg].courierId = selection.assignedCourierId || courier.courierId;
+    exchange[leg].courierName = awbInfo.courier_name || courier.name;
+    exchange[leg].courierSelection = selection;
+    if (leg === 'reverse' || !exchange.courierName) exchange.courierName = exchange[leg].courierName;
+    const warning = mismatchWarning(selection);
+    if (warning) exchange.shipmentErrors.push({ leg, error: warning, timestamp: new Date() });
   }
 
   if (schedulePickup && !exchange[leg].pickupScheduled) {
@@ -679,9 +683,7 @@ exports.updateExchangeStatus = async (req, res) => {
             response: reverseResp
           };
 
-          if (reverseResp?.shipment_id) {
-            await bookExchangeLeg(exchange, 'reverse');
-          }
+          // The courier for the old-item pickup is booked once the admin selects one.
         } catch (reverseErr) {
           console.error('Exchange reverse shipment creation failed:', reverseErr.message);
           exchange.reverse = { status: 'Failed', failed: true };
@@ -709,10 +711,8 @@ exports.updateExchangeStatus = async (req, res) => {
             response: forwardResp
           };
 
-          if (forwardResp?.shipment_id) {
-            // Warehouse pickup of the replacement is scheduled by admin ("Schedule Pickup") once it is packed.
-          await bookExchangeLeg(exchange, 'forward', { schedulePickup: false });
-          }
+          // The replacement's courier is booked once the admin selects one; its warehouse pickup is
+          // scheduled by admin ("Schedule Pickup") once it is packed.
         } catch (forwardErr) {
           console.error('Exchange forward shipment creation failed:', forwardErr.message);
           exchange.forward = { status: 'Failed', failed: true };
@@ -727,7 +727,7 @@ exports.updateExchangeStatus = async (req, res) => {
 
         exchange.status = 'Approved';
         order.status = 'Exchange Approved';
-        addTimeline(exchange, 'Approved', 'admin', admin?._id, 'Exchange approved by admin. Shipment creation attempted.');
+        addTimeline(exchange, 'Approved', 'admin', admin?._id, 'Exchange approved by admin. Shiprocket shipments created — select a courier partner for each to book them.');
         addAudit(exchange, 'approved', admin, fromStatus, 'Approved', adminNotes || '');
       }
 
@@ -821,100 +821,168 @@ exports.handleExchangeWebhook = async (req, res) => {
     if (authError) {
       return res.status(authError.status).json({ success: false, message: authError.message });
     }
-
-    const payload = req.body;
-    const rawOrderId = payload.order_id || payload.channel_order_id || payload.awb || '';
-
-    // Determine leg
-    let leg = null;
-    let exchangeId = null;
-
-    if (String(rawOrderId).startsWith('EXC_FWD_')) {
-      leg = 'forward';
-      exchangeId = String(rawOrderId).replace('EXC_FWD_', '');
-    } else if (String(rawOrderId).startsWith('EXC_REV_')) {
-      leg = 'reverse';
-      exchangeId = String(rawOrderId).replace('EXC_REV_', '');
-    } else {
-      return res.status(200).json({ success: true, message: 'Not an exchange webhook, skipped' });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(exchangeId)) {
-      return res.status(200).json({ success: true, message: 'Exchange not found, skipped' });
-    }
-    const exchange = await ExchangeRequest.findById(exchangeId);
-    if (!exchange) return res.status(200).json({ success: true, message: 'Exchange not found, skipped' });
-
-    const rawStatus = String(payload.current_status || payload.status || '').trim();
-    // Shiprocket sends statuses upper-cased ("DELIVERED"); the map is keyed in title case.
-    const legMap = EXCHANGE_WEBHOOK_MAP[leg] || {};
-    const mapKey = Object.keys(legMap).find(k => k.toUpperCase() === rawStatus.toUpperCase().replace(/_/g, ' '));
-    const mapped = mapKey ? legMap[mapKey] : null;
-
-    // Append to webhook history
-    exchange.webhookHistory.push({
-      leg,
-      rawStatus,
-      mapped: mapped || 'unknown',
-      timestamp: new Date(),
-      location: payload.current_status_info?.location || '',
-      remarks: payload.current_status_info?.remark || ''
-    });
-
-    // Update leg status
-    exchange[leg].status = rawStatus;
-    // An AWB assigned straight from the Shiprocket panel is only learnt from its webhooks.
-    const webhookAwb = payload.awb || payload.awb_code;
-    if (webhookAwb && !exchange[leg].awb) {
-      exchange[leg].awb = String(webhookAwb);
-      exchange[leg].trackingUrl = `https://shiprocket.co/tracking/${webhookAwb}`;
-    }
-    if (PICKUP_BOOKED_OR_LATER.test(rawStatus.toUpperCase().replace(/_/g, ' '))) {
-      exchange[leg].pickupScheduled = true;
-    }
-
-    const order = await Order.findById(exchange.orderId);
-
-    // A single failed leg needs a human; only both legs failing is a full failure.
-    let target = mapped;
-    if (mapped === 'Failed') {
-      exchange[leg].failed = true;
-      target = (exchange.reverse.failed && exchange.forward.failed) ? 'Failed' : 'Manual Review';
-    }
-
-    const fromStatus = exchange.status;
-    if (target && target !== fromStatus && (EXCHANGE_TRANSITIONS[fromStatus] || []).includes(target)) {
-      // Same claim as the admin endpoint: duplicate/out-of-order webhooks can't restock twice.
-      if (await claimExchangeStatus(exchange._id, fromStatus, target)) {
-        if (target === 'Completed') {
-          await restockOriginalItem(exchange);
-          if (order) order.status = 'Exchange Completed';
-        } else if (target === 'Failed') {
-          try {
-            await refundExchangeDifference(exchange);
-          } catch (refundErr) {
-            // Leave it for an admin: back out of 'Failed' so the admin "Failed" action (which
-            // refunds and releases stock) is still available.
-            await ExchangeRequest.updateOne({ _id: exchange._id, status: target }, { $set: { status: fromStatus } });
-            throw refundErr;
-          }
-          await releaseReservedStock(exchange);
-          if (order) order.status = 'Delivered';
-        } else if (order) {
-          order.status = target;
-        }
-        exchange.status = target;
-        addTimeline(exchange, exchange.status, 'webhook', null, `Shiprocket: ${rawStatus}`);
-      }
-    }
-
-    await exchange.save();
-    if (order) await order.save();
-
-    res.status(200).json({ success: true });
+    const result = await processExchangeWebhook(req.body);
+    res.status(200).json({ success: true, ...(result.message ? { message: result.message } : {}) });
   } catch (error) {
     console.error('handleExchangeWebhook error:', error);
     res.status(200).json({ success: true }); // Always 200 to Shiprocket
+  }
+};
+
+// One Shiprocket update for an exchange leg (webhook, or "Sync from Shiprocket"). Returns { message }.
+const processExchangeWebhook = async (payload) => {
+  const rawOrderId = payload.order_id || payload.channel_order_id || payload.awb || '';
+
+  // Determine leg
+  let leg = null;
+  let exchangeId = null;
+
+  if (String(rawOrderId).startsWith('EXC_FWD_')) {
+    leg = 'forward';
+    exchangeId = String(rawOrderId).replace('EXC_FWD_', '');
+  } else if (String(rawOrderId).startsWith('EXC_REV_')) {
+    leg = 'reverse';
+    exchangeId = String(rawOrderId).replace('EXC_REV_', '');
+  } else {
+    return { message: 'Not an exchange webhook, skipped' };
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(exchangeId)) {
+    return { message: 'Exchange not found, skipped' };
+  }
+  const exchange = await ExchangeRequest.findById(exchangeId);
+  if (!exchange) return { message: 'Exchange not found, skipped' };
+
+  const webhookAwb = payload.awb || payload.awb_code;
+  // A late event for an AWB replaced by a courier reassignment changes nothing.
+  if (isSupersededAwb(exchange[leg], webhookAwb, LEG_FIELDS)) return { message: 'Superseded AWB, ignored' };
+
+  let rawStatus = String(payload.current_status || payload.status || '').trim();
+
+  // A cancelled AWB may only be the old one of a courier reassignment: ask Shiprocket.
+  let reassignedShipment = null;
+  if (isCancelledStatus(rawStatus) && exchange[leg].orderId) {
+    try {
+      const shipment = await fetchShiprocketShipment(exchange[leg].orderId);
+      if (!isCancelledStatus(shipment.orderStatus)) {
+        reassignedShipment = shipment;
+        rawStatus = shipment.status || 'AWB ASSIGNED';
+      }
+    } catch (err) {
+      console.error('Could not check the exchange shipment with Shiprocket:', srErrorMessage(err));
+    }
+  }
+  // Shiprocket sends statuses upper-cased ("DELIVERED"); the map is keyed in title case.
+  const legMap = EXCHANGE_WEBHOOK_MAP[leg] || {};
+  const mapKey = Object.keys(legMap).find(k => k.toUpperCase() === rawStatus.toUpperCase().replace(/_/g, ' '));
+  const mapped = mapKey ? legMap[mapKey] : null;
+
+  // Append to webhook history
+  exchange.webhookHistory.push({
+    leg,
+    rawStatus,
+    mapped: mapped || 'unknown',
+    timestamp: new Date(),
+    location: payload.current_status_info?.location || '',
+    remarks: payload.current_status_info?.remark || ''
+  });
+
+  // Update leg status
+  exchange[leg].status = rawStatus;
+  // An AWB assigned or changed (courier reassigned) in the Shiprocket panel is learnt here.
+  const sync = applyShiprocketCourier(exchange[leg], reassignedShipment
+    || { awb: webhookAwb, courierName: payload.courier_name || payload.courier, courierId: payload.courier_company_id || payload.courier_id }, LEG_FIELDS);
+  if (sync.changed) {
+    exchange[leg].trackingUrl = `https://shiprocket.co/tracking/${exchange[leg].awb}`;
+    if (exchange[leg].courierName && (leg === 'reverse' || !exchange.courierName || sync.reassigned)) exchange.courierName = exchange[leg].courierName;
+    if (sync.reassigned) {
+      addTimeline(exchange, exchange.status, 'webhook', null,
+        `Courier for the ${leg === 'reverse' ? 'old item pickup' : 'replacement'} changed in Shiprocket to ${exchange[leg].courierName || 'another courier'} (AWB ${exchange[leg].awb}).`);
+    }
+  }
+  if (PICKUP_BOOKED_OR_LATER.test(rawStatus.toUpperCase().replace(/_/g, ' '))) {
+    exchange[leg].pickupScheduled = true;
+  }
+
+  const order = await Order.findById(exchange.orderId);
+
+  // A single failed leg needs a human; only both legs failing is a full failure.
+  let target = mapped;
+  if (mapped === 'Failed') {
+    exchange[leg].failed = true;
+    target = (exchange.reverse.failed && exchange.forward.failed) ? 'Failed' : 'Manual Review';
+  }
+
+  const fromStatus = exchange.status;
+  if (target && target !== fromStatus && (EXCHANGE_TRANSITIONS[fromStatus] || []).includes(target)) {
+    // Same claim as the admin endpoint: duplicate/out-of-order webhooks can't restock twice.
+    if (await claimExchangeStatus(exchange._id, fromStatus, target)) {
+      if (target === 'Completed') {
+        await restockOriginalItem(exchange);
+        if (order) order.status = 'Exchange Completed';
+      } else if (target === 'Failed') {
+        try {
+          await refundExchangeDifference(exchange);
+        } catch (refundErr) {
+          // Leave it for an admin: back out of 'Failed' so the admin "Failed" action (which
+          // refunds and releases stock) is still available.
+          await ExchangeRequest.updateOne({ _id: exchange._id, status: target }, { $set: { status: fromStatus } });
+          throw refundErr;
+        }
+        await releaseReservedStock(exchange);
+        if (order) order.status = 'Delivered';
+      } else if (order) {
+        order.status = target;
+      }
+      exchange.status = target;
+      addTimeline(exchange, exchange.status, 'webhook', null, `Shiprocket: ${rawStatus}`);
+    }
+  }
+
+  await exchange.save();
+  if (order) await order.save();
+  return {};
+};
+
+// @desc    Pull both legs' current AWB, courier and status from Shiprocket (e.g. after a courier
+//          was reassigned in the Shiprocket panel and its webhook didn't arrive)
+// @route   POST /exchanges/admin/:id/sync-shipment
+// @access  Private (Admin)
+exports.syncExchangeShipment = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ success: false, message: 'Exchange request not found' });
+    const exchange = await ExchangeRequest.findById(req.params.id);
+    if (!exchange) return res.status(404).json({ success: false, message: 'Exchange request not found' });
+    const legs = ['reverse', 'forward'].filter(l => exchange[l] && exchange[l].orderId);
+    if (!legs.length) return res.status(400).json({ success: false, message: 'This exchange has no Shiprocket shipments yet.' });
+
+    const errors = [];
+    for (const leg of legs) {
+      let shipment;
+      try {
+        shipment = await fetchShiprocketShipment(exchange[leg].orderId);
+      } catch (err) {
+        errors.push(`${leg}: ${srErrorMessage(err)}`);
+        continue;
+      }
+      // Same handling as a Shiprocket webhook for this leg.
+      await processExchangeWebhook({
+        order_id: `${leg === 'reverse' ? 'EXC_REV_' : 'EXC_FWD_'}${exchange._id}`,
+        awb: shipment.awb || undefined,
+        courier_name: shipment.courierName || undefined,
+        courier_company_id: shipment.courierId || undefined,
+        current_status: shipment.status || ''
+      });
+    }
+    const fresh = await ExchangeRequest.findById(exchange._id);
+    res.status(errors.length === legs.length ? 502 : 200).json({
+      success: errors.length < legs.length,
+      message: errors.length ? `Could not reach Shiprocket for ${errors.join('; ')}` : 'Synced with Shiprocket',
+      exchange: fresh
+    });
+  } catch (error) {
+    console.error('syncExchangeShipment error:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -980,19 +1048,40 @@ exports.retryExchangeShipment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid leg specified. Must be reverse or forward.' });
     }
 
-    // Atomic fetch & lock check
-    let exchange = await ExchangeRequest.findById(req.params.id);
-    if (!exchange) return res.status(404).json({ success: false, message: 'Exchange request not found' });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ success: false, message: 'Exchange request not found' });
+    const current = await ExchangeRequest.findById(req.params.id);
+    if (!current) return res.status(404).json({ success: false, message: 'Exchange request not found' });
 
-    if (exchange.shipmentRetryInProgress) {
+    // Booking a courier for an existing shipment needs the admin's selection, validated against
+    // Shiprocket's live list before anything is locked or booked.
+    let courier = null;
+    if (current[leg]?.shipmentId && !current[leg]?.awb) {
+      if (!req.body.courierId) {
+        return res.status(400).json({ success: false, code: 'COURIER_REQUIRED', message: `Please select a courier partner for the ${leg === 'reverse' ? 'old item pickup' : 'replacement delivery'}.` });
+      }
+      try {
+        const order = await Order.findById(current.orderId);
+        if (!order) throw new Error('Order not found');
+        courier = await resolveSelectedCourier(exchangeShipment(current, order, leg), req.body.courierId, await getCourierConfig());
+      } catch (courierErr) {
+        return res.status(courierErr.status || 500).json({ success: false, code: courierErr.code, message: courierErr.message });
+      }
+    }
+
+    // Atomic lock: a double click / parallel request can't book or create twice.
+    let exchange = await ExchangeRequest.findOneAndUpdate(
+      { _id: current._id, shipmentRetryInProgress: { $ne: true } },
+      { $set: { shipmentRetryInProgress: true } },
+      { new: true }
+    );
+    if (!exchange) {
       return res.status(409).json({ success: false, message: 'A retry attempt is already in progress for this exchange.' });
     }
 
-    // Lock the document
-    exchange.shipmentRetryInProgress = true;
-    await exchange.save();
-
     const admin = req.admin || req.user;
+    // Forward leg: "Assign AWB" may book the courier without the warehouse pickup (replacement not
+    // packed yet). Default keeps the existing behaviour (book and schedule).
+    const schedulePickup = req.body.schedulePickup !== false;
 
     try {
       // The shipment already exists in Shiprocket and only its courier (AWB) and/or pickup request
@@ -1000,16 +1089,21 @@ exports.retryExchangeShipment = async (req, res) => {
       // there — re-creating would make a duplicate Shiprocket order — and don't count it as a
       // failed retry (the shipment itself is fine).
       if (exchange[leg]?.shipmentId && (!exchange[leg]?.awb || needsPickupRequest(exchange[leg]))) {
-        const booked = await bookExchangeLeg(exchange, leg);
+        if (!exchange[leg].awb && !courier) {
+          exchange.shipmentRetryInProgress = false;
+          await exchange.save();
+          return res.status(409).json({ success: false, message: 'This exchange changed while booking. Please refresh and try again.' });
+        }
+        const booked = await bookExchangeLeg(exchange, leg, { courier: exchange[leg].awb ? null : courier, admin, schedulePickup });
         exchange.lastRetryAt = new Date();
         const note = booked
-          ? `Courier booked for ${leg} leg (AWB ${exchange[leg].awb}), pickup scheduled.`
+          ? `Courier ${exchange[leg].courierName || ''} booked for ${leg} leg (AWB ${exchange[leg].awb})${exchange[leg].pickupScheduled ? ', pickup scheduled' : ''}.`
           : `Booking failed for ${leg} leg: ${exchange.shipmentErrors[exchange.shipmentErrors.length - 1].error}`;
         addTimeline(exchange, exchange.status, 'admin', admin?._id, note);
         addAudit(exchange, booked ? 'shipment_retry' : 'shipment_retry_failed', admin, exchange.status, exchange.status, note);
         exchange.shipmentRetryInProgress = false;
         await exchange.save();
-        return res.status(booked ? 200 : 502).json({ success: booked, message: note, exchange });
+        return res.status(booked ? 200 : 502).json({ success: booked, message: note, warning: mismatchWarning(exchange[leg].courierSelection), exchange });
       }
 
       if (exchange.retryCount >= 3) {
@@ -1050,9 +1144,7 @@ exports.retryExchangeShipment = async (req, res) => {
           response: reverseResp
         };
 
-        if (reverseResp?.shipment_id) {
-          await bookExchangeLeg(exchange, 'reverse');
-        }
+        // Courier is booked once the admin selects one.
       } else {
         // Create Forward Shipment
         const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState, await exchangeHsnCodes(exchange));
@@ -1068,10 +1160,7 @@ exports.retryExchangeShipment = async (req, res) => {
           response: forwardResp
         };
 
-        if (forwardResp?.shipment_id) {
-          // Warehouse pickup of the replacement is scheduled by admin ("Schedule Pickup") once it is packed.
-          await bookExchangeLeg(exchange, 'forward', { schedulePickup: false });
-        }
+        // Courier is booked once the admin selects one; warehouse pickup once the replacement is packed.
       }
 
       // Success cleanup
@@ -1085,7 +1174,7 @@ exports.retryExchangeShipment = async (req, res) => {
       // Trigger user notification (mock or trigger email/SMS as required)
       console.log(`Notification: Shipment for ${leg} leg of Exchange ${exchange._id} has been successfully created. Tracking URL: ${exchange[leg].trackingUrl}`);
 
-      res.json({ success: true, message: `Shipment successfully created for ${leg} leg`, exchange });
+      res.json({ success: true, message: `Shipment created in Shiprocket for the ${leg} leg. Select a courier partner to book it.`, exchange });
     } catch (err) {
       console.error(`Retry shipment failed for ${leg} leg:`, err.message);
       

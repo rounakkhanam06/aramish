@@ -11,6 +11,7 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import OptimizedImage from '../../../components/common/OptimizedImage';
 import { formatDateTime } from '../../../utils/date';
+import CourierPicker from '../../../components/common/CourierPicker';
 
 const StatusBadge = ({ status }) => {
   const styles = {
@@ -256,24 +257,29 @@ const OrderDetail = () => {
     }
   };
 
-  const handleAssignAWB = async () => {
+  // Assigns the AWB with the courier the admin selected (never an automatic one).
+  const handleAssignAWB = async (courierId) => {
     const token = localStorage.getItem('adminToken');
     try {
       const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       const res = await fetch(`${apiBase}/admin/shiprocket/assign-awb`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ orderId })
+        body: JSON.stringify({ orderId, courierId })
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        toast.success('AWB Assigned Successfully');
+        toast.success(data.message || 'AWB Assigned Successfully');
+        if (data.warning) toast.error(data.warning, { duration: 12000 });
         fetchOrderDetail();
-      } else {
-        toast.error(data.message || 'Failed to assign AWB');
+        return true;
       }
+      toast.error(data.message || 'Failed to assign AWB', { duration: 8000 });
+      fetchOrderDetail();
+      return false;
     } catch (err) {
       toast.error('Error assigning AWB');
+      return false;
     }
   };
 
@@ -343,7 +349,8 @@ const OrderDetail = () => {
     }
   };
 
-  const handleProcessOrder = async () => {
+  // AWB (with the selected courier) + pickup + label in one go.
+  const handleProcessOrder = async (courierId) => {
     const token = localStorage.getItem('adminToken');
     setProcessingOrder(true);
     try {
@@ -351,7 +358,7 @@ const OrderDetail = () => {
       const res = await fetch(`${apiBase}/admin/shiprocket/process-order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ orderId })
+        body: JSON.stringify({ orderId, courierId })
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -362,10 +369,13 @@ const OrderDetail = () => {
       } else {
         toast.error(data.message || 'Failed to process order', { duration: 8000 });
       }
+      if (data.warning) toast.error(data.warning, { duration: 12000 });
       // A step can succeed before a later one fails (e.g. AWB assigned, pickup refused).
       fetchOrderDetail();
+      return !!(res.ok && data.success) || !!data.order?.awbCode;
     } catch (err) {
       toast.error('Error processing order');
+      return false;
     } finally {
       setProcessingOrder(false);
     }
@@ -427,10 +437,11 @@ const OrderDetail = () => {
       const data = await res.json();
       if (res.ok && data.success) {
         toast.success('Order synced with Shiprocket');
-        fetchOrderDetail();
       } else {
         toast.error(data.message || 'Sync failed');
       }
+      // The courier/AWB may have been refreshed from Shiprocket even when tracking isn't available yet
+      fetchOrderDetail();
     } catch (err) {
       toast.error('Error syncing order status');
     }
@@ -725,7 +736,22 @@ const OrderDetail = () => {
                 <div>
                   <span className="text-slate-400 uppercase text-[9px]">Courier</span> 
                   <p className="text-slate-900">{order.courierName || 'Unassigned'}</p>
+                  {order.courierSelection?.source === 'shiprocket_panel' && (
+                    <p className="text-[9px] text-amber-600 font-semibold">
+                      {order.courierSelection.reassignedFrom ? `Changed in Shiprocket panel (was ${order.courierSelection.reassignedFrom})` : 'Assigned in Shiprocket panel'}
+                    </p>
+                  )}
+                  {order.courierSelection?.source === 'admin' && order.courierSelection?.freight !== null && (
+                    <p className="text-[9px] text-slate-400 font-semibold">
+                      Selected{order.courierSelection.selectedByName ? ` by ${order.courierSelection.selectedByName}` : ''} • ₹{order.courierSelection.freight} freight
+                    </p>
+                  )}
                 </div>
+                {order.courierSelection?.mismatch && (
+                  <div className="col-span-2 md:col-span-4 bg-red-50 border border-red-200 rounded-xl p-2 text-[11px] text-red-700">
+                    Shiprocket booked {order.courierSelection.assignedCourierName || `courier ${order.courierSelection.assignedCourierId}`} instead of the selected {order.courierSelection.courierName}. Check this shipment in the Shiprocket panel.
+                  </div>
+                )}
                 <div className="col-span-2 md:col-span-4 mt-2 pt-2 border-t border-slate-200/50 flex flex-wrap gap-4 justify-between">
                   <div>
                     <span className="text-slate-400 uppercase text-[9px]">Shipment Status</span> 
@@ -753,23 +779,22 @@ const OrderDetail = () => {
 
                 {order.shipmentId && !['Delivered', 'Cancelled'].includes(order.status) && (
                   <>
+                    {/* Manual courier selection: nothing is booked until a courier is chosen */}
                     {!order.awbCode && (
-                      <button 
-                        onClick={handleProcessOrder}
-                        disabled={processingOrder}
-                        className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl text-xs font-bold hover:from-blue-600 hover:to-indigo-600 transition-all shadow-sm disabled:opacity-50"
-                      >
-                        {processingOrder ? '⏳ Processing...' : '🚀 Process Order (AWB + Pickup + Label)'}
-                      </button>
-                    )}
-
-                    {!order.awbCode && (
-                      <button 
-                        onClick={handleAssignAWB}
-                        className="px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors shadow-sm"
-                      >
-                        Assign AWB
-                      </button>
+                      <div className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-3">
+                        <button type="button" onClick={handleSyncStatus} className="text-[10px] font-bold text-amber-700 hover:text-amber-800">
+                          🔄 Already booked in the Shiprocket panel? Sync from Shiprocket
+                        </button>
+                        <CourierPicker
+                          type="order"
+                          id={orderId}
+                          disabled={processingOrder}
+                          actions={[
+                            { label: 'Process Order (AWB + Pickup + Label)', onBook: handleProcessOrder },
+                            { label: 'Assign AWB only', onBook: handleAssignAWB }
+                          ]}
+                        />
+                      </div>
                     )}
 
                     {order.awbCode && (

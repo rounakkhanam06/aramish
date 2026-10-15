@@ -40,7 +40,10 @@ afterAll(stopTestDb);
 beforeEach(async () => {
   await clearTestDb();
   jest.clearAllMocks();
-  shiprocketService.checkServiceability.mockResolvedValue({ data: { recommended_courier_company_id: 252 } });
+  // The admin's chosen courier (252) must be serviceable for the shipment.
+  shiprocketService.checkServiceability.mockResolvedValue({
+    data: { available_courier_companies: [{ courier_company_id: 252, courier_name: 'Delhivery', freight_charge: 80, cod_charges: 30, cod: 1 }] }
+  });
 });
 
 describe('Shiprocket admin shipping actions', () => {
@@ -48,11 +51,13 @@ describe('Shiprocket admin shipping actions', () => {
     const order = await makeOrder();
     shiprocketService.assignAWB.mockResolvedValue({ response: { data: { courier_id: '252', awb_assign_error: WALLET_ERROR } } });
 
-    const res = await call(processOrder, { orderId: order._id });
+    const res = await call(processOrder, { orderId: order._id, courierId: 252 });
 
     expect(res.statusCode).toBe(400);
     expect(res.body.success).toBe(false);
     expect(res.body.message).toContain(WALLET_ERROR);
+    expect(res.body.message).toContain('No other courier was tried');
+    expect(shiprocketService.assignAWB).toHaveBeenCalledTimes(1);
     expect(shiprocketService.requestPickup).not.toHaveBeenCalled();
     expect(shiprocketService.generateLabel).not.toHaveBeenCalled();
 
@@ -70,9 +75,10 @@ describe('Shiprocket admin shipping actions', () => {
     shiprocketService.requestPickup.mockResolvedValue({ pickup_status: 1, response: { pickup_scheduled_date: '2026-10-04' } });
     shiprocketService.generateLabel.mockResolvedValue({ label_created: 1, label_url: 'https://label.pdf' });
 
-    const res = await call(processOrder, { orderId: order._id });
+    const res = await call(processOrder, { orderId: order._id, courierId: 252 });
 
     expect(res.body.success).toBe(true);
+    expect(shiprocketService.assignAWB).toHaveBeenCalledWith('1624228272', 252, { isReturn: false });
     const fresh = await Order.findById(order._id);
     expect(fresh.awbCode).toBe('AWB123');
     expect(fresh.courierName).toBe('Delhivery');
@@ -87,7 +93,7 @@ describe('Shiprocket admin shipping actions', () => {
     shiprocketService.requestPickup.mockResolvedValue({ pickup_status: 1 });
     shiprocketService.generateLabel.mockResolvedValue({ label_created: 0, not_created: { 1624228272: 'Shipment awb not found' } });
 
-    const res = await call(processOrder, { orderId: order._id });
+    const res = await call(processOrder, { orderId: order._id, courierId: 252 });
 
     expect(res.body.success).toBe(false);
     expect(res.body.message).toContain('Shipment awb not found');
@@ -100,7 +106,7 @@ describe('Shiprocket admin shipping actions', () => {
     const order = await makeOrder();
     shiprocketService.assignAWB.mockResolvedValue({ response: { data: { awb_assign_error: WALLET_ERROR } } });
 
-    const res = await call(assignAWB, { orderId: order._id });
+    const res = await call(assignAWB, { orderId: order._id, courierId: 252 });
 
     expect(res.statusCode).toBe(400);
     expect(res.body.message).toContain(WALLET_ERROR);

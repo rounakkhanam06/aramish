@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const courierSelectionSchema = require('./courierSelectionSchema');
 
 const returnRequestSchema = new mongoose.Schema({
   orderId: {
@@ -66,6 +67,12 @@ const returnRequestSchema = new mongoose.Schema({
   shiprocketReturnShipmentId: { type: String, default: null },
   awbCode: { type: String, default: null },
   courierName: { type: String, default: null },
+  courierId: { type: Number, default: null },
+  courierSelection: { type: courierSelectionSchema, default: null },
+  awbHistory: { type: [String], default: [] },
+  // Latest raw Shiprocket shipment status (e.g. 'PICKUP SCHEDULED', 'IN TRANSIT') and when it came
+  shiprocketStatus: { type: String, default: null },
+  shiprocketStatusAt: { type: Date, default: null },
   walletRefundProcessed: { type: Boolean, default: false },
   // How the processed refund was paid out (for history/audit)
   refundWalletRestoredAmount: { type: Number, default: 0 }, // back to Refund Wallet (order was paid with it)

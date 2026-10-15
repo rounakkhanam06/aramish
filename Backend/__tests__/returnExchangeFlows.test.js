@@ -32,7 +32,7 @@ jest.mock('../Router/shiprocketService', () => {
     ...actual,
     getShiprocketToken: jest.fn(async () => null),
     checkServiceability: jest.fn(async () => ({
-      data: { available_courier_companies: [{ freight_charge: 50, cod_charges: 0, etd: '3 days' }] }
+      data: { available_courier_companies: [{ courier_company_id: 7, courier_name: 'TestCourier', freight_charge: 50, cod_charges: 0, cod: 1, etd: '3 days' }] }
     })),
     createShiprocketOrder: jest.fn(async () => ({ order_id: `SR${++n}`, shipment_id: `SH${n}` })),
     createShiprocketReturnOrder: jest.fn(async () => ({ order_id: `SRR${++n}`, shipment_id: `SHR${n}` })),
@@ -188,9 +188,14 @@ describe.each(['manual', 'shiprocket'])('Return flow — %s delivery', (mode) =>
     const id = rr.data.returnRequest._id;
     expect((await Order.findById(ctx.orderId)).status).toBe('Return Requested');
 
-    // Approval books the reverse pickup straight away (AWB + pickup request)
+    // Approval creates the Shiprocket return order; the admin then books the chosen courier
     expect((await setReturnStatus(ctx, id, 'Approved')).status).toBe(200);
     let ret = await ReturnRequest.findById(id);
+    expect(ret.status).toBe('Approved');
+    expect(ret.awbCode).toBeNull();
+    const book = await api('POST', `/returns/admin/${id}/retry-shipment`, { token: ctx.adminToken, body: { courierId: 7 } });
+    expect(book.status).toBe(200);
+    ret = await ReturnRequest.findById(id);
     expect(ret.status).toBe('Pick-up Scheduled');
     expect(ret.awbCode).toMatch(/^AWB/);
     expect(shiprocketService.requestPickup).toHaveBeenCalledWith(ret.shiprocketReturnShipmentId);

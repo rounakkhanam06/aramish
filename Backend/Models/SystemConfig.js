@@ -17,6 +17,18 @@ const systemConfigSchema = new mongoose.Schema({
   businessPan: { type: String, default: '' },
   // Invoice numbers: <prefix>/<YY-YY financial year>/<6-digit serial>, e.g. ARM/26-27/000001
   invoicePrefix: { type: String, default: 'ARM' },
+  // Courier partners never offered for booking (unreliable pickups/deliveries). Matched by
+  // Shiprocket courier_company_id; the name is kept for display.
+  blockedCouriers: {
+    type: [{
+      _id: false,
+      courierId: { type: Number, required: true },
+      name: { type: String, default: '' },
+      reason: { type: String, default: '' },
+      blockedAt: { type: Date, default: Date.now }
+    }],
+    default: []
+  },
   // HSN used for a product that has no HSN code of its own (snapshotted at checkout)
   defaultHsnCode: { type: String, default: '' },
   // Footwear (Chapter 64) GST slabs by date. The rule in force on the invoice date applies:

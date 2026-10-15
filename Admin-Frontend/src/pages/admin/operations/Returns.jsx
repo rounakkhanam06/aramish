@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import OptimizedImage from '../../../components/common/OptimizedImage';
 import { formatDate, formatDateTime } from '../../../utils/date';
 import { getImageUrl } from '../../../utils/imageHelper';
+import CourierPicker from '../../../components/common/CourierPicker';
 
 // Size/colour actually delivered for a returned line: taken from the matching order line
 // (same product + variant SKU), since the return only stores the SKU.
@@ -161,21 +162,23 @@ const Returns = () => {
     }
   };
 
-  // Re-tries the Shiprocket return pickup: assigns the courier (AWB) when the return order already
-  // exists, otherwise creates the return order again.
-  const handleRetryShipment = async () => {
-    if (!selectedReturn) return;
+  // Shiprocket return pickup: books the courier the admin selected (AWB + pickup request) when the
+  // return order exists, requests a missing pickup, or creates the return order again.
+  const handleRetryShipment = async (courierId) => {
+    if (!selectedReturn) return false;
     const token = getToken();
-    if (!token) return;
+    if (!token) return false;
     try {
       setRetryingShipment(true);
       const res = await fetch(`${API_BASE}/returns/admin/${selectedReturn._id}/retry-shipment`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(courierId ? { courierId } : {})
       });
       const data = await res.json();
       if (res.ok && data.success) {
         toast.success(data.message || 'Return pickup booked');
+        if (data.warning) toast.error(data.warning, { duration: 12000 });
         fetchReturns();
       } else {
         toast.error(data.message || 'Retry failed', { duration: 8000 });
@@ -183,8 +186,33 @@ const Returns = () => {
       if (data.returnRequest) {
         await fetchReturnDetail(selectedReturn._id);
       }
-    } catch (err) {
+      return !!(res.ok && data.success);
+    } catch {
       toast.error('Could not retry the return pickup');
+      return false;
+    } finally {
+      setRetryingShipment(false);
+    }
+  };
+
+  // Pulls the latest AWB, courier and status from Shiprocket (e.g. courier changed in its panel).
+  const handleSyncShipment = async () => {
+    if (!selectedReturn) return;
+    const token = getToken();
+    if (!token) return;
+    try {
+      setRetryingShipment(true);
+      const res = await fetch(`${API_BASE}/returns/admin/${selectedReturn._id}/sync-shipment`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) toast.success(data.message || 'Synced with Shiprocket');
+      else toast.error(data.message || 'Sync failed', { duration: 8000 });
+      await fetchReturnDetail(selectedReturn._id);
+      fetchReturns();
+    } catch {
+      toast.error('Could not sync with Shiprocket');
     } finally {
       setRetryingShipment(false);
     }
@@ -634,6 +662,14 @@ const Returns = () => {
                         <div className="flex items-center gap-2">
                           <Truck size={16} className="text-slate-600" />
                           <p className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Shiprocket reverse logistics</p>
+                          <button
+                            type="button"
+                            onClick={handleSyncShipment}
+                            disabled={retryingShipment}
+                            className="ml-auto text-[10px] font-bold text-blue-600 hover:text-blue-700 disabled:opacity-40"
+                          >
+                            🔄 Sync from Shiprocket
+                          </button>
                         </div>
                         <div className="grid grid-cols-2 gap-y-2 text-xs">
                           <div>
@@ -644,6 +680,15 @@ const Returns = () => {
                             <span className="text-slate-400 font-medium">Shipment ID:</span>
                             <p className="font-bold text-slate-800 mt-0.5">{selectedReturn.shiprocketReturnShipmentId}</p>
                           </div>
+                          {selectedReturn.shiprocketStatus && (
+                            <div className="col-span-2">
+                              <span className="text-slate-400 font-medium">Shiprocket status:</span>
+                              <p className="font-bold text-indigo-600 mt-0.5">
+                                {selectedReturn.shiprocketStatus}
+                                {selectedReturn.shiprocketStatusAt && <span className="text-[10px] text-slate-400 font-medium ml-2">{formatDateTime(selectedReturn.shiprocketStatusAt)}</span>}
+                              </p>
+                            </div>
+                          )}
                           {selectedReturn.awbCode && (
                             <>
                               <div>
@@ -653,6 +698,11 @@ const Returns = () => {
                               <div>
                                 <span className="text-slate-400 font-medium">Courier Name:</span>
                                 <p className="font-bold text-slate-800 mt-0.5">{selectedReturn.courierName || 'Assigned'}</p>
+                                {selectedReturn.courierSelection?.source === 'shiprocket_panel' && (
+                                  <p className="text-[10px] text-amber-600 font-semibold">
+                                    {selectedReturn.courierSelection.reassignedFrom ? `Changed in Shiprocket panel (was ${selectedReturn.courierSelection.reassignedFrom})` : 'Assigned in Shiprocket panel'}
+                                  </p>
+                                )}
                               </div>
                             </>
                           )}
@@ -672,13 +722,15 @@ const Returns = () => {
                               : !selectedReturn.awbCode ? 'Courier (AWB) not assigned'
                               : 'Courier pickup not scheduled'}
                           </p>
+                          {!(selectedReturn.shiprocketReturnShipmentId && !selectedReturn.awbCode) && (
                           <button
-                            onClick={handleRetryShipment}
+                            onClick={() => handleRetryShipment()}
                             disabled={retryingShipment}
                             className="bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg disabled:opacity-50 shrink-0"
                           >
-                            {retryingShipment ? 'Retrying...' : (!selectedReturn.shiprocketReturnShipmentId ? 'Retry Return Pickup' : !selectedReturn.awbCode ? 'Assign AWB' : 'Schedule Pickup')}
+                            {retryingShipment ? 'Retrying...' : (!selectedReturn.shiprocketReturnShipmentId ? 'Retry Return Pickup' : 'Schedule Pickup')}
                           </button>
+                          )}
                         </div>
                         {selectedReturn.shipmentErrors?.length > 0 && (
                           <div className="space-y-1.5 max-h-32 overflow-y-auto">
@@ -690,6 +742,21 @@ const Returns = () => {
                             ))}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Manual courier selection for the reverse pickup (nothing is booked automatically) */}
+                    {['Approved', 'Pick-up Scheduled'].includes(selectedReturn.status) &&
+                      selectedReturn.shiprocketReturnShipmentId && !selectedReturn.awbCode && (
+                      <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100">
+                        <p className="text-[11px] font-semibold text-blue-800 mb-3">Return order created in Shiprocket. Choose the courier for the pickup from the customer.</p>
+                        <CourierPicker
+                          type="return"
+                          id={selectedReturn._id}
+                          bookLabel="Book pickup"
+                          disabled={retryingShipment}
+                          onBook={handleRetryShipment}
+                        />
                       </div>
                     )}
 

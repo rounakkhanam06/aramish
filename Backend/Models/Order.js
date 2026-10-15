@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const courierSelectionSchema = require('./courierSelectionSchema');
 
 const orderSchema = new mongoose.Schema({
   userId: {
@@ -241,6 +242,26 @@ const orderSchema = new mongoose.Schema({
   },
   courierName: {
     type: String,
+    default: null
+  },
+  // Shiprocket courier_company_id of the booked courier, and the admin's selection record
+  courierId: {
+    type: Number,
+    default: null
+  },
+  courierSelection: {
+    type: courierSelectionSchema,
+    default: null
+  },
+  // AWBs replaced by a courier reassignment. Late webhooks for these are ignored (they must never
+  // switch the order back, or cancel it).
+  awbHistory: {
+    type: [String],
+    default: []
+  },
+  // Guards courier booking against double clicks / parallel requests (stale after 2 minutes)
+  bookingLockAt: {
+    type: Date,
     default: null
   },
   shipmentStatus: {
