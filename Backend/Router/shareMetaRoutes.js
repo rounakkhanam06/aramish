@@ -74,4 +74,48 @@ router.get('/product/:id', async (req, res) => {
   }
 });
 
+// Product data feed for Meta Commerce Manager (Catalog → Data sources → Data feed → scheduled URL).
+// `id` is the product _id, matching the content_ids the Meta Pixel sends.
+const csvCell = (val = '') => `"${String(val ?? '').replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`;
+
+router.get('/catalog-feed.csv', async (req, res) => {
+  try {
+    const products = await Product.find({ status: { $in: ['Approved', 'Out of Stock'] } })
+      .select('name description sellingPrice mrp stock status images brandName category')
+      .lean();
+
+    const header = ['id', 'title', 'description', 'availability', 'condition', 'price', 'sale_price', 'link', 'image_link', 'additional_image_link', 'brand', 'product_type'];
+    const rows = [header.join(',')];
+
+    for (const p of products) {
+      const images = (p.images || []).map(toAbsoluteImageUrl).filter(Boolean);
+      if (!images.length) continue; // Meta rejects items without an image
+      const mrp = Number(p.mrp) || Number(p.sellingPrice);
+      const selling = Number(p.sellingPrice) || mrp;
+      const inStock = p.status !== 'Out of Stock' && Number(p.stock) > 0;
+
+      rows.push([
+        p._id,
+        String(p.name).slice(0, 150),
+        String(p.description || p.name).slice(0, 5000),
+        inStock ? 'in stock' : 'out of stock',
+        'new',
+        `${mrp.toFixed(2)} INR`,
+        selling < mrp ? `${selling.toFixed(2)} INR` : '',
+        `${SITE_URL}/product/${p._id}`,
+        images[0],
+        images.slice(1, 10).join(','),
+        p.brandName || 'Aramish',
+        p.category || ''
+      ].map(csvCell).join(','));
+    }
+
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(rows.join('\n'));
+  } catch (err) {
+    res.status(500).send('Failed to build catalog feed');
+  }
+});
+
 module.exports = router;
