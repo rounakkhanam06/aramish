@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Product = require('../Models/Product');
+const CategoryChip = require('../Models/CategoryChip');
 const { getImagePath } = require('../utils/imageHelper');
 
 const SITE_URL = 'https://aramishshoes.com';
@@ -84,6 +85,14 @@ router.get('/catalog-feed.csv', async (req, res) => {
       .select('name description sellingPrice mrp stock status images brandName category')
       .lean();
 
+    // product.category holds the chip's _id (older products may hold its slug `id`)
+    const chips = await CategoryChip.find().select('id categoryName').lean();
+    const categoryNames = new Map();
+    for (const c of chips) {
+      categoryNames.set(String(c._id), c.categoryName);
+      if (c.id) categoryNames.set(c.id, c.categoryName);
+    }
+
     const header = ['id', 'title', 'description', 'availability', 'condition', 'price', 'sale_price', 'link', 'image_link', 'additional_image_link', 'brand', 'product_type'];
     const rows = [header.join(',')];
 
@@ -105,8 +114,8 @@ router.get('/catalog-feed.csv', async (req, res) => {
         `${SITE_URL}/product/${p._id}`,
         images[0],
         images.slice(1, 10).join(','),
-        p.brandName || 'Aramish',
-        p.category || ''
+        p.brandName && !/^generic$/i.test(p.brandName.trim()) ? p.brandName : 'Aramish',
+        categoryNames.get(String(p.category)) || p.category || ''
       ].map(csvCell).join(','));
     }
 
