@@ -109,6 +109,26 @@ const orderSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // Refund/Cash Wallet money for this order that an admin paid out to the customer's bank/UPI
+  // (utils/refundPayout.js). walletAmount was deducted from the wallet; amount was transferred —
+  // the difference is the order charges a bank/UPI refund doesn't cover.
+  refundPayouts: [{
+    walletAmount: { type: Number, required: true },
+    amount: { type: Number, required: true },
+    method: { type: String, enum: ['Bank', 'UPI'], required: true },
+    bankDetails: {
+      accountHolderName: { type: String, default: null },
+      accountNumber: { type: String, default: null },
+      ifscCode: { type: String, default: null },
+      bankName: { type: String, default: null },
+      upiId: { type: String, default: null }
+    },
+    reference: { type: String, default: '' },
+    note: { type: String, default: '' },
+    adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    adminName: { type: String, default: '' },
+    createdAt: { type: Date, default: Date.now }
+  }],
   welcomeCoinsUsed: {
     type: Number,
     default: 0

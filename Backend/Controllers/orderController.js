@@ -8,6 +8,7 @@ const mongoose = require('mongoose');
 const CouponUsage = require('../Models/CouponUsage');
 const { handleOrderCancellationStockAndCoupon, handleOrderCancellationRefunds } = require('../utils/orderHelper');
 const walletService = require('../utils/walletService');
+const refundPayout = require('../utils/refundPayout');
 const { isRazorpayConfigured, verifyAndCapturePayment, refundPayment } = require('../utils/razorpayService');
 const { loadShippingDetails, buildShiprocketOrderPayload, cheapestCourier, shiprocketCostsFor } = require('../utils/shiprocketPayload');
 const { checkoutBillingDetails, applyItemTaxSnapshot, orderDeliveryAddress, issueInvoiceSafely, isDeliveredForInvoice } = require('../utils/invoiceService');
@@ -1113,3 +1114,43 @@ exports.cancelOrder = async (req, res) => {
 };
 
 
+
+// @desc    Refund/Cash Wallet money of an order that can be paid out to the customer's bank/UPI,
+//          with the charges a bank refund deducts. ?walletAmount= also quotes a payout.
+// @route   GET /api/orders/admin/:id/refund-payout
+// @access  Private (Admin)
+exports.getRefundPayout = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid order id' });
+    }
+    const walletAmount = req.query.walletAmount !== undefined && req.query.walletAmount !== '' ? Number(req.query.walletAmount) : undefined;
+    const summary = await refundPayout.getRefundPayoutSummary(req.params.id, { walletAmount: Number.isFinite(walletAmount) ? walletAmount : undefined });
+    if (!summary) return res.status(404).json({ success: false, message: 'Order not found' });
+    res.status(200).json({ success: true, summary });
+  } catch (error) {
+    console.error('getRefundPayout error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Pay out Refund/Cash Wallet money to the customer's bank/UPI: deducts it from the wallet
+//          and records the manual transfer.  { walletAmount, method: 'Bank'|'UPI', bankDetails, reference, note }
+// @route   POST /api/orders/admin/:id/refund-payout
+// @access  Private (Admin)
+exports.createRefundPayout = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid order id' });
+    }
+    const { walletAmount, method, bankDetails, reference, note } = req.body || {};
+    const result = await refundPayout.createRefundPayout({
+      orderId: req.params.id, walletAmount: Number(walletAmount), method, bankDetails, reference, note, admin: req.admin
+    });
+    const summary = await refundPayout.getRefundPayoutSummary(req.params.id);
+    res.status(201).json({ success: true, message: `₹${result.quote.amount} payout recorded`, payout: result.payout, summary });
+  } catch (error) {
+    if (!error.status) console.error('createRefundPayout error:', error);
+    res.status(error.status || 500).json({ success: false, message: error.message });
+  }
+};

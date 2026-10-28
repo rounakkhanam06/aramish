@@ -222,7 +222,7 @@ describe('handleReturnRefund — mid-flight failure rolls back and retry complet
   });
 });
 
-describe('handleReturnRefund — Razorpay online refund idempotency', () => {
+describe('handleReturnRefund — legacy Original (Razorpay) refund idempotency', () => {
   const RZP_ENV = { RAZORPAY_KEY_ID: 'test_key_id', RAZORPAY_KEY_SECRET: 'test_key_secret' };
   let originalEnv;
 
@@ -248,7 +248,7 @@ describe('handleReturnRefund — Razorpay online refund idempotency', () => {
     const user = await makeUser({ walletBalance: 0 });
     const product = await makeProduct();
     const order = await makeOnlineReturnOrder(user, product);
-    const returnRequest = await makeReturn({ user, order, product, refundAmount: 1600, refundMethod: 'Bank' });
+    const returnRequest = await makeReturn({ user, order, product, refundAmount: 1600, refundMethod: 'Original' });
 
     jest.spyOn(axios, 'get').mockResolvedValue({ data: { items: [] } });
     const postSpy = jest.spyOn(axios, 'post').mockResolvedValue({ data: { id: 'rfnd_1' } });
@@ -264,7 +264,7 @@ describe('handleReturnRefund — Razorpay online refund idempotency', () => {
     const user = await makeUser({ walletBalance: 0 });
     const product = await makeProduct();
     const order = await makeOnlineReturnOrder(user, product);
-    const returnRequest = await makeReturn({ user, order, product, refundAmount: 1600, refundMethod: 'Bank' });
+    const returnRequest = await makeReturn({ user, order, product, refundAmount: 1600, refundMethod: 'Original' });
     await ReturnRequest.updateOne({ _id: returnRequest._id }, { $set: { stockRefundClaimed: true, walletRefundProcessed: true } });
 
     const getSpy = jest.spyOn(axios, 'get').mockResolvedValue({ data: { items: [{ id: 'rfnd_existing' }] } });
@@ -280,7 +280,7 @@ describe('handleReturnRefund — Razorpay online refund idempotency', () => {
     const user = await makeUser({ walletBalance: 0 });
     const product = await makeProduct();
     const order = await makeOnlineReturnOrder(user, product);
-    const returnRequest = await makeReturn({ user, order, product, refundAmount: 1600, refundMethod: 'Bank' });
+    const returnRequest = await makeReturn({ user, order, product, refundAmount: 1600, refundMethod: 'Original' });
 
     jest.spyOn(axios, 'get').mockResolvedValue({ data: { items: [] } });
     const postSpy = jest.spyOn(axios, 'post').mockResolvedValue({ data: { id: 'rfnd_1' } });
@@ -289,5 +289,24 @@ describe('handleReturnRefund — Razorpay online refund idempotency', () => {
     await handleReturnRefund(await ReturnRequest.findById(returnRequest._id), await Order.findById(order._id));
 
     expect(postSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('Bank/UPI chosen by the admin: a manual transfer — Razorpay is not called and nothing goes to the wallet', async () => {
+    const product = await makeProduct();
+    for (const method of ['Bank', 'UPI']) {
+      const user = await makeUser({ walletBalance: 0 });
+      const order = await makeOnlineReturnOrder(user, product);
+      const returnRequest = await makeReturn({ user, order, product, refundAmount: 1600, refundMethod: method });
+      const getSpy = jest.spyOn(axios, 'get');
+      const postSpy = jest.spyOn(axios, 'post');
+
+      await handleReturnRefund(returnRequest, order);
+
+      expect(getSpy).not.toHaveBeenCalled();
+      expect(postSpy).not.toHaveBeenCalled();
+      expect((await User.findById(user._id)).refundWalletBalance || 0).toBe(0);
+      expect((await ReturnRequest.findById(returnRequest._id)).cashRefundProcessed).toBe(true);
+      jest.restoreAllMocks();
+    }
   });
 });

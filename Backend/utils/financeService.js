@@ -115,19 +115,23 @@ const lineCost = (item, currentCosts) => {
 };
 
 const summarizeRefundWalletLedger = (entries) => {
-  let credited = 0; let restored = 0; let usedOnOrders = 0; let other = 0;
+  let credited = 0; let restored = 0; let usedOnOrders = 0; let paidOutToBank = 0; let other = 0;
   for (const e of entries) {
     const amt = Math.abs(num(e.amount));
     if (e.type === 'REFUND_WALLET_CREDIT' || e.type === 'REFUND_WALLET_PARTIAL_REFUND') credited += amt;
     else if (e.type === 'REFUND_WALLET_RESTORE') restored += amt;
     else if (e.type === 'REFUND_WALLET_DEBIT') usedOnOrders += amt;
+    else if (e.type === 'REFUND_WALLET_PAYOUT') paidOutToBank += amt;
     else other += signedAmount(e);
   }
   return {
     refundsCredited: roundMoney(credited),
     restoredFromCancelledOrders: roundMoney(restored),
     usedOnOrders: roundMoney(usedOnOrders),
-    netChange: roundMoney(credited + restored + other - usedOnOrders)
+    // Deducted from the wallet for admin bank/UPI payouts (the transfer itself is this less the
+    // order charges a bank refund doesn't cover — see Order.refundPayouts)
+    paidOutToBank: roundMoney(paidOutToBank),
+    netChange: roundMoney(credited + restored + other - usedOnOrders - paidOutToBank)
   };
 };
 

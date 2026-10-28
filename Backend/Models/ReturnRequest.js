@@ -43,10 +43,12 @@ const returnRequestSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  // Customers always get 'Wallet' (Refund/Cash Wallet); the admin may switch it to a manual
+  // 'Bank' or 'UPI' transfer when refunding. 'Original' = legacy refund to the Razorpay payment.
   refundMethod: {
     type: String,
-    enum: ['Original', 'Wallet', 'Bank'],
-    default: 'Original'
+    enum: ['Original', 'Wallet', 'Bank', 'UPI'],
+    default: 'Wallet'
   },
   bankDetails: {
     accountHolderName: { type: String, default: null },
@@ -55,6 +57,8 @@ const returnRequestSchema = new mongoose.Schema({
     bankName: { type: String, default: null },
     upiId: { type: String, default: null }
   },
+  // UTR / transaction reference of a manual Bank/UPI refund
+  payoutReference: { type: String, default: '' },
   adminNotes: {
     type: String,
     default: ''

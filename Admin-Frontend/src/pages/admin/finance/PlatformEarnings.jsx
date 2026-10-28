@@ -347,6 +347,7 @@ const PlatformEarnings = () => {
               <Line label="Refunds credited" value={refundWallet.refundsCredited} />
               <Line label="Restored from cancelled orders" value={refundWallet.restoredFromCancelledOrders} />
               <Line label="Used on orders" value={refundWallet.usedOnOrders} kind="less" />
+              <Line label="Paid out to bank/UPI" value={refundWallet.paidOutToBank} kind="less" hint="Deducted from wallets for admin payouts" />
               <Line label="Net change" value={refundWallet.netChange} kind="total" />
               <Line label="Outstanding balance (now)" value={refundWallet.outstandingBalance} kind="info" hint="Customer money we hold" />
             </Card>

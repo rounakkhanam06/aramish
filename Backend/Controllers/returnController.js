@@ -4,6 +4,7 @@ const Order = require('../Models/Order');
 const shiprocketService = require('../Router/shiprocketService');
 const { loadShippingDetails, toOrderItem, toShiprocketDate, getReturnWarehouse, fallbackEmail, FALLBACK_PHONE } = require('../utils/shiprocketPayload');
 const { handleReturnRefund, getDeliveredAt } = require('../utils/orderHelper');
+const { calculateEligibleRefund } = require('../utils/refundCalc');
 const { srErrorMessage, requestPickupChecked, PICKUP_BOOKED_OR_LATER } = require('../utils/shiprocketResults');
 const { returnShipment, resolveSelectedCourier, assignAwbWithCourier, mismatchWarning, getCourierConfig } = require('../utils/courierSelection');
 const { RETURN_FIELDS, isSupersededAwb, applyShiprocketCourier, fetchShiprocketShipment, isCancelledStatus } = require('../utils/shipmentSync');
@@ -114,41 +115,6 @@ const bookReturnPickup = async (returnRequest, { courier = null, admin = null } 
     }
   }
   return true;
-};
-
-// Most the customer can get back for `returnItems` (prices taken from the order, never from the
-// request): the items' value, less their share of the coupon and prepaid discounts on a partial
-// return; for a Wallet refund also their share of GST, plus delivery and platform fee on a full
-// return. Never more than the money actually paid (cash/online + Refund Wallet) — coins redeemed
-// on the order are non-returnable.
-const calculateEligibleRefund = (order, returnItems, refundMethod) => {
-  const itemsValue = returnItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
-  // Return lines saved before they recorded a variant match their order line by product alone.
-  const returnedQty = (orderItem) => returnItems
-    .filter(r => String(r.productId) === String(orderItem.productId) &&
-      (!r.variationSku || r.variationSku === orderItem.variationSku))
-    .reduce((sum, r) => sum + r.quantity, 0);
-  const isFullReturn = order.items.every(orderItem => returnedQty(orderItem) === orderItem.quantity);
-
-  let eligible = itemsValue;
-  // Partial return: the order-level coupon and prepaid discounts were spread over every item, so
-  // the returned items only give back their discounted share. (A full return is already bounded
-  // by the money-paid cap below.)
-  if (!isFullReturn && order.subtotal > 0) {
-    const orderDiscounts = (order.discountAmount || 0) + (order.prepaidDiscount || 0);
-    const discountShare = (itemsValue / order.subtotal) * orderDiscounts;
-    eligible = Math.max(0, itemsValue - discountShare);
-  }
-
-  if (refundMethod === 'Wallet') {
-    const proportionalGst = (order.subtotal && order.subtotal > 0) ? (itemsValue / order.subtotal) * (order.gstAmount || 0) : 0;
-    eligible += proportionalGst;
-    if (isFullReturn) {
-      eligible += (order.deliveryCharge || 0) + (order.platformCommission || 0);
-    }
-  }
-  const moneyPaid = (order.total || 0) + (order.refundWalletUsed || 0);
-  return Math.round(Math.min(eligible, moneyPaid) * 100) / 100;
 };
 
 // Validates the customer's return lines against the order: { items } (one line per order line,
@@ -292,16 +258,9 @@ exports.createReturnRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: itemsError });
     }
 
-    let parsedBankDetails = null;
-    if (req.body.bankDetails) {
-      try {
-        parsedBankDetails = typeof req.body.bankDetails === 'string' ? JSON.parse(req.body.bankDetails) : req.body.bankDetails;
-      } catch (e) {
-        parsedBankDetails = null;
-      }
-    }
-
-    const finalRefundMethod = req.body.refundMethod || (parsedBankDetails ? 'Bank' : 'Original');
+    // Customers are always refunded to the Refund/Cash Wallet (whatever an older app build sends).
+    // A Bank/UPI payout is an admin decision, chosen when the refund is processed.
+    const finalRefundMethod = 'Wallet';
 
     const refundAmount = calculateEligibleRefund(order, validatedReturnItems, finalRefundMethod);
 
@@ -320,7 +279,6 @@ exports.createReturnRequest = async (req, res) => {
       reasonDetails: reasonDetails || '',
       refundAmount,
       refundMethod: finalRefundMethod,
-      bankDetails: parsedBankDetails,
       images: imagePaths,
       status: 'Requested',
       statusHistory: [{ status: 'Requested', actor: 'customer', note: reason, timestamp: new Date() }]
@@ -523,7 +481,15 @@ exports.getReturnById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Return request not found' });
     }
 
-    res.status(200).json({ success: true, returnRequest });
+    // Most the admin can refund to each destination (same rule the refund is validated against).
+    const order = await Order.findById(returnRequest.orderId?._id || returnRequest.orderId);
+    const refundOptions = order ? {
+      wallet: calculateEligibleRefund(order, returnRequest.items, 'Wallet'),
+      bank: calculateEligibleRefund(order, returnRequest.items, 'Bank'),
+      upi: calculateEligibleRefund(order, returnRequest.items, 'UPI')
+    } : null;
+
+    res.status(200).json({ success: true, returnRequest, refundOptions });
   } catch (error) {
     console.error('Error fetching return request:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -560,17 +526,45 @@ exports.updateReturnStatus = async (req, res) => {
       });
     }
 
+    // Where the refund goes is the admin's choice when refunding: the Refund/Cash Wallet
+    // (automatic credit) or a manual Bank/UPI transfer (item price only — see calculateEligibleRefund).
+    let refundDestination;
+    let payoutDetails;
+    if (status === 'Refunded' && req.body.refundMethod !== undefined) {
+      refundDestination = req.body.refundMethod;
+      if (!['Wallet', 'Bank', 'UPI'].includes(refundDestination)) {
+        return res.status(400).json({ success: false, message: 'Refund destination must be Wallet, Bank or UPI.' });
+      }
+      if (refundDestination !== 'Wallet') {
+        const saved = returnRequest.bankDetails || {};
+        const given = req.body.bankDetails || {};
+        const pick = (key) => (typeof given[key] === 'string' && given[key].trim()) || saved[key] || null;
+        payoutDetails = refundDestination === 'UPI'
+          ? { upiId: pick('upiId') }
+          : { accountHolderName: pick('accountHolderName'), accountNumber: pick('accountNumber'), ifscCode: pick('ifscCode') && pick('ifscCode').toUpperCase(), bankName: pick('bankName') };
+        if (refundDestination === 'UPI' && !(payoutDetails.upiId && payoutDetails.upiId.includes('@'))) {
+          return res.status(400).json({ success: false, message: 'Enter the UPI ID the refund was sent to.' });
+        }
+        if (refundDestination === 'Bank' && !(payoutDetails.accountHolderName && payoutDetails.accountNumber && payoutDetails.ifscCode)) {
+          return res.status(400).json({ success: false, message: 'Enter the account holder name, account number and IFSC the refund was sent to.' });
+        }
+      }
+    }
+    const effectiveMethod = refundDestination || returnRequest.refundMethod;
+
     // An admin-entered amount may lower the refund (e.g. a damaged return) but never exceed what
-    // the customer is eligible for on these items.
+    // the customer is eligible for on these items at the chosen destination. Switching destination
+    // without an amount refunds the full eligible amount for that destination.
     let adminRefundAmount;
-    if (refundAmount !== undefined && refundAmount !== null && refundAmount !== '') {
-      adminRefundAmount = Number(refundAmount);
+    const amountGiven = refundAmount !== undefined && refundAmount !== null && refundAmount !== '';
+    if (amountGiven || (refundDestination && refundDestination !== returnRequest.refundMethod)) {
       const order = await Order.findById(returnRequest.orderId);
-      const maxRefund = order ? calculateEligibleRefund(order, returnRequest.items, returnRequest.refundMethod) : 0;
+      const maxRefund = order ? calculateEligibleRefund(order, returnRequest.items, effectiveMethod) : 0;
+      adminRefundAmount = amountGiven ? Number(refundAmount) : maxRefund;
       if (!Number.isFinite(adminRefundAmount) || adminRefundAmount < 0 || adminRefundAmount > maxRefund) {
         return res.status(400).json({
           success: false,
-          message: `Refund amount must be between ₹0 and ₹${maxRefund}, the eligible amount for this return.`
+          message: `Refund amount must be between ₹0 and ₹${maxRefund}, the eligible amount for this return${refundDestination ? ` via ${refundDestination}` : ''}.`
         });
       }
       adminRefundAmount = Math.round(adminRefundAmount * 100) / 100;
@@ -599,6 +593,11 @@ exports.updateReturnStatus = async (req, res) => {
     addReturnHistory(returnRequest, status, 'admin', adminNotes || '');
     if (adminNotes !== undefined) returnRequest.adminNotes = adminNotes;
     if (adminRefundAmount !== undefined) returnRequest.refundAmount = adminRefundAmount;
+    if (refundDestination) {
+      returnRequest.refundMethod = refundDestination;
+      if (payoutDetails) returnRequest.bankDetails = payoutDetails;
+      if (typeof req.body.payoutReference === 'string') returnRequest.payoutReference = req.body.payoutReference.trim();
+    }
 
     // Handle Shiprocket return order creation on approval
     if (status === 'Approved') {

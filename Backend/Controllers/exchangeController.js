@@ -79,9 +79,10 @@ const restockOriginalItem = (exchange) => {
     : Product.findByIdAndUpdate(productId, { $inc: { stock: qty } });
 };
 
-// The exchange won't happen, so the price difference the customer paid goes back: to the
-// original Razorpay payment, or to the Refund Wallet if that refund fails. A COD difference was
-// never collected and is simply no longer due. Claimed via paymentStatus so it runs once.
+// The exchange won't happen, so the price difference the customer paid goes back to their
+// Refund/Cash Wallet (customer refunds always go there; an admin can pay it out to a bank/UPI).
+// A COD difference was never collected and is simply no longer due. Claimed via paymentStatus so
+// it runs once.
 const refundExchangeDifference = async (exchange) => {
   if (exchange.paymentStatus === 'Pending') {
     exchange.paymentStatus = 'Not Required';
@@ -99,6 +100,7 @@ const refundExchangeDifference = async (exchange) => {
       order: { paymentMethod: 'Online', paymentId: exchange.paymentId, userId: exchange.userId },
       amountRupees: exchange.additionalAmount,
       allowStoreCredit: true,
+      preferWallet: true,
       storeCredit: {
         orderId: exchange.orderId,
         description: `Refund of price difference for Exchange #${exchange._id.toString().slice(-6).toUpperCase()}`,

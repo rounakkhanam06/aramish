@@ -134,6 +134,179 @@ const InvoicePanel = ({ orderId, orderStatus }) => {
   );
 };
 
+const inrFmt = (v) => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const CHARGE_LABELS = { platformFee: 'Platform fee', delivery: 'Delivery charge', codCharge: 'COD charge', gst: 'GST' };
+const EMPTY_BANK = { accountHolderName: '', accountNumber: '', ifscCode: '', bankName: '', upiId: '' };
+
+// Bank/UPI amount for taking `take` out of the wallet — same formula as the server
+// (Backend/utils/refundPayout.js quotePayout); the server's figure is what gets recorded.
+const quotePayout = (summary, take) => {
+  const remWallet = summary.remaining.walletAmount;
+  const remBank = summary.remaining.amount;
+  const t = Math.round((Number(take) || 0) * 100) / 100;
+  if (!(t > 0) || remWallet <= 0) return { walletAmount: t, amount: 0, deducted: t };
+  const amount = Math.abs(t - remWallet) < 0.005
+    ? remBank
+    : Math.floor((Math.round(t * 100) * Math.round(remBank * 100)) / Math.round(remWallet * 100)) / 100;
+  return { walletAmount: t, amount, deducted: Math.round((t - amount) * 100) / 100 };
+};
+
+// Refund/Cash Wallet money of this order paid out to the customer's bank/UPI on request: shows what
+// was credited, the bank/UPI-refundable part per product, the charges deducted, and records payouts.
+const RefundPayoutPanel = ({ orderId, orderStatus }) => {
+  const [summary, setSummary] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [method, setMethod] = useState('UPI');
+  const [take, setTake] = useState('');
+  const [details, setDetails] = useState(EMPTY_BANK);
+  const [reference, setReference] = useState('');
+  const [busy, setBusy] = useState(false);
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${apiBase}/orders/admin/${orderId}/refund-payout`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('adminToken')}` } })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (cancelled || !ok || !data.success) return;
+        setSummary(data.summary);
+        setTake(data.summary.maxWalletAmount > 0 ? String(data.summary.maxWalletAmount) : '');
+      })
+      .catch(err => console.error('Refund payout summary error:', err));
+    return () => { cancelled = true; };
+  }, [apiBase, orderId, orderStatus, reloadKey]);
+
+  if (!summary || (summary.creditedTotal <= 0 && summary.payouts.length === 0)) return null;
+  const quote = quotePayout(summary, take);
+  const charges = Object.entries(summary.charges).filter(([, v]) => v > 0);
+  const canPay = summary.maxWalletAmount > 0;
+
+  const submit = async () => {
+    if (!(quote.walletAmount > 0) || quote.walletAmount > summary.maxWalletAmount) {
+      toast.error(`Enter an amount between ₹0 and ${inrFmt(summary.maxWalletAmount)}`);
+      return;
+    }
+    if (method === 'UPI' && !details.upiId.includes('@')) { toast.error("Enter the customer's UPI ID"); return; }
+    if (method === 'Bank' && !(details.accountHolderName.trim() && details.accountNumber.trim() && details.ifscCode.trim())) {
+      toast.error('Enter the account holder name, account number and IFSC code');
+      return;
+    }
+    const to = method === 'UPI' ? `UPI ID ${details.upiId}` : `bank account ${details.accountNumber}`;
+    if (!window.confirm(`Deduct ${inrFmt(quote.walletAmount)} from the customer's Refund/Cash Wallet and record a payout of ${inrFmt(quote.amount)} to ${to}?\n\nMake sure you have transferred ${inrFmt(quote.amount)} manually.`)) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`${apiBase}/orders/admin/${orderId}/refund-payout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('adminToken')}` },
+        body: JSON.stringify({
+          walletAmount: quote.walletAmount,
+          method,
+          bankDetails: method === 'UPI' ? { upiId: details.upiId.trim() } : details,
+          reference
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message);
+        setDetails(EMPTY_BANK);
+        setReference('');
+        setReloadKey(k => k + 1);
+      } else {
+        toast.error(data.message || 'Could not record the payout');
+      }
+    } catch {
+      toast.error('Could not record the payout');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const inputCls = 'w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-slate-400';
+  return (
+    <div className="pt-3 border-t border-dashed border-slate-200 space-y-3">
+      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Refund/Cash Wallet → Bank / UPI</p>
+
+      <div className="space-y-1 text-xs font-semibold text-slate-600">
+        <div className="flex justify-between"><span>Refunded to Refund/Cash Wallet</span><span className="font-black text-slate-900">{inrFmt(summary.creditedTotal)}</span></div>
+        {charges.length > 0 && summary.chargesDeductedTotal > 0 && (
+          <div className="flex justify-between text-red-600">
+            <span>Not refundable to bank/UPI ({charges.map(([k, v]) => `${CHARGE_LABELS[k]} ${inrFmt(v)}`).join(', ')})</span>
+            <span>- {inrFmt(summary.chargesDeductedTotal)}</span>
+          </div>
+        )}
+        <div className="flex justify-between"><span>Refundable to bank/UPI</span><span className="font-black text-emerald-700">{inrFmt(summary.bankableTotal)}</span></div>
+      </div>
+
+      {summary.groups.filter(g => g.items.length > 0).map((group, gi) => (
+        <div key={gi} className="bg-slate-50 rounded-xl p-3 space-y-1">
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{group.label} — per product</p>
+          {group.items.map((item, ii) => (
+            <div key={ii} className="flex justify-between text-[11px] font-semibold text-slate-600 gap-2">
+              <span className="truncate">{item.name} × {item.quantity} <span className="text-slate-400">({inrFmt(item.value)})</span></span>
+              <span className="shrink-0 text-slate-800">{inrFmt(item.bankShare)} to bank</span>
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {summary.payouts.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Payouts recorded</p>
+          {summary.payouts.map((p, i) => (
+            <div key={p._id || i} className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 text-[11px] font-semibold text-slate-600 space-y-0.5">
+              <div className="flex justify-between"><span>{formatDateTime(p.createdAt)} · {p.method}</span><span className="font-black text-emerald-700">{inrFmt(p.amount)} sent</span></div>
+              <div className="text-slate-500">
+                {p.method === 'UPI' ? p.bankDetails?.upiId : `${p.bankDetails?.accountNumber} · ${p.bankDetails?.ifscCode} · ${p.bankDetails?.accountHolderName}`}
+                {' '}· {inrFmt(p.walletAmount)} deducted from wallet{p.reference ? ` · Ref ${p.reference}` : ''}{p.adminName ? ` · by ${p.adminName}` : ''}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="text-[11px] font-semibold text-slate-500">
+        Left for this order: {inrFmt(summary.remaining.walletAmount)} in wallet ({inrFmt(summary.remaining.amount)} to bank) · Customer's wallet balance now: {inrFmt(summary.refundWalletBalance)}
+      </div>
+
+      {canPay ? (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            {['UPI', 'Bank'].map(m => (
+              <button key={m} type="button" onClick={() => setMethod(m)}
+                className={`py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border ${method === m ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'}`}>
+                {m}
+              </button>
+            ))}
+          </div>
+          <div>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Deduct from wallet (max {inrFmt(summary.maxWalletAmount)})</p>
+            <input type="number" value={take} onChange={(e) => setTake(e.target.value)} className={inputCls} />
+          </div>
+          <div className="bg-amber-50 border border-amber-100 rounded-lg p-2.5 text-[11px] font-bold text-amber-800">
+            Send {inrFmt(quote.amount)} to the customer{quote.deducted > 0 ? ` (${inrFmt(quote.deducted)} charges deducted)` : ''}
+          </div>
+          {method === 'UPI' ? (
+            <input type="text" placeholder="Customer UPI ID *" value={details.upiId} onChange={(e) => setDetails(d => ({ ...d, upiId: e.target.value }))} className={inputCls} />
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <input type="text" placeholder="Account holder *" value={details.accountHolderName} onChange={(e) => setDetails(d => ({ ...d, accountHolderName: e.target.value }))} className={inputCls} />
+              <input type="text" placeholder="Bank name" value={details.bankName} onChange={(e) => setDetails(d => ({ ...d, bankName: e.target.value }))} className={inputCls} />
+              <input type="text" placeholder="Account number *" value={details.accountNumber} onChange={(e) => setDetails(d => ({ ...d, accountNumber: e.target.value }))} className={inputCls} />
+              <input type="text" placeholder="IFSC *" value={details.ifscCode} onChange={(e) => setDetails(d => ({ ...d, ifscCode: e.target.value.toUpperCase() }))} className={inputCls} />
+            </div>
+          )}
+          <input type="text" placeholder="Transfer reference / UTR (optional)" value={reference} onChange={(e) => setReference(e.target.value)} className={inputCls} />
+          <button onClick={submit} disabled={busy} className="w-full py-2 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest disabled:opacity-40">
+            {busy ? 'Recording…' : `Deduct ${inrFmt(quote.walletAmount)} & record payout`}
+          </button>
+        </div>
+      ) : summary.remaining.walletAmount > 0 ? (
+        <p className="text-[11px] font-semibold text-amber-600">The customer has already used this refund from their wallet, so there is nothing left to pay out.</p>
+      ) : null}
+    </div>
+  );
+};
+
 const OrderDetail = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
@@ -655,7 +828,7 @@ const OrderDetail = () => {
 
                       {!!order.refundWalletUsed && order.refundWalletUsed > 0 && (
                          <div className="flex justify-between text-xs font-black text-sky-700 bg-sky-50 px-3 py-1.5 rounded-lg border border-sky-200/60">
-                            <span>Refund Wallet Used{order.refundWalletRestored > 0 ? ` (₹${Number(order.refundWalletRestored).toLocaleString()} credited back)` : ''}</span>
+                            <span>Refund/Cash Wallet Used{order.refundWalletRestored > 0 ? ` (₹${Number(order.refundWalletRestored).toLocaleString()} credited back)` : ''}</span>
                             <span>- ₹{Number(order.refundWalletUsed).toLocaleString()}</span>
                          </div>
                       )}
@@ -710,6 +883,7 @@ const OrderDetail = () => {
                    </div>
 
                    <InvoicePanel orderId={orderId} orderStatus={order.status} />
+                   <RefundPayoutPanel orderId={orderId} orderStatus={order.status} />
                 </div>
             </div>
 

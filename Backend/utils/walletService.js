@@ -667,10 +667,10 @@ const useRefundWalletForOrder = async ({ userId, orderId, payableTotal }, ctx) =
 
   const debit = await debitWallet({
     userId, amount, wallet: 'REFUND', type: 'REFUND_WALLET_DEBIT', source: 'REFUND', orderId,
-    description: `Refund Wallet used for Order #${orderLabel(orderId)}`,
+    description: `Refund/Cash Wallet used for Order #${orderLabel(orderId)}`,
     idempotencyKey: `REFUND_WALLET_DEBIT:${orderId}`
   }, ctx);
-  if (!debit) throw Object.assign(new Error('Your Refund Wallet balance changed while placing the order. Please try again.'), { status: 409 });
+  if (!debit) throw Object.assign(new Error('Your Refund/Cash Wallet balance changed while placing the order. Please try again.'), { status: 409 });
   return { amount };
 };
 
@@ -684,6 +684,14 @@ const creditRefundWallet = async ({ userId, amount, orderId, type = 'REFUND_WALL
     throw err;
   }
 };
+
+/**
+ * Takes `amount` out of the Refund Wallet for an admin bank/UPI payout (utils/refundPayout.js).
+ * Must run inside the payout's ctx. Returns null — writing nothing — if the balance is short.
+ */
+const debitRefundWalletForPayout = ({ userId, amount, orderId, description, idempotencyKey }, ctx) => debitWallet({
+  userId, amount, wallet: 'REFUND', type: 'REFUND_WALLET_PAYOUT', source: 'REFUND', orderId, description, idempotencyKey
+}, ctx);
 
 /**
  * Credits Refund Wallet money used on `orderId` back to the Refund Wallet — at most
@@ -716,8 +724,8 @@ const restoreRefundWalletForOrder = async (orderId, { maxAmount = null, partial 
     userId: order.userId, amount, wallet: 'REFUND', source: 'REFUND', orderId,
     type: partial ? 'REFUND_WALLET_PARTIAL_REFUND' : 'REFUND_WALLET_RESTORE',
     description: partial
-      ? `Partial refund of Refund Wallet money used on Order #${orderLabel(orderId)}`
-      : `Refund Wallet money credited back for cancelled/returned Order #${orderLabel(orderId)}`,
+      ? `Partial refund of Refund/Cash Wallet money used on Order #${orderLabel(orderId)}`
+      : `Refund/Cash Wallet money credited back for cancelled/returned Order #${orderLabel(orderId)}`,
     idempotencyKey
   }, c);
   return amount;
@@ -737,7 +745,7 @@ const creditWalletStandalone = async (params) => {
 
 // ─── History helpers ────────────────────────────────────────────────────────
 
-const DEBIT_TYPES = new Set(['ORDER_REDEMPTION', 'Payment', 'ORDER_REWARD_REDUCE', 'REFERRAL_REWARD_REVERSAL', 'REFUND_WALLET_DEBIT']);
+const DEBIT_TYPES = new Set(['ORDER_REDEMPTION', 'Payment', 'ORDER_REWARD_REDUCE', 'REFERRAL_REWARD_REVERSAL', 'REFUND_WALLET_DEBIT', 'REFUND_WALLET_PAYOUT']);
 const SOURCE_BY_TYPE = {
   'Welcome Bonus': 'WELCOME_BONUS',
   ORDER_REWARD: 'ORDER_REWARD',
@@ -748,7 +756,8 @@ const SOURCE_BY_TYPE = {
   REFUND_WALLET_CREDIT: 'REFUND',
   REFUND_WALLET_DEBIT: 'REFUND',
   REFUND_WALLET_RESTORE: 'REFUND',
-  REFUND_WALLET_PARTIAL_REFUND: 'REFUND'
+  REFUND_WALLET_PARTIAL_REFUND: 'REFUND',
+  REFUND_WALLET_PAYOUT: 'REFUND'
 };
 
 const getTransactionDirection = (txn) => (txn.amount < 0 || DEBIT_TYPES.has(txn.type) ? 'debit' : 'credit');
@@ -816,6 +825,7 @@ module.exports = {
   getRefundWalletBalance,
   useRefundWalletForOrder,
   creditRefundWallet,
+  debitRefundWalletForPayout,
   restoreRefundWalletForOrder,
   creditWalletStandalone,
   getTransactionDirection,

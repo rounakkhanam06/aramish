@@ -105,8 +105,8 @@ const refundOnlinePayment = async ({ order, amountRupees, allowStoreCredit, pref
  * coins are non-returnable. Everything either commits together or rolls back together
  * (manual compensation on deployments without transactions), so a retry is always safe.
  *
- * Phase 2 (external, best-effort, own claim Order.onlinePaymentRefundProcessed): the online
- * payment refund (Razorpay, or a wallet store-credit fallback).
+ * Phase 2 (own claim Order.onlinePaymentRefundProcessed): the money paid (online, or COD
+ * cash already collected) is credited to the customer's Refund/Cash Wallet.
  *
  * @param {Object} order - The Order Mongoose document
  * @param {Object} [options]
@@ -166,8 +166,12 @@ const handleOrderCancellationRefunds = async (order, options = {}) => {
     await restoreRefundWalletForOrder(order._id, { ctx, idempotencyKey: `REFUND_WALLET_RESTORE:${order._id}` });
   }, `order cancellation ${order._id}`);
 
-  // ---- Phase 2: online payment refund (Razorpay, or store-credit fallback) ----
-  if (order.paymentMethod === 'Online' && order.paymentStatus === 'Paid' && order.total > 0) {
+  // ---- Phase 2: money paid for the order -> Refund/Cash Wallet ----
+  // Cancellation/full-order refunds always go to the customer's Refund/Cash Wallet (never back
+  // to Razorpay). If the customer wants it in a bank/UPI, an admin pays it out from the wallet
+  // (utils/refundPayout.js), which deducts the order charges a bank refund doesn't cover.
+  const cashTaken = order.total > 0 && order.paymentStatus === 'Paid' && ['Online', 'COD'].includes(order.paymentMethod);
+  if (cashTaken) {
     const onlineClaim = await Order.findOneAndUpdate(
       { _id: order._id, onlinePaymentRefundProcessed: { $ne: true } },
       { $set: { onlinePaymentRefundProcessed: true } }
@@ -175,25 +179,22 @@ const handleOrderCancellationRefunds = async (order, options = {}) => {
 
     if (onlineClaim) {
       try {
-        await refundOnlinePayment({
-          order,
-          amountRupees: order.total,
-          allowStoreCredit: true,
-          storeCredit: {
-            orderId: order._id,
-            description: `Refund for Cancelled Order #${orderLabel(order._id)} (online refund failed, credited to Refund Wallet)`,
-            idempotencyKey: `CANCEL_REFUND:${order._id}`
-          }
+        await creditRefundWallet({
+          userId: order.userId,
+          amount: order.total,
+          orderId: order._id,
+          description: `Refund for Cancelled Order #${orderLabel(order._id)}`,
+          idempotencyKey: `CANCEL_REFUND:${order._id}`
         });
-      } catch (fallbackErr) {
-        // Neither Razorpay nor store credit succeeded — release the claim so a retry can
-        // attempt this phase again. Phase 1 already committed and is unaffected.
+      } catch (creditErr) {
+        // Release the claim so a retry can attempt this phase again. Phase 1 already committed
+        // and is unaffected.
         try {
           await Order.updateOne({ _id: order._id }, { $set: { onlinePaymentRefundProcessed: false } });
         } catch (revertErr) {
           console.error(`CRITICAL: failed to revert onlinePaymentRefundProcessed claim for order ${order._id}. Manual reconciliation required.`, revertErr);
         }
-        console.error('Store-credit fallback refund failed after Razorpay refund also failed:', fallbackErr.message);
+        console.error('Refund/Cash Wallet credit failed for cancelled order:', creditErr.message);
       }
     }
   }
@@ -213,8 +214,8 @@ const handleOrderCancellationRefunds = async (order, options = {}) => {
  * non-returnable.
  *
  * Phase 2 (own claim ReturnRequest.cashRefundProcessed): the cash refund for the returned
- * items — Razorpay for online payments, or wallet store credit when the customer chose
- * 'Wallet' as the refund destination.
+ * items — Refund/Cash Wallet credit ('Wallet'), a manual transfer the admin already made
+ * ('Bank'/'UPI'), or Razorpay for legacy 'Original' requests.
  *
  * @param {Object} returnRequest - The ReturnRequest Mongoose document
  * @param {Object} order - The associated Order Mongoose document
@@ -255,30 +256,32 @@ const handleReturnRefund = async (returnRequest, order) => {
   );
   if (!cashClaim) return;
 
-  const isWalletSelected = returnRequest.refundMethod === 'Wallet';
+  const method = returnRequest.refundMethod || 'Original';
+  const isWalletSelected = method === 'Wallet';
+  const isManualPayout = method === 'Bank' || method === 'UPI';
   const returnedQty = returnRequest.items.reduce((sum, i) => sum + (i.quantity || 0), 0);
   const orderQty = order.items.reduce((sum, i) => sum + (i.quantity || 0), 0);
   const isPartial = returnedQty < orderQty;
   try {
-    // 1. Money the customer paid from the Refund Wallet goes back to the Refund Wallet first
-    //    (only up to the eligible refund, and never more than was used on the order).
+    // 1. Money the customer paid from the Refund/Cash Wallet goes back to it first (only up to
+    //    the eligible refund, and never more than was used on the order).
     const restored = await restoreRefundWalletForOrder(order._id, {
       maxAmount: cashRefundAmount,
       partial: isPartial,
       idempotencyKey: `RETURN_REFUND_WALLET_RESTORE:${returnRequest._id}`
     });
 
-    // 2. The rest was paid by the customer (online/COD) — refund it the usual way; a wallet
-    //    refund (Wallet method, or Razorpay failure) goes to the Refund Wallet.
+    // 2. The rest: Wallet -> Refund/Cash Wallet; Bank/UPI -> transferred manually by the admin
+    //    who processed the refund; legacy 'Original' -> Razorpay (Refund/Cash Wallet if it fails).
     const remainder = roundMoney(cashRefundAmount - restored);
     let creditedToRefundWallet = 0;
-    if (remainder > 0) {
+    if (remainder > 0 && isManualPayout) {
+      console.log(`ℹ️ Cash refund of ₹${remainder} for return ${returnRequest._id} paid manually via ${method}.`);
+    } else if (remainder > 0) {
       const refundedTo = await refundOnlinePayment({
         order,
         amountRupees: remainder,
-        // Wallet chosen -> Refund Wallet directly. Refund to the original online payment ->
-        // Refund Wallet only if Razorpay fails. Bank/UPI -> manual payout by an admin.
-        allowStoreCredit: isWalletSelected || (order.paymentMethod === 'Online' && (returnRequest.refundMethod || 'Original') === 'Original'),
+        allowStoreCredit: isWalletSelected || order.paymentMethod === 'Online',
         preferWallet: isWalletSelected,
         storeCredit: {
           orderId: order._id,
@@ -287,13 +290,7 @@ const handleReturnRefund = async (returnRequest, order) => {
           idempotencyKey: `RETURN_REFUND:${returnRequest._id}`
         }
       });
-      if (!refundedTo) {
-        // Not online and the customer didn't pick Wallet — an intentional manual (Bank/UPI)
-        // refund handled offline by an admin, so the claim stands.
-        console.log(`ℹ️ Cash refund of ₹${remainder} for return ${returnRequest._id} processed manually via ${returnRequest.refundMethod || 'Bank/UPI'} - skipped wallet credit.`);
-      } else if (refundedTo === 'REFUND_WALLET') {
-        creditedToRefundWallet = remainder;
-      }
+      if (refundedTo === 'REFUND_WALLET') creditedToRefundWallet = remainder;
     }
 
     await ReturnRequest.updateOne(

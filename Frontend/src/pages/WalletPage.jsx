@@ -78,7 +78,8 @@ export default function WalletPage() {
     REFUND_WALLET_CREDIT: 'Refund Credited',
     REFUND_WALLET_DEBIT: 'Used on Order',
     REFUND_WALLET_RESTORE: 'Credited Back (Order Cancelled/Returned)',
-    REFUND_WALLET_PARTIAL_REFUND: 'Partial Refund'
+    REFUND_WALLET_PARTIAL_REFUND: 'Partial Refund',
+    REFUND_WALLET_PAYOUT: 'Sent to Bank/UPI'
   };
   const txLabel = (tx) => {
     if (REFUND_WALLET_LABELS[tx.type]) return REFUND_WALLET_LABELS[tx.type];
@@ -180,7 +181,7 @@ export default function WalletPage() {
               <div className="w-12 h-12 bg-surface/15 rounded-full flex items-center justify-center mb-3 border border-white/20 shadow-inner">
                 <Landmark className="w-6 h-6 text-cyan-200" />
               </div>
-              <p className="text-cyan-100 text-[10px] font-bold tracking-wider uppercase mb-1">Refund Wallet</p>
+              <p className="text-cyan-100 text-[10px] font-bold tracking-wider uppercase mb-1">Refund/Cash wallet</p>
               <h2 className="text-3xl font-black tracking-tight">₹{Number(refundWalletBalance).toFixed(2)}</h2>
               <span className="mt-3 text-[10px] text-cyan-100 font-semibold bg-white/10 px-3 py-1 rounded-full border border-white/5">
                 Your refunded money — usable up to 100% on any order
@@ -195,7 +196,7 @@ export default function WalletPage() {
               <div className="flex items-center gap-2 border-b border-white/10 pb-3">
                 {[
                   { key: 'MAIN', label: 'Coins History' },
-                  { key: 'REFUND', label: 'Refund Wallet History' }
+                  { key: 'REFUND', label: 'Refund/Cash wallet History' }
                 ].map(tab => (
                   <button
                     key={tab.key}
@@ -237,7 +238,7 @@ export default function WalletPage() {
                             </p>
                             {tx.wallet === 'REFUND' && (
                               <span className="text-[9px] font-bold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200 shrink-0 shadow-sm">
-                                Refund Wallet
+                                Refund/Cash wallet
                               </span>
                             )}
                             {tx.orderId && (

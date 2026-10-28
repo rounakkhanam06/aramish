@@ -910,12 +910,12 @@ export default function ReviewOrderPage() {
             <div>
               <div className="flex items-center gap-2 mb-2 px-1 text-[#02006c]">
                 <Banknote className="w-4 h-4 text-sky-600" />
-                <h2 className="text-xs font-black uppercase tracking-wide">Refund Wallet</h2>
+                <h2 className="text-xs font-black uppercase tracking-wide">Refund/Cash wallet</h2>
               </div>
               <div className="bg-surface rounded-2xl p-4 shadow-3xs border border-white/10 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-slate-800">Use Refund Wallet (up to 100% of the order)</span>
+                    <span className="text-xs font-bold text-slate-800">Use Refund/Cash wallet (up to 100% of the order)</span>
                     <span className="text-[10px] text-slate-500 font-medium mt-0.5">
                       Balance: <span className="font-bold text-slate-700">₹{Number(refundWalletBalance).toFixed(2)}</span>
                     </span>
@@ -1088,7 +1088,7 @@ export default function ReviewOrderPage() {
             )}
             {redeemRefundWallet && refundWalletUsedAmount > 0 && (
               <div className="flex justify-between items-center text-xs font-bold text-sky-700">
-                <span>Refund Wallet</span>
+                <span>Refund/Cash wallet</span>
                 <span>- ₹{Number(refundWalletUsedAmount).toFixed(2)}</span>
               </div>
             )}

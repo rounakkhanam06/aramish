@@ -20,7 +20,8 @@ const walletTransactionSchema = new mongoose.Schema({
       'REFUND_WALLET_CREDIT',          // refund paid into the Refund Wallet
       'REFUND_WALLET_DEBIT',           // Refund Wallet money used on an order
       'REFUND_WALLET_RESTORE',         // money credited back after a cancellation/full return
-      'REFUND_WALLET_PARTIAL_REFUND'   // money credited back for a partial return
+      'REFUND_WALLET_PARTIAL_REFUND',  // money credited back for a partial return
+      'REFUND_WALLET_PAYOUT'           // money paid out to the customer's bank/UPI by an admin
     ],
     required: true,
   },

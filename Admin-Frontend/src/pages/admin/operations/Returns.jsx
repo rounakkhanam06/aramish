@@ -5,7 +5,7 @@ import {
   DollarSign, Package, User, Calendar,
   AlertCircle, ChevronRight, X, Truck,
   ArrowRight, RefreshCw, Ban, Eye,
-  ChevronLeft, ChevronDown, Landmark
+  ChevronLeft, ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -27,6 +27,9 @@ const deliveredVariantText = (item, order) => {
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+const EMPTY_PAYOUT_DETAILS = { accountHolderName: '', accountNumber: '', ifscCode: '', bankName: '', upiId: '' };
+const REFUND_METHOD_LABELS = { Wallet: 'Refund/Cash Wallet', Bank: 'Bank Transfer (manual)', UPI: 'UPI Transfer (manual)', Original: 'Original Payment (Razorpay)' };
+
 const Returns = () => {
   const [returns, setReturns] = useState([]);
   const [activeTab, setActiveTab] = useState('All');
@@ -36,7 +39,7 @@ const Returns = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [stats, setStats] = useState({ requestedCount: 0, approvedCount: 0, refundedTodayAmount: 0, avgResolutionDays: '0' });
-  
+
   // Manage modal
   const [selectedReturn, setSelectedReturn] = useState(null);
   const [manageOpen, setManageOpen] = useState(false);
@@ -45,6 +48,12 @@ const Returns = () => {
   const [retryingShipment, setRetryingShipment] = useState(false);
   const [adminNotes, setAdminNotes] = useState('');
   const [editRefundAmount, setEditRefundAmount] = useState('');
+  // Where the refund goes, chosen when refunding: Refund/Cash Wallet (automatic) or a manual
+  // Bank/UPI transfer. refundOptions = most that can be refunded to each (from the server).
+  const [refundOptions, setRefundOptions] = useState(null);
+  const [refundDestination, setRefundDestination] = useState('Wallet');
+  const [payoutDetails, setPayoutDetails] = useState(EMPTY_PAYOUT_DETAILS);
+  const [payoutReference, setPayoutReference] = useState('');
   const [previewImage, setPreviewImage] = useState(null); // full-size customer photo
 
   const tabs = ['All', 'Requested', 'Approved', 'Rejected', 'Pick-up Scheduled', 'Received', 'Refunded'];
@@ -99,9 +108,16 @@ const Returns = () => {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setSelectedReturn(data.returnRequest);
-        setAdminNotes(data.returnRequest.adminNotes || '');
-        setEditRefundAmount(data.returnRequest.refundAmount?.toString() || '');
+        const rr = data.returnRequest;
+        setSelectedReturn(rr);
+        setAdminNotes(rr.adminNotes || '');
+        setRefundOptions(data.refundOptions || null);
+        // Requests from older app builds may carry the customer's Bank/UPI choice and details.
+        const legacyUpi = rr.refundMethod === 'Bank' && rr.bankDetails?.upiId && !rr.bankDetails?.accountNumber;
+        setRefundDestination(rr.refundMethod === 'UPI' || legacyUpi ? 'UPI' : rr.refundMethod === 'Bank' ? 'Bank' : 'Wallet');
+        setPayoutDetails({ ...EMPTY_PAYOUT_DETAILS, ...Object.fromEntries(Object.entries(rr.bankDetails || {}).filter(([, v]) => v)) });
+        setPayoutReference(rr.payoutReference || '');
+        setEditRefundAmount(rr.refundAmount?.toString() || '');
       } else {
         toast.error(data.message || 'Failed to fetch return details');
       }
@@ -125,12 +141,18 @@ const Returns = () => {
 
     // Confirmation for important actions
     if (newStatus === 'Refunded') {
-      const isBankOrUpi = selectedReturn.refundMethod === 'Bank' || (selectedReturn.bankDetails && (selectedReturn.bankDetails.accountNumber || selectedReturn.bankDetails.upiId));
       const amountToRefund = editRefundAmount || selectedReturn.refundAmount || 0;
-      
-      const confirmMsg = isBankOrUpi
-        ? `Have you manually transferred ₹${amountToRefund} to the customer's ${selectedReturn.bankDetails?.upiId ? 'UPI ID' : 'Bank Account'}?\n\nClick OK to confirm payment and mark as Refunded.`
-        : `Process refund of ₹${amountToRefund}? This will restore stock and credit the customer's wallet.`;
+      if (refundDestination === 'UPI' && !payoutDetails.upiId.includes('@')) {
+        toast.error("Enter the customer's UPI ID");
+        return;
+      }
+      if (refundDestination === 'Bank' && !(payoutDetails.accountHolderName.trim() && payoutDetails.accountNumber.trim() && payoutDetails.ifscCode.trim())) {
+        toast.error('Enter the account holder name, account number and IFSC code');
+        return;
+      }
+      const confirmMsg = refundDestination === 'Wallet'
+        ? `Refund ₹${amountToRefund} to the customer's Refund/Cash Wallet?\n\nThis restores stock and credits the wallet immediately.`
+        : `Have you manually transferred ₹${amountToRefund} to the customer's ${refundDestination === 'UPI' ? `UPI ID ${payoutDetails.upiId}` : `bank account ${payoutDetails.accountNumber}`}?\n\nClick OK to confirm payment and mark as Refunded.`;
 
       if (!window.confirm(confirmMsg)) return;
     }
@@ -141,6 +163,15 @@ const Returns = () => {
       const body = { status: newStatus };
       if (adminNotes.trim()) body.adminNotes = adminNotes.trim();
       if (editRefundAmount && newStatus === 'Refunded') body.refundAmount = parseFloat(editRefundAmount);
+      if (newStatus === 'Refunded') {
+        body.refundMethod = refundDestination;
+        if (refundDestination !== 'Wallet') {
+          body.bankDetails = refundDestination === 'UPI'
+            ? { upiId: payoutDetails.upiId.trim() }
+            : { accountHolderName: payoutDetails.accountHolderName.trim(), accountNumber: payoutDetails.accountNumber.trim(), ifscCode: payoutDetails.ifscCode.trim().toUpperCase(), bankName: payoutDetails.bankName.trim() };
+          body.payoutReference = payoutReference.trim();
+        }
+      }
 
       const res = await fetch(`${API_BASE}/returns/admin/${selectedReturn._id}/status`, {
         method: 'PUT',
@@ -223,6 +254,16 @@ const Returns = () => {
     setSelectedReturn(null);
     setAdminNotes('');
     setEditRefundAmount('');
+    setRefundOptions(null);
+    setRefundDestination('Wallet');
+    setPayoutDetails(EMPTY_PAYOUT_DETAILS);
+    setPayoutReference('');
+  };
+
+  const chooseRefundDestination = (dest) => {
+    setRefundDestination(dest);
+    const max = refundOptions?.[dest.toLowerCase()];
+    if (max !== undefined) setEditRefundAmount(String(max));
   };
 
   // Helper to get user info from return (handles both populated and aggregated formats)
@@ -599,58 +640,109 @@ const Returns = () => {
                       </div>
                     )}
 
-                    {/* Refund Amount */}
-                    <div className="bg-green-50 p-5 rounded-2xl border border-green-100 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <DollarSign size={16} className="text-green-600" />
-                        <p className="text-[10px] font-black text-green-800 uppercase tracking-widest">Refund Amount</p>
-                      </div>
-                      {!['Refunded', 'Rejected'].includes(selectedReturn.status) ? (
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs font-bold text-green-700">₹</span>
-                          <input
-                            type="number"
-                            value={editRefundAmount}
-                            onChange={(e) => setEditRefundAmount(e.target.value)}
-                            className="flex-1 bg-white border border-green-200 rounded-xl px-4 py-2.5 text-lg font-black text-green-800 font-roboto focus:outline-none focus:ring-2 focus:ring-green-200"
-                          />
-                        </div>
-                      ) : (
-                        <p className="text-2xl font-black text-green-800 font-roboto">₹{selectedReturn.refundAmount?.toLocaleString()}</p>
-                      )}
-                      <p className="text-[10px] text-green-600 font-medium">Method: {selectedReturn.refundMethod === 'Wallet' ? 'Wallet Credit' : selectedReturn.refundMethod === 'Bank' ? 'Bank / UPI Transfer' : 'Original Payment'}</p>
-                    </div>
-
-                    {/* Customer Bank / UPI Details for Manual Transfer */}
-                    {selectedReturn.bankDetails && (selectedReturn.bankDetails.accountNumber || selectedReturn.bankDetails.upiId) && (
-                      <div className="bg-blue-50/70 p-5 rounded-2xl border border-blue-100 space-y-3">
+                    {/* Refund: destination + amount (admin decides; the customer always asks for the Refund/Cash Wallet) */}
+                    {!['Refunded', 'Rejected'].includes(selectedReturn.status) ? (
+                      <div className="bg-green-50 p-5 rounded-2xl border border-green-100 space-y-3">
                         <div className="flex items-center gap-2">
-                          <Landmark size={16} className="text-blue-600" />
-                          <p className="text-[10px] font-black text-blue-900 uppercase tracking-widest">Customer Bank / UPI Details (For Manual Refund)</p>
+                          <DollarSign size={16} className="text-green-600" />
+                          <p className="text-[10px] font-black text-green-800 uppercase tracking-widest">Refund To</p>
                         </div>
-                        {selectedReturn.bankDetails.upiId ? (
-                          <div className="bg-white p-3.5 rounded-xl border border-blue-100">
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">UPI ID</p>
-                            <p className="text-sm font-black text-blue-700 font-mono mt-0.5">{selectedReturn.bankDetails.upiId}</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { key: 'Wallet', label: 'Refund/Cash Wallet' },
+                            { key: 'Bank', label: 'Bank' },
+                            { key: 'UPI', label: 'UPI' }
+                          ].map(({ key, label }) => {
+                            const selected = refundDestination === key;
+                            const max = refundOptions?.[key.toLowerCase()];
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={() => chooseRefundDestination(key)}
+                                className={`p-2.5 rounded-xl border text-center text-[11px] font-bold transition-all ${selected ? 'border-green-700 bg-green-700 text-white' : 'border-green-200 bg-white text-slate-700 hover:border-green-400'}`}
+                              >
+                                <span className="block">{label}</span>
+                                {max !== undefined && <span className={`block text-[10px] font-black mt-0.5 ${selected ? 'text-white/80' : 'text-green-700'}`}>₹{Number(max).toLocaleString('en-IN')}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {refundOptions && refundOptions.wallet > refundOptions.bank && (
+                          <p className="text-[10px] text-green-700 font-medium leading-relaxed">
+                            Bank/UPI refunds cover the product amount only: ₹{(Math.round((refundOptions.wallet - refundOptions.bank) * 100) / 100).toLocaleString('en-IN')} of platform fee/delivery/COD charges is refunded only to the Refund/Cash Wallet.
+                          </p>
+                        )}
+                        <div>
+                          <p className="text-[9px] font-black text-green-800/70 uppercase tracking-widest mb-1">Amount {refundDestination === 'Wallet' ? 'to credit' : 'to transfer'} (max ₹{refundOptions?.[refundDestination.toLowerCase()] ?? '—'})</p>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs font-bold text-green-700">₹</span>
+                            <input
+                              type="number"
+                              value={editRefundAmount}
+                              onChange={(e) => setEditRefundAmount(e.target.value)}
+                              className="flex-1 bg-white border border-green-200 rounded-xl px-4 py-2.5 text-lg font-black text-green-800 font-roboto focus:outline-none focus:ring-2 focus:ring-green-200"
+                            />
                           </div>
-                        ) : (
-                          <div className="grid grid-cols-2 gap-3 text-xs bg-white p-3.5 rounded-xl border border-blue-100">
-                            <div>
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Account Holder</p>
-                              <p className="font-bold text-slate-800 mt-0.5">{selectedReturn.bankDetails.accountHolderName || 'N/A'}</p>
-                            </div>
-                            <div>
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Bank Name</p>
-                              <p className="font-bold text-slate-800 mt-0.5">{selectedReturn.bankDetails.bankName || 'N/A'}</p>
-                            </div>
-                            <div>
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Account Number</p>
-                              <p className="font-black text-slate-900 font-mono mt-0.5">{selectedReturn.bankDetails.accountNumber || 'N/A'}</p>
-                            </div>
-                            <div>
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">IFSC Code</p>
-                              <p className="font-black text-blue-700 font-mono mt-0.5">{selectedReturn.bankDetails.ifscCode || 'N/A'}</p>
-                            </div>
+                        </div>
+                        {refundDestination === 'UPI' && (
+                          <input
+                            type="text"
+                            placeholder="Customer UPI ID (e.g. name@okaxis) *"
+                            value={payoutDetails.upiId}
+                            onChange={(e) => setPayoutDetails(d => ({ ...d, upiId: e.target.value }))}
+                            className="w-full bg-white border border-green-200 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-green-200"
+                          />
+                        )}
+                        {refundDestination === 'Bank' && (
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              ['accountHolderName', 'Account holder name *'],
+                              ['bankName', 'Bank name'],
+                              ['accountNumber', 'Account number *'],
+                              ['ifscCode', 'IFSC code *']
+                            ].map(([field, placeholder]) => (
+                              <input
+                                key={field}
+                                type="text"
+                                placeholder={placeholder}
+                                value={payoutDetails[field]}
+                                onChange={(e) => setPayoutDetails(d => ({ ...d, [field]: field === 'ifscCode' ? e.target.value.toUpperCase() : e.target.value }))}
+                                className="w-full bg-white border border-green-200 rounded-xl px-3 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-green-200"
+                              />
+                            ))}
+                          </div>
+                        )}
+                        {refundDestination !== 'Wallet' && (
+                          <input
+                            type="text"
+                            placeholder="Transfer reference / UTR (optional)"
+                            value={payoutReference}
+                            onChange={(e) => setPayoutReference(e.target.value)}
+                            className="w-full bg-white border border-green-200 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-green-200"
+                          />
+                        )}
+                        <p className="text-[10px] text-green-600 font-medium">
+                          {refundDestination === 'Wallet'
+                            ? "Credited to the customer's Refund/Cash Wallet automatically when you process the refund."
+                            : `Transfer the amount yourself to the customer's ${refundDestination === 'UPI' ? 'UPI ID' : 'bank account'}, then process the refund to record it.`}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="bg-green-50 p-5 rounded-2xl border border-green-100 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <DollarSign size={16} className="text-green-600" />
+                          <p className="text-[10px] font-black text-green-800 uppercase tracking-widest">Refund Amount</p>
+                        </div>
+                        <p className="text-2xl font-black text-green-800 font-roboto">₹{selectedReturn.refundAmount?.toLocaleString()}</p>
+                        <p className="text-[10px] text-green-600 font-medium">Method: {REFUND_METHOD_LABELS[selectedReturn.refundMethod] || selectedReturn.refundMethod}</p>
+                        {selectedReturn.status === 'Refunded' && ['Bank', 'UPI'].includes(selectedReturn.refundMethod) && (
+                          <div className="text-xs bg-white p-3.5 rounded-xl border border-green-100 space-y-1">
+                            {selectedReturn.bankDetails?.upiId && <p><span className="text-slate-400 font-bold">UPI ID:</span> <span className="font-mono font-black">{selectedReturn.bankDetails.upiId}</span></p>}
+                            {selectedReturn.bankDetails?.accountNumber && (
+                              <p><span className="text-slate-400 font-bold">Account:</span> <span className="font-mono font-black">{selectedReturn.bankDetails.accountNumber}</span> · {selectedReturn.bankDetails.ifscCode} · {selectedReturn.bankDetails.accountHolderName}</p>
+                            )}
+                            {selectedReturn.payoutReference && <p><span className="text-slate-400 font-bold">Reference:</span> <span className="font-mono font-black">{selectedReturn.payoutReference}</span></p>}
                           </div>
                         )}
                       </div>

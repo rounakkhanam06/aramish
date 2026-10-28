@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const axios = require('axios');
 const { startTestDb, stopTestDb, clearTestDb } = require('./testDb');
 
@@ -279,7 +280,7 @@ describe('handleOrderCancellationRefunds — options.restoreStock=false skips st
   });
 });
 
-describe('handleOrderCancellationRefunds — Phase 2 (online payment refund) idempotency', () => {
+describe('handleOrderCancellationRefunds — Phase 2 (money paid -> Refund/Cash Wallet)', () => {
   const RZP_ENV = { RAZORPAY_KEY_ID: 'test_key_id', RAZORPAY_KEY_SECRET: 'test_key_secret' };
   let originalEnv;
 
@@ -301,89 +302,128 @@ describe('handleOrderCancellationRefunds — Phase 2 (online payment refund) ide
     paymentId: `pay_test_${Date.now()}_${Math.random()}`
   });
 
-  test('calls Razorpay exactly once and does not fall back to store credit on success', async () => {
+  test('credits the full amount paid to the Refund/Cash Wallet and never calls Razorpay', async () => {
     const user = await makeUser({ walletBalance: 0 });
     const order = await makeOnlineOrder(user, await makeProduct());
-
-    jest.spyOn(axios, 'get').mockResolvedValue({ data: { items: [] } });
-    const postSpy = jest.spyOn(axios, 'post').mockResolvedValue({ data: { id: 'rfnd_1' } });
+    const getSpy = jest.spyOn(axios, 'get');
+    const postSpy = jest.spyOn(axios, 'post');
 
     await handleOrderCancellationRefunds(order);
 
-    expect(postSpy).toHaveBeenCalledTimes(1);
+    expect(getSpy).not.toHaveBeenCalled();
+    expect(postSpy).not.toHaveBeenCalled();
     expect((await Order.findById(order._id)).onlinePaymentRefundProcessed).toBe(true);
-    expect(await WalletTransaction.countDocuments({ userId: user._id, type: 'REFUND_WALLET_CREDIT' })).toBe(0);
+    const fresh = await User.findById(user._id);
+    expect(fresh.refundWalletBalance).toBe(500);
+    expect(fresh.walletBalance).toBe(0); // never the coins wallet
+    const refunds = await WalletTransaction.find({ userId: user._id, type: 'REFUND_WALLET_CREDIT' });
+    expect(refunds).toHaveLength(1);
+    expect(refunds[0]).toMatchObject({ source: 'REFUND', wallet: 'REFUND', idempotencyKey: `CANCEL_REFUND:${order._id}` });
   });
 
-  test('retrying after Phase 1 already succeeded still reaches and retries Phase 2', async () => {
+  test('retrying after a failed wallet credit completes it exactly once', async () => {
     const user = await makeUser({ walletBalance: 0 });
     const order = await makeOnlineOrder(user, await makeProduct());
 
-    // First attempt: Razorpay fails, and so does the store-credit fallback's ledger write.
-    const getSpy1 = jest.spyOn(axios, 'get').mockRejectedValue(new Error('Razorpay unreachable'));
     const ledgerSpy = jest.spyOn(WalletTransaction, 'create').mockImplementationOnce(() => {
-      throw new Error('Simulated store-credit fallback failure');
+      throw new Error('Simulated wallet credit failure');
     });
     await handleOrderCancellationRefunds(order);
-    getSpy1.mockRestore();
     ledgerSpy.mockRestore();
 
     let freshOrder = await Order.findById(order._id);
     expect(freshOrder.refundProcessed).toBe(true);
     expect(freshOrder.onlinePaymentRefundProcessed).toBe(false);
-    expect((await User.findById(user._id)).walletBalance).toBe(0);
+    expect((await User.findById(user._id)).refundWalletBalance).toBe(0);
 
-    jest.spyOn(axios, 'get').mockResolvedValue({ data: { items: [] } });
-    const postSpy2 = jest.spyOn(axios, 'post').mockResolvedValue({ data: { id: 'rfnd_2' } });
+    await handleOrderCancellationRefunds(await Order.findById(order._id));
     await handleOrderCancellationRefunds(await Order.findById(order._id));
 
-    expect(postSpy2).toHaveBeenCalledTimes(1);
     freshOrder = await Order.findById(order._id);
     expect(freshOrder.onlinePaymentRefundProcessed).toBe(true);
-  });
-
-  test('skips creating a duplicate Razorpay refund if one already exists for the payment', async () => {
-    const user = await makeUser({ walletBalance: 0 });
-    const order = await makeOnlineOrder(user, await makeProduct());
-    await Order.updateOne({ _id: order._id }, { $set: { refundProcessed: true, onlinePaymentRefundProcessed: false } });
-
-    const getSpy = jest.spyOn(axios, 'get').mockResolvedValue({ data: { items: [{ id: 'rfnd_existing' }] } });
-    const postSpy = jest.spyOn(axios, 'post').mockResolvedValue({ data: { id: 'rfnd_should_not_happen' } });
-
-    await handleOrderCancellationRefunds(await Order.findById(order._id));
-
-    expect(getSpy).toHaveBeenCalledTimes(1);
-    expect(postSpy).not.toHaveBeenCalled();
-    expect((await Order.findById(order._id)).onlinePaymentRefundProcessed).toBe(true);
-  });
-
-  test('a second call after Phase 2 already succeeded does not call Razorpay again', async () => {
-    const user = await makeUser({ walletBalance: 0 });
-    const order = await makeOnlineOrder(user, await makeProduct());
-
-    jest.spyOn(axios, 'get').mockResolvedValue({ data: { items: [] } });
-    const postSpy = jest.spyOn(axios, 'post').mockResolvedValue({ data: { id: 'rfnd_1' } });
-
-    await handleOrderCancellationRefunds(order);
-    await handleOrderCancellationRefunds(await Order.findById(order._id));
-
-    expect(postSpy).toHaveBeenCalledTimes(1);
-  });
-
-  test('store-credit fallback (Razorpay down) credits the wallet exactly once with a REFUND-source ledger entry', async () => {
-    const user = await makeUser({ walletBalance: 0 });
-    const order = await makeOnlineOrder(user, await makeProduct());
-
-    jest.spyOn(axios, 'get').mockRejectedValue(new Error('Razorpay unreachable'));
-    await handleOrderCancellationRefunds(order);
-    await Order.updateOne({ _id: order._id }, { $set: { onlinePaymentRefundProcessed: false } }); // force a retry
-    await handleOrderCancellationRefunds(await Order.findById(order._id));
-
     expect((await User.findById(user._id)).refundWalletBalance).toBe(500);
-    expect((await User.findById(user._id)).walletBalance).toBe(0); // never the coins wallet
-    const refunds = await WalletTransaction.find({ userId: user._id, type: 'REFUND_WALLET_CREDIT' });
-    expect(refunds).toHaveLength(1);
-    expect(refunds[0].source).toBe('REFUND');
-    expect(refunds[0].wallet).toBe('REFUND');
+    expect(await WalletTransaction.countDocuments({ userId: user._id, type: 'REFUND_WALLET_CREDIT' })).toBe(1);
+  });
+
+  test('an unpaid COD order credits nothing; collected COD cash is credited', async () => {
+    const user = await makeUser({ walletBalance: 0 });
+    const product = await makeProduct();
+    const unpaid = await makeOrder({ user, product, paymentMethod: 'COD', paymentStatus: 'Pending', total: 650 });
+    await handleOrderCancellationRefunds(unpaid);
+    expect((await User.findById(user._id)).refundWalletBalance).toBe(0);
+    expect(unpaid.paymentStatus).toBe('Cancelled');
+
+    const collected = await makeOrder({ user, product, paymentMethod: 'COD', paymentStatus: 'Paid', total: 650 });
+    await handleOrderCancellationRefunds(collected, { restoreStock: false });
+    expect((await User.findById(user._id)).refundWalletBalance).toBe(650);
+  });
+});
+
+describe('Refund/Cash Wallet payout to bank/UPI (admin)', () => {
+  const { getRefundPayoutSummary, createRefundPayout } = require('../utils/refundPayout');
+
+  // ₹1,000 of products, ₹15 platform fee, ₹100 prepaid discount, paid ₹915 online.
+  const makePaidOrder = async (user) => makeOrder({
+    user,
+    items: [
+      { productId: new mongoose.Types.ObjectId(), name: 'Shirt', price: 600, quantity: 1 },
+      { productId: new mongoose.Types.ObjectId(), name: 'Cap', price: 200, quantity: 2 }
+    ],
+    subtotal: 1000, platformCommission: 15, prepaidDiscount: 100,
+    paymentMethod: 'Online', paymentStatus: 'Paid', total: 915, paymentId: `pay_${Math.random()}`
+  });
+
+  test('cancelled order: wallet gets ₹915; bank/UPI payout is ₹900 (platform fee deducted), split per product', async () => {
+    const user = await makeUser({ walletBalance: 0 });
+    const order = await makePaidOrder(user);
+    await handleOrderCancellationRefunds(order, { restoreStock: false });
+
+    const summary = await getRefundPayoutSummary(order._id);
+    expect(summary).toMatchObject({ creditedTotal: 915, bankableTotal: 900, chargesDeductedTotal: 15, maxWalletAmount: 915 });
+    expect(summary.groups[0].items.map(i => i.bankShare)).toEqual([540, 360]);
+
+    const { quote } = await createRefundPayout({
+      orderId: order._id, walletAmount: 915, method: 'UPI', bankDetails: { upiId: 'buyer@upi' }, reference: 'UTR123'
+    });
+    expect(quote).toEqual({ walletAmount: 915, amount: 900, deducted: 15 });
+    expect((await User.findById(user._id)).refundWalletBalance).toBe(0);
+    const ledger = await WalletTransaction.findOne({ userId: user._id, type: 'REFUND_WALLET_PAYOUT' });
+    expect(ledger.amount).toBe(-915);
+
+    const after = await getRefundPayoutSummary(order._id);
+    expect(after.remaining).toEqual({ walletAmount: 0, amount: 0 });
+    expect(after.payouts[0]).toMatchObject({ method: 'UPI', amount: 900, walletAmount: 915, reference: 'UTR123' });
+    await expect(createRefundPayout({ orderId: order._id, walletAmount: 1, method: 'UPI', bankDetails: { upiId: 'buyer@upi' } }))
+      .rejects.toThrow(/Nothing left to pay out/);
+  });
+
+  test('partial payouts add up exactly and never exceed the wallet balance or the order credit', async () => {
+    const user = await makeUser({ walletBalance: 0 });
+    const order = await makePaidOrder(user);
+    await handleOrderCancellationRefunds(order, { restoreStock: false });
+    // Customer already spent ₹415 of it
+    await User.updateOne({ _id: user._id }, { $set: { refundWalletBalance: 500 } });
+
+    const bank = { accountHolderName: 'A', accountNumber: '1234567890', ifscCode: 'sbin0001' };
+    await expect(createRefundPayout({ orderId: order._id, walletAmount: 600, method: 'Bank', bankDetails: bank }))
+      .rejects.toThrow(/At most ₹500/);
+    const first = await createRefundPayout({ orderId: order._id, walletAmount: 300, method: 'Bank', bankDetails: bank });
+    expect(first.quote).toEqual({ walletAmount: 300, amount: 295.08, deducted: 4.92 });
+    expect(first.payout.bankDetails.ifscCode).toBe('SBIN0001');
+
+    await User.updateOne({ _id: user._id }, { $set: { refundWalletBalance: 1000 } });
+    const second = await createRefundPayout({ orderId: order._id, walletAmount: 615, method: 'Bank', bankDetails: bank });
+    expect(second.quote.amount).toBe(604.92); // remainder: totals are exactly ₹915 -> ₹900
+    const summary = await getRefundPayoutSummary(order._id);
+    expect(summary.paidOut).toEqual({ walletAmount: 915, amount: 900 });
+  });
+
+  test('validates the payout details', async () => {
+    const user = await makeUser({ walletBalance: 0 });
+    const order = await makePaidOrder(user);
+    await handleOrderCancellationRefunds(order, { restoreStock: false });
+    await expect(createRefundPayout({ orderId: order._id, walletAmount: 10, method: 'UPI', bankDetails: { upiId: 'nope' } })).rejects.toThrow(/UPI/);
+    await expect(createRefundPayout({ orderId: order._id, walletAmount: 10, method: 'Bank', bankDetails: { accountNumber: '1' } })).rejects.toThrow(/IFSC/);
+    await expect(createRefundPayout({ orderId: order._id, walletAmount: 10, method: 'Cash' })).rejects.toThrow(/Bank or UPI/);
   });
 });

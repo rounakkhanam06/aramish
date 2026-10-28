@@ -80,7 +80,7 @@ test('partial return: no extra with the wallet (fees are only refunded on a full
   expect(r.data).toMatchObject({ isFullReturn: false, refunds: { wallet: 2299, bank: 2299 }, walletExtra: 0 });
 });
 
-test('the estimate equals what the return request records, for each destination', async () => {
+test('customers are always refunded to the Refund/Cash Wallet, at the estimated amount (even if an old app asks for Bank)', async () => {
   for (const method of ['Wallet', 'Bank']) {
     await clearTestDb();
     await SystemConfig.create({ returnWindowDays: 7 });
@@ -93,7 +93,8 @@ test('the estimate equals what the return request records, for each destination'
     });
     expect(created.status).toBe(201);
     const stored = await ReturnRequest.findById(created.data.returnRequest._id);
-    expect(stored.refundAmount).toBe(method === 'Wallet' ? est.data.refunds.wallet : est.data.refunds.bank);
+    expect(stored.refundMethod).toBe('Wallet');
+    expect(stored.refundAmount).toBe(est.data.refunds.wallet);
   }
 });
 
@@ -107,4 +108,60 @@ test('only the order owner can ask, and items are validated like a real return',
   expect(bad.status).toBe(400);
   const tooMany = await api('POST', '/returns/refund-estimate', token, { orderId: order._id, items: [{ ...itemsOf(order, [0])[0], quantity: 2 }] });
   expect(tooMany.status).toBe(400);
+});
+
+describe('admin picks the refund destination when refunding', () => {
+  const Admin = require('../Models/Admin');
+  const makeAdminToken = async () => {
+    const admin = await Admin.create({ email: `refundadmin${++n}@test.com`, password: 'Password123!' });
+    return jwt.sign({ id: admin._id, aud: 'admin' }, process.env.JWT_ADMIN_SECRET);
+  };
+  const requestReturn = async () => {
+    const { user, token } = await makeUser();
+    const order = await makeOrder(user._id);
+    const created = await api('POST', '/returns', token, { orderId: order._id, items: itemsOf(order), reason: 'Size/Fit Issue' });
+    return { user, order, returnId: created.data.returnRequest._id };
+  };
+
+  test('admin sees the amount per destination', async () => {
+    const adminToken = await makeAdminToken();
+    const { returnId } = await requestReturn();
+    const r = await api('GET', `/returns/admin/${returnId}`, adminToken);
+    expect(r.data.refundOptions).toEqual({ wallet: 6007, bank: 5997, upi: 5997 });
+  });
+
+  test('UPI: refunds the item price only, records the UPI ID and reference, and credits no wallet', async () => {
+    const adminToken = await makeAdminToken();
+    const { user, returnId } = await requestReturn();
+    const missing = await api('PUT', `/returns/admin/${returnId}/status`, adminToken, { status: 'Refunded', refundMethod: 'UPI' });
+    expect(missing.status).toBe(400);
+
+    const r = await api('PUT', `/returns/admin/${returnId}/status`, adminToken, {
+      status: 'Refunded', refundMethod: 'UPI', bankDetails: { upiId: 'buyer@upi' }, payoutReference: 'UTR9'
+    });
+    expect(r.status).toBe(200);
+    const stored = await ReturnRequest.findById(returnId);
+    expect(stored).toMatchObject({ status: 'Refunded', refundMethod: 'UPI', refundAmount: 5997, payoutReference: 'UTR9' });
+    expect(stored.bankDetails.upiId).toBe('buyer@upi');
+    expect((await User.findById(user._id)).refundWalletBalance || 0).toBe(0);
+  });
+
+  test('Bank: an amount above the bank/UPI limit is refused', async () => {
+    const adminToken = await makeAdminToken();
+    const { returnId } = await requestReturn();
+    const r = await api('PUT', `/returns/admin/${returnId}/status`, adminToken, {
+      status: 'Refunded', refundMethod: 'Bank', refundAmount: 6007,
+      bankDetails: { accountHolderName: 'A', accountNumber: '123', ifscCode: 'SBIN0001' }
+    });
+    expect(r.status).toBe(400);
+    expect((await ReturnRequest.findById(returnId)).status).toBe('Requested');
+  });
+
+  test('Wallet: the full wallet amount goes to the Refund/Cash Wallet', async () => {
+    const adminToken = await makeAdminToken();
+    const { user, returnId } = await requestReturn();
+    const r = await api('PUT', `/returns/admin/${returnId}/status`, adminToken, { status: 'Refunded', refundMethod: 'Wallet' });
+    expect(r.status).toBe(200);
+    expect((await User.findById(user._id)).refundWalletBalance).toBe(6007);
+  });
 });

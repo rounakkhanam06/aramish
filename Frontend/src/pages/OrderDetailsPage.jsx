@@ -96,7 +96,13 @@ export default function OrderDetailsPage() {
   const [cancelling, setCancelling] = useState(false);
 
   const handleCancelOrder = async () => {
-    const confirmCancel = window.confirm("Are you sure you want to cancel this order?");
+    const paidAmount = (Number(globalOrder?.total) || 0) + (Number(globalOrder?.refundWalletUsed) || 0);
+    const willRefund = paidAmount > 0 && (globalOrder?.paymentMethod === 'Online' || (globalOrder?.refundWalletUsed || 0) > 0);
+    const confirmCancel = window.confirm(willRefund
+      ? `Are you sure you want to cancel this order?
+
+The amount you paid will be refunded to your Refund/Cash wallet.`
+      : "Are you sure you want to cancel this order?");
     if (!confirmCancel) return;
 
     const token = localStorage.getItem('userToken');
@@ -111,7 +117,7 @@ export default function OrderDetailsPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        toast.success('Order cancelled successfully!');
+        toast.success(data.order?.paymentStatus === 'Refunded' ? 'Order cancelled. Refund added to your Refund/Cash wallet.' : 'Order cancelled successfully!');
         fetchOrderDetails(false);
       } else {
         toast.error(data.message || 'Failed to cancel order');
@@ -237,14 +243,6 @@ export default function OrderDetailsPage() {
   const [checkingReturn, setCheckingReturn] = useState(false);
   const [returnImages, setReturnImages] = useState([]);
 
-  // Refund Destination States (Bank / UPI)
-  const [refundMethodOption, setRefundMethodOption] = useState('Wallet'); // 'Wallet' | 'Bank' | 'UPI'
-  const [bankAccountHolder, setBankAccountHolder] = useState('');
-  const [bankAccountNumber, setBankAccountNumber] = useState('');
-  const [bankIfscCode, setBankIfscCode] = useState('');
-  const [bankName, setBankName] = useState('');
-  const [upiId, setUpiId] = useState('');
-
   // Refund for the selected items per destination, calculated by the server with the same rule it
   // pays by (so the screen never promises a different amount).
   const [refundEstimate, setRefundEstimate] = useState(null);
@@ -278,10 +276,8 @@ export default function OrderDetailsPage() {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [estimateKey, id]);
   const currentEstimate = refundEstimate && refundEstimate.key === estimateKey ? refundEstimate : null;
-  const refundFor = (option) => {
-    if (!currentEstimate || !currentEstimate.refunds) return null;
-    return currentEstimate.refunds[option === 'Wallet' ? 'wallet' : option === 'UPI' ? 'upi' : 'bank'];
-  };
+  // Returns are always refunded to the Refund/Cash wallet.
+  const walletRefund = currentEstimate?.refunds ? currentEstimate.refunds.wallet : null;
   const formatRupees = (v) => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
   // Exchange states
@@ -798,18 +794,6 @@ export default function OrderDetailsPage() {
     if (returnImages.length < 1) { toast.info('Please upload at least 1 image of the product'); return; }
     if (returnImages.length > 3) { toast.info('You can upload a maximum of 3 images'); return; }
 
-    if (refundMethodOption === 'Bank') {
-      if (!bankAccountHolder.trim() || !bankAccountNumber.trim() || !bankIfscCode.trim()) {
-        toast.info('Please enter Account Holder Name, Account Number and IFSC Code');
-        return;
-      }
-    } else if (refundMethodOption === 'UPI') {
-      if (!upiId.trim() || !upiId.includes('@')) {
-        toast.info('Please enter a valid UPI ID (e.g. name@upi)');
-        return;
-      }
-    }
-
     const token = localStorage.getItem('userToken');
     if (!token) { toast.error('Please login to continue'); return; }
 
@@ -820,18 +804,7 @@ export default function OrderDetailsPage() {
       formData.append('orderId', id);
       formData.append('reason', returnReason);
       formData.append('reasonDetails', returnReasonDetails);
-      formData.append('refundMethod', refundMethodOption === 'Wallet' ? 'Wallet' : 'Bank');
-
-      if (refundMethodOption === 'Bank' || refundMethodOption === 'UPI') {
-        const bankPayload = {
-          accountHolderName: bankAccountHolder.trim() || null,
-          accountNumber: bankAccountNumber.trim() || null,
-          ifscCode: bankIfscCode.trim().toUpperCase() || null,
-          bankName: bankName.trim() || null,
-          upiId: upiId.trim() || null
-        };
-        formData.append('bankDetails', JSON.stringify(bankPayload));
-      }
+      formData.append('refundMethod', 'Wallet');
 
       const itemsPayload = returnSelectedItems.map(item => ({
         productId: item.productId || item.id,
@@ -1145,8 +1118,8 @@ export default function OrderDetailsPage() {
                       ) : isCancelledOrder ? (
                         <div className="flex items-center gap-1.5 text-xs text-slate-500">
                           <div className="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
-                          {globalOrder?.paymentStatus === 'Refunded' && globalOrder?.total > 0
-                            ? `Order is cancelled • ₹${globalOrder.total} refunded`
+                          {globalOrder?.paymentStatus === 'Refunded' && (globalOrder?.total > 0 || globalOrder?.refundWalletUsed > 0)
+                            ? `Order is cancelled • ₹${(Number(globalOrder.total) || 0) + (Number(globalOrder.refundWalletUsed) || 0)} refunded to your Refund/Cash wallet`
                             : 'Order is cancelled'}
                         </div>
                       ) : (
@@ -1532,7 +1505,7 @@ export default function OrderDetailsPage() {
 
                  {refundWalletUsed > 0 && (
                    <div className="flex justify-between items-center text-xs font-semibold text-sky-700">
-                     <span>Refund Wallet Used</span>
+                     <span>Refund/Cash wallet used</span>
                      <span>-₹{refundWalletUsed}</span>
                    </div>
                  )}
@@ -1720,101 +1693,16 @@ export default function OrderDetailsPage() {
                 </div>
               </div>
 
-              {/* Refund Method Choice */}
+              {/* Refund destination: always the Refund/Cash wallet */}
               <div>
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Refund Destination</p>
-                <div className="grid grid-cols-3 gap-2 mb-3 pt-2">
-                  {[
-                    { key: 'Wallet', label: 'Refund Wallet' },
-                    { key: 'Bank', label: 'Bank' },
-                    { key: 'UPI', label: 'UPI ID' }
-                  ].map(({ key, label }) => {
-                    const selected = refundMethodOption === key;
-                    const amount = refundFor(key);
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => setRefundMethodOption(key)}
-                        className={`relative p-2.5 rounded-xl border text-center text-xs font-bold transition-all cursor-pointer ${
-                          selected ? 'border-[#0B132B] bg-[#0B132B] text-white shadow-sm' : key === 'Wallet' ? 'border-emerald-300 bg-emerald-50/60 text-slate-700' : 'border-slate-200 bg-surface text-slate-600'
-                        }`}
-                      >
-                        {key === 'Wallet' && (
-                          <span className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap bg-emerald-500 text-white text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full">
-                            Recommended
-                          </span>
-                        )}
-                        <span className="block">{label}</span>
-                        {amount !== null && amount !== undefined && (
-                          <span className={`block text-[10px] font-semibold mt-0.5 ${selected ? 'text-white/80' : 'text-slate-500'}`}>{formatRupees(amount)}</span>
-                        )}
-                      </button>
-                    );
-                  })}
+                <div className="flex items-center justify-between p-3 rounded-xl border border-[#0B132B] bg-[#0B132B] text-white mb-2">
+                  <span className="text-xs font-bold">Refund/Cash wallet</span>
+                  {walletRefund !== null && <span className="text-xs font-black">{formatRupees(walletRefund)}</span>}
                 </div>
-
-                {/* Why the Refund Wallet: the extra amount only when there really is one (full returns) */}
-                {currentEstimate?.walletExtra > 0 && (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-3 text-[11px] text-emerald-800 font-semibold leading-relaxed">
-                    Get <span className="font-black">{formatRupees(currentEstimate.walletExtra)} more</span> with the Refund Wallet: platform fee and delivery charges are refunded too on a full return.
-                    {refundMethodOption !== 'Wallet' && ' Bank/UPI refunds cover the item price only.'}
-                  </div>
-                )}
-                {refundMethodOption === 'Wallet' && (
-                  <p className="text-[10px] text-slate-500 font-medium leading-relaxed mb-3">
-                    Credited to your Refund Wallet when your return is refunded (after the item is checked). It's real money you can use for up to 100% of your next order. It can't be withdrawn to a bank account.
-                  </p>
-                )}
-
-                {refundMethodOption === 'Bank' && (
-                  <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-2.5 text-xs animate-in fade-in duration-200">
-                    <p className="font-bold text-slate-700 text-[11px] uppercase tracking-wider">Enter Bank Details</p>
-                    <input
-                      type="text"
-                      placeholder="Account Holder Name *"
-                      value={bankAccountHolder}
-                      onChange={(e) => setBankAccountHolder(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#0B132B]"
-                    />
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        placeholder="Account Number *"
-                        value={bankAccountNumber}
-                        onChange={(e) => setBankAccountNumber(e.target.value)}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#0B132B]"
-                      />
-                      <input
-                        type="text"
-                        placeholder="IFSC Code *"
-                        value={bankIfscCode}
-                        onChange={(e) => setBankIfscCode(e.target.value.toUpperCase())}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#0B132B] uppercase"
-                      />
-                    </div>
-                    <input
-                      type="text"
-                      placeholder="Bank Name (Optional)"
-                      value={bankName}
-                      onChange={(e) => setBankName(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#0B132B]"
-                    />
-                  </div>
-                )}
-
-                {refundMethodOption === 'UPI' && (
-                  <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-2 text-xs animate-in fade-in duration-200">
-                    <p className="font-bold text-slate-700 text-[11px] uppercase tracking-wider">Enter UPI ID</p>
-                    <input
-                      type="text"
-                      placeholder="e.g. 9876543210@paytm / user@okaxis *"
-                      value={upiId}
-                      onChange={(e) => setUpiId(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#0B132B]"
-                    />
-                  </div>
-                )}
+                <p className="text-[10px] text-slate-500 font-medium leading-relaxed mb-3">
+                  Credited to your Refund/Cash wallet when your return is refunded (after the item is checked). It's real money you can use for up to 100% of your next order.
+                </p>
               </div>
 
               {/* Refund summary (server-calculated) */}
@@ -1823,15 +1711,13 @@ export default function OrderDetailsPage() {
                   <div className="flex justify-between items-center">
                     <span className="font-bold text-green-700">Estimated Refund</span>
                     <span className="text-sm font-black text-green-700">
-                      {currentEstimate?.refunds ? formatRupees(refundFor(refundMethodOption)) : currentEstimate?.error ? '—' : 'Calculating…'}
+                      {walletRefund !== null ? formatRupees(walletRefund) : currentEstimate?.error ? '—' : 'Calculating…'}
                     </span>
                   </div>
                   <p className="text-[10px] text-green-600 mt-1 font-semibold leading-relaxed">
                     {currentEstimate?.error
                       ? currentEstimate.error
-                      : refundMethodOption === 'Wallet'
-                        ? `Added to your Refund Wallet when the return is refunded.${currentEstimate?.isFullReturn ? ' Platform fee and delivery charges are included for this full return.' : ''}`
-                        : 'Only the item price is refunded to your bank/UPI. Platform fee and delivery charges are not refunded for Bank/UPI transfers.'}
+                      : `Added to your Refund/Cash wallet when the return is refunded.${currentEstimate?.isFullReturn ? ' Platform fee and delivery charges are included for this full return.' : ''}`}
                   </p>
                 </div>
               )}

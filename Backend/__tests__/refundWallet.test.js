@@ -132,12 +132,13 @@ describe('2. Refunds are credited to the Refund Wallet (never the coins wallet)'
       expect(await refundBalance(user._id)).toBe(1500);
     });
 
-    test('cancellation: Razorpay fails -> Refund Wallet', async () => {
+    test('cancellation -> Refund/Cash Wallet directly (Razorpay not called)', async () => {
       const user = await makeUser();
       const order = await onlineOrder(user, await makeProduct(), 'Processing');
-      jest.spyOn(axios, 'get').mockRejectedValue(new Error('Razorpay down'));
+      const post = jest.spyOn(axios, 'post');
 
       await handleOrderCancellationRefunds(order);
+      expect(post).not.toHaveBeenCalled();
       expect(await refundBalance(user._id)).toBe(1500);
       expect(await mainBalance(user._id)).toBe(0);
     });

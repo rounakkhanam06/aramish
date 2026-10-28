@@ -302,10 +302,12 @@ export default function TrackOrderPage() {
       return status === 'Requested' && returnRequest?.createdAt ? new Date(returnRequest.createdAt).toLocaleString() : '';
     };
     const refundDesc = returnRequest?.refundMethod === 'Bank'
-      ? 'Refund transferred to Bank/UPI'
-      : returnRequest?.refundMethod === 'Wallet'
-        ? 'Refund credited to Aramish Wallet'
-        : 'Refund to your original payment method';
+      ? 'Refund transferred to your bank account'
+      : returnRequest?.refundMethod === 'UPI'
+        ? 'Refund transferred to your UPI ID'
+        : returnRequest?.refundMethod === 'Original'
+          ? 'Refund to your original payment method'
+          : 'Refund credited to your Refund/Cash wallet';
 
     steps.push(
       { id: 'ret_requested', title: 'Return Requested', desc: returnRequest?.reason ? `Reason: ${returnRequest.reason}` : 'Return request submitted', date: stageDate('Requested'), icon: CheckCircle2, status: stepStatus(0) },

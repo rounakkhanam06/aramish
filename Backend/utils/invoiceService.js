@@ -589,7 +589,7 @@ const renderInvoicePdf = (order) => new Promise((resolve, reject) => {
   const p = d.payment;
   const payParts = [
     p.walletCoins > 0 ? `Wallet coins: Rs. ${rs(p.walletCoins)}` : null,
-    p.refundWallet > 0 ? `Refund wallet: Rs. ${rs(p.refundWallet)}` : null,
+    p.refundWallet > 0 ? `Refund/Cash wallet: Rs. ${rs(p.refundWallet)}` : null,
     `${p.balanceMode}: Rs. ${rs(p.balance)}`
   ].filter(Boolean);
   doc.font('Helvetica').fontSize(7.5).fillColor('#334155')
