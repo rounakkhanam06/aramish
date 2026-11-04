@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "install": "echo 'No root dependencies to install'",
-    "build": "cd Frontend && npm install && npm run build",
-    "build:frontend": "cd Frontend && npm install && npm run build",
-    "build:admin": "cd Admin-Frontend && npm install && npm run build",
-    "build:backend": "cd Backend && npm install && npm run build"
+    "build": "node init && cd Frontend && npm install && npm run build",
+    "build:frontend": "node init && cd Frontend && npm install && npm run build",
+    "build:admin": "node init && cd Admin-Frontend && npm install && npm run build",
+    "build:backend": "node init && cd Backend && npm install && npm run build"
   },
   "dependencies": {}
 }
