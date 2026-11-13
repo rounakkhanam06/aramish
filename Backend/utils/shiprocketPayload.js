@@ -44,6 +44,12 @@ const loadShippingDetails = async (items, sessionOpt = {}) => {
   return { weight: Math.round(weight * 1000) / 1000 || DEFAULT_WEIGHT_KG, hsnByProductId };
 };
 
+/**
+ * The SKU printed on Shiprocket's invoice and label: the variant SKU (article + colour + size,
+ * e.g. NCF-1004-BLACK-07), else the article number, else the product id.
+ */
+const itemSku = (item) => String(item.variationSku || item.article || item.productId || 'PRODUCT');
+
 /** One Shiprocket order line. The HSN is only sent when the product has one set in admin. */
 const toOrderItem = ({ name, sku, units, price, productId }, hsnByProductId = {}) => {
   const line = { name, sku, units: units || 1, selling_price: price, discount: 0, tax: 0 };
@@ -110,7 +116,7 @@ const buildShiprocketOrderPayload = (order, user, { weight, hsnByProductId } = {
     shipping_is_billing: true,
     order_items: (order.items || []).map(item => toOrderItem({
       name: item.name,
-      sku: String(item.productId),
+      sku: itemSku(item),
       units: item.quantity,
       price: item.price,
       productId: item.productId
@@ -160,6 +166,7 @@ const getReturnWarehouse = () => {
 };
 
 module.exports = {
+  itemSku,
   missingReturnWarehouseSettings,
   getReturnWarehouse,
   DEFAULT_WEIGHT_KG,

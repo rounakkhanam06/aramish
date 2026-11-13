@@ -352,3 +352,12 @@ describe('Return pickup AWB failure', () => {
     expect(payload.order_items[0].hsn).toBe('6403');
   });
 });
+
+describe('Shiprocket item SKU (printed on invoice and label)', () => {
+  const { itemSku } = require('../utils/shiprocketPayload');
+  test('prefers variant SKU, then article number, then product id', () => {
+    expect(itemSku({ variationSku: 'NCF-1004-BLACK-07', article: 'NCF-1004', productId: 'abc' })).toBe('NCF-1004-BLACK-07');
+    expect(itemSku({ variationSku: null, article: 'NCF-1004', productId: 'abc' })).toBe('NCF-1004');
+    expect(itemSku({ productId: 'abc' })).toBe('abc');
+  });
+});

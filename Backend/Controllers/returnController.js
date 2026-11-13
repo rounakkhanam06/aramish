@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const ReturnRequest = require('../Models/ReturnRequest');
 const Order = require('../Models/Order');
 const shiprocketService = require('../Router/shiprocketService');
-const { loadShippingDetails, toOrderItem, toShiprocketDate, getReturnWarehouse, fallbackEmail, FALLBACK_PHONE } = require('../utils/shiprocketPayload');
+const { loadShippingDetails, toOrderItem, itemSku, toShiprocketDate, getReturnWarehouse, fallbackEmail, FALLBACK_PHONE } = require('../utils/shiprocketPayload');
 const { handleReturnRefund, getDeliveredAt } = require('../utils/orderHelper');
 const { calculateEligibleRefund } = require('../utils/refundCalc');
 const { srErrorMessage, requestPickupChecked, PICKUP_BOOKED_OR_LATER } = require('../utils/shiprocketResults');
@@ -57,7 +57,7 @@ const createReturnShipment = async (returnRequest, order) => {
     shipping_email: warehouse.email,
     order_items: returnRequest.items.map(item => toOrderItem({
       name: item.name,
-      sku: item.productId ? item.productId.toString() : "PRODUCT",
+      sku: itemSku(item),
       units: item.quantity,
       price: item.price,
       productId: item.productId
