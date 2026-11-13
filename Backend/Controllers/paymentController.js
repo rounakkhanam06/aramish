@@ -166,6 +166,7 @@ exports.webhookReceiver = async (req, res) => {
       }
 
       const decrementedProducts = [];
+      let usedCoupon = null; // coupon usage taken here, given back if the order isn't created
       let newOrder;
 
       try {
@@ -237,6 +238,7 @@ exports.webhookReceiver = async (req, res) => {
               { $inc: { usageCount: 1 } },
               { upsert: true, new: true }
             );
+            usedCoupon = coupon;
 
             if (coupon.type === 'Percentage') {
               discountAmount = Math.round((calculatedSubtotal * coupon.value) / 100);
@@ -294,6 +296,13 @@ exports.webhookReceiver = async (req, res) => {
 
         const finalCalculatedTotal = Math.max(0, calculatedSubtotal - discountAmount + gstAmount + platformCommission + billedDeliveryCharge - prepaidDiscount);
 
+        // This order is rebuilt from the cart and doesn't know about wallet money, reward coins or
+        // other checkout-only discounts. If its total isn't what the customer actually paid, the
+        // checkout's own order (which has those) is the real one — don't create a second, wrong one.
+        if (Math.round(finalCalculatedTotal * 100) !== Number(payment.amount)) {
+          throw new Error(`Calculated total ₹${finalCalculatedTotal} does not match the ₹${Number(payment.amount) / 100} paid (wallet, coins or checkout discount). Leaving payment ${paymentId} to the checkout's order — if none exists, create it manually.`);
+        }
+
         // Create Order
         newOrder = await Order.create({
           userId,
@@ -332,6 +341,14 @@ exports.webhookReceiver = async (req, res) => {
             await Product.findByIdAndUpdate(rolledBack.productId, {
               $inc: { stock: rolledBack.quantity, sales: -rolledBack.quantity }
             });
+          }
+        }
+        if (usedCoupon) {
+          try {
+            await Coupon.findByIdAndUpdate(usedCoupon._id, { $inc: { usage: -1 } });
+            await CouponUsage.findOneAndUpdate({ couponId: usedCoupon._id, userId, usageCount: { $gt: 0 } }, { $inc: { usageCount: -1 } });
+          } catch (couponErr) {
+            console.error('Could not give back coupon usage after a failed webhook order:', couponErr.message);
           }
         }
         console.error('❌ Failed to complete webhook order creation, rolled back stock:', err.message);

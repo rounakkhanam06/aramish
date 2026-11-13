@@ -869,3 +869,53 @@ describe('Checkout returns 4xx for client problems', () => {
     expect(await variantStock(p._id, p.variations[0].sku)).toBe(4);
   });
 });
+
+describe('Razorpay payment webhook', () => {
+  const Address = require('../Models/Address');
+  const Cart = require('../Models/Cart');
+  const crypto = require('crypto');
+
+  const sendCaptured = (paymentId, amountPaise, notes) => {
+    const body = { event: 'payment.captured', payload: { payment: { entity: { id: paymentId, amount: amountPaise, notes } } } };
+    const raw = JSON.stringify(body);
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    const signature = secret ? crypto.createHmac('sha256', secret).update(raw).digest('hex') : 'unsigned';
+    return api('POST', '/api/payments/webhook', { body, headers: { 'x-razorpay-signature': signature } });
+  };
+
+  const setup = async () => {
+    const { user } = await makeUser();
+    const p = await makeProduct();
+    const addr = await Address.create({ userId: user._id, ...address });
+    await Cart.create({ userId: user._id, items: [{ productId: p._id, quantity: 1, variationSku: p.variations[0].sku, price: 1000 }] });
+    const notes = { userId: String(user._id), addressId: String(addr._id), cartSummary: `${p._id}:1` };
+    return { user, p, notes };
+  };
+
+  test('does not create an order when the paid amount differs (wallet used at checkout)', async () => {
+    const { user, p, notes } = await setup();
+    const res = await sendCaptured('pay_wallet_mismatch', 100, notes); // ₹1 paid: not the cart total
+    expect(res.status).toBe(200);
+    expect(res.data.message).toMatch(/does not match/);
+    expect(await Order.countDocuments({ userId: user._id })).toBe(0);
+    expect(await variantStock(p._id, p.variations[0].sku)).toBe(5); // stock rolled back
+  });
+
+  test('does not create a second order for a payment that already has one', async () => {
+    const { user, notes } = await setup();
+    await Order.create({
+      userId: user._id, items: [], total: 500, paymentMethod: 'Online', paymentStatus: 'Paid',
+      paymentId: 'pay_has_order', status: 'Processing', deliveryAddress: address
+    });
+    await sendCaptured('pay_has_order', 50000, notes);
+    expect(await Order.countDocuments({ paymentId: 'pay_has_order' })).toBe(1);
+  });
+
+  test('the database refuses two orders with the same payment id', async () => {
+    const { user } = await makeUser();
+    await Order.syncIndexes();
+    const base = { userId: user._id, items: [], total: 1, paymentMethod: 'Online', paymentStatus: 'Paid', paymentId: 'pay_unique_check', status: 'Processing', deliveryAddress: address };
+    await Order.create(base);
+    await expect(Order.create(base)).rejects.toThrow(/duplicate key/);
+  });
+});
