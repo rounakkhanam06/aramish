@@ -32,7 +32,7 @@ exports.getCourierOptions = async (req, res) => {
       if (!exchange) return res.status(404).json({ success: false, message: 'Exchange request not found' });
       const order = await Order.findById(exchange.orderId);
       if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
-      shipment = exchangeShipment(exchange, order, leg);
+      shipment = await exchangeShipment(exchange, order, leg);
       if (exchange[leg] && exchange[leg].awb) booked = { awb: exchange[leg].awb, courierName: exchange[leg].courierName || exchange.courierName };
     } else {
       return res.status(400).json({ success: false, message: 'type must be order, return or exchange' });

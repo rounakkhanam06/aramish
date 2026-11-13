@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const ReturnRequest = require('../Models/ReturnRequest');
 const Order = require('../Models/Order');
 const shiprocketService = require('../Router/shiprocketService');
-const { loadShippingDetails, toOrderItem, itemSku, toShiprocketDate, getReturnWarehouse, fallbackEmail, FALLBACK_PHONE } = require('../utils/shiprocketPayload');
+const { loadShippingDetails, toOrderItem, itemSku, itemLabel, toShiprocketDate, getReturnWarehouse, fallbackEmail, FALLBACK_PHONE } = require('../utils/shiprocketPayload');
 const { handleReturnRefund, getDeliveredAt } = require('../utils/orderHelper');
 const { calculateEligibleRefund } = require('../utils/refundCalc');
 const { srErrorMessage, requestPickupChecked, PICKUP_BOOKED_OR_LATER } = require('../utils/shiprocketResults');
@@ -22,7 +22,7 @@ const addReturnHistory = (returnRequest, status, actor, note = '') => {
 const createReturnShipment = async (returnRequest, order) => {
   // Fails clearly (admin sees it and can retry) instead of sending the parcel to a made-up address.
   const warehouse = getReturnWarehouse();
-  const { weight: totalWeight, hsnByProductId } = await loadShippingDetails(returnRequest.items);
+  const { weight: totalWeight, dimensions, hsnByProductId, articleByProductId } = await loadShippingDetails(returnRequest.items);
 
   const cityState = shiprocketService.parseCityState(order.deliveryAddress.address);
 
@@ -56,17 +56,17 @@ const createReturnShipment = async (returnRequest, order) => {
     shipping_phone: warehouse.phone,
     shipping_email: warehouse.email,
     order_items: returnRequest.items.map(item => toOrderItem({
-      name: item.name,
-      sku: itemSku(item),
+      name: itemLabel(item),
+      sku: itemSku(item, articleByProductId),
       units: item.quantity,
       price: item.price,
       productId: item.productId
-    }, hsnByProductId)),
+    }, hsnByProductId, articleByProductId)),
     payment_method: "Prepaid",
     sub_total: Math.round(itemsValue * 100) / 100 || returnRequest.refundAmount,
-    length: 10,
-    breadth: 10,
-    height: 10,
+    length: dimensions.length,
+    breadth: dimensions.breadth,
+    height: dimensions.height,
     weight: totalWeight || 0.5
   };
 

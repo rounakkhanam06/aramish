@@ -353,11 +353,27 @@ describe('Return pickup AWB failure', () => {
   });
 });
 
-describe('Shiprocket item SKU (printed on invoice and label)', () => {
-  const { itemSku } = require('../utils/shiprocketPayload');
-  test('prefers variant SKU, then article number, then product id', () => {
-    expect(itemSku({ variationSku: 'NCF-1004-BLACK-07', article: 'NCF-1004', productId: 'abc' })).toBe('NCF-1004-BLACK-07');
-    expect(itemSku({ variationSku: null, article: 'NCF-1004', productId: 'abc' })).toBe('NCF-1004');
+describe('Shiprocket item SKU, name and parcel size', () => {
+  const { itemSku, itemLabel, packageDimensions } = require('../utils/shiprocketPayload');
+
+  test('SKU is the article number (one weight freeze per article), then variant SKU, then id', () => {
+    expect(itemSku({ variationSku: 'NCF-1004-BLACK-07', article: 'NCF-1004', productId: 'abc' })).toBe('NCF-1004');
+    expect(itemSku({ variationSku: 'NCF-1004-BLACK-07', productId: 'abc' }, { abc: 'NCF-1004' })).toBe('NCF-1004');
+    expect(itemSku({ variationSku: 'NCF-1004-BLACK-07', productId: 'abc' })).toBe('NCF-1004-BLACK-07');
     expect(itemSku({ productId: 'abc' })).toBe('abc');
+  });
+
+  test('item name carries colour and size', () => {
+    expect(itemLabel({ name: 'LACEUP BOOT', attributes: { Color: 'BLACK', Size: '7' } })).toBe('LACEUP BOOT (BLACK/7)');
+    expect(itemLabel({ name: 'LACEUP BOOT', color: 'BROWN', size: '5' })).toBe('LACEUP BOOT (BROWN/5)');
+    expect(itemLabel({ name: 'LACEUP BOOT (BLACK/7)', attributes: { Color: 'BLACK', Size: '7' } })).toBe('LACEUP BOOT (BLACK/7)');
+    expect(itemLabel({ name: 'PLAIN' })).toBe('PLAIN');
+  });
+
+  test('parcel size comes from the admin box size; boxes are stacked', () => {
+    const byId = new Map([['a', { shippingSpecs: { length: 30, width: 14, height: 10 } }], ['b', { shippingSpecs: { weight: 1 } }]]);
+    expect(packageDimensions([{ productId: 'a', quantity: 1 }], byId)).toEqual({ length: 30, breadth: 14, height: 10 });
+    expect(packageDimensions([{ productId: 'a', quantity: 2 }], byId)).toEqual({ length: 30, breadth: 14, height: 20 });
+    expect(packageDimensions([{ productId: 'b', quantity: 1 }], byId)).toEqual({ length: 10, breadth: 10, height: 10 });
   });
 });

@@ -813,8 +813,7 @@ exports.createShiprocketOrderForExisting = async (req, res) => {
         const user = await User.findById(order.userId);
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        const { weight, hsnByProductId } = await loadShippingDetails(order.items);
-        const shiprocketOrderData = buildShiprocketOrderPayload(order, user, { weight, hsnByProductId });
+        const shiprocketOrderData = buildShiprocketOrderPayload(order, user, await loadShippingDetails(order.items));
 
         const srResponse = await shiprocketService.createShiprocketOrder(shiprocketOrderData);
         if (!srResponse || !srResponse.order_id) {

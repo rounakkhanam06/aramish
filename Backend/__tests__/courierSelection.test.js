@@ -333,7 +333,7 @@ describe('exchanges', () => {
 
     // Reverse leg: customer -> warehouse, return couriers
     r = await api('GET', `/admin/shiprocket/couriers?type=exchange&id=${exchange._id}&leg=reverse`);
-    expect(shiprocketService.checkServiceability).toHaveBeenLastCalledWith('452001', '282010', 0.5, 0, expect.objectContaining({ isReturn: true }));
+    expect(shiprocketService.checkServiceability).toHaveBeenLastCalledWith('452001', '282010', 0.8, 0, expect.objectContaining({ isReturn: true }));
     shiprocketService.assignAWB.mockResolvedValueOnce(awbReply('XREV-1', 1, 'Delhivery'));
     r = await api('POST', `/exchanges/admin/${exchange._id}/retry-shipment`, { body: { leg: 'reverse', courierId: 1 } });
     expect(r.status).toBe(200);
@@ -342,7 +342,7 @@ describe('exchanges', () => {
 
     // Forward leg: warehouse -> customer; courier booked now, pickup once packed
     r = await api('GET', `/admin/shiprocket/couriers?type=exchange&id=${exchange._id}&leg=forward`);
-    expect(shiprocketService.checkServiceability).toHaveBeenLastCalledWith('282010', '452001', 0.5, 0, expect.not.objectContaining({ isReturn: true }));
+    expect(shiprocketService.checkServiceability).toHaveBeenLastCalledWith('282010', '452001', 0.8, 0, expect.not.objectContaining({ isReturn: true }));
     shiprocketService.assignAWB.mockResolvedValueOnce(awbReply('XFWD-1', 3, 'Ekart'));
     r = await api('POST', `/exchanges/admin/${exchange._id}/retry-shipment`, { body: { leg: 'forward', courierId: 3, schedulePickup: false } });
     expect(r.status).toBe(200);
@@ -364,7 +364,7 @@ describe('exchanges', () => {
     await ExchangeRequest.updateOne({ _id: exchange._id }, { $set: { forward: { orderId: '1', shipmentId: '2', status: 'Created' } } });
     const r = await api('GET', `/admin/shiprocket/couriers?type=exchange&id=${exchange._id}&leg=forward`);
     expect(r.status).toBe(200);
-    expect(shiprocketService.checkServiceability).toHaveBeenLastCalledWith('282010', '452001', 0.5, 1, expect.objectContaining({ declaredValue: 200 }));
+    expect(shiprocketService.checkServiceability).toHaveBeenLastCalledWith('282010', '452001', 0.8, 1, expect.objectContaining({ declaredValue: 200 }));
     expect(r.data.couriers.map(c => c.courierId)).not.toContain(4);
   });
 });

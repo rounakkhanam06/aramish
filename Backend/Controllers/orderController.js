@@ -394,9 +394,9 @@ const createOrderAttempt = async (req, res) => {
     // Send order to Shiprocket (outside database transaction to avoid locking write rows during network call)
     try {
       const user = await User.findById(req.user._id);
-      const { hsnByProductId } = await loadShippingDetails(order.items);
+      const shipping = await loadShippingDetails(order.items);
       // Built from the saved order: COD amount = order.total (after coins / Refund Wallet).
-      const shiprocketOrderData = buildShiprocketOrderPayload(order, user, { weight: totalOrderWeight, hsnByProductId });
+      const shiprocketOrderData = buildShiprocketOrderPayload(order, user, { ...shipping, weight: totalOrderWeight });
 
       const srResponse = await shiprocketService.createShiprocketOrder(shiprocketOrderData);
 

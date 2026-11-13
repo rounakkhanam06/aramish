@@ -22,13 +22,12 @@ const money = (v) => Math.round((Number(v) || 0) * 100) / 100;
 const pickupPincode = () => process.env.SHIPROCKET_PICKUP_PINCODE || '201301';
 
 // Same box as every payload we send Shiprocket (orders, returns, exchanges).
-const BOX = { length: 10, breadth: 10, height: 10 };
 
 // ---------- shipment parameters (must match what the booked Shiprocket order declares) ----------
 
 /** Forward delivery of one of our orders (payload: buildShiprocketOrderPayload). */
 const orderShipment = async (order) => {
-  const { weight } = await loadShippingDetails(order.items);
+  const { weight, dimensions } = await loadShippingDetails(order.items);
   const payable = Math.max(0, money(order.total));
   const cod = order.paymentMethod === 'COD' && payable > 0;
   return {
@@ -39,13 +38,13 @@ const orderShipment = async (order) => {
     cod,
     isReturn: false,
     declaredValue: cod ? payable : money(payable + (Number(order.walletUsed) || 0) + (Number(order.refundWalletUsed) || 0)),
-    ...BOX
+    ...dimensions
   };
 };
 
 /** Reverse pickup for a return: customer → return warehouse (payload: createReturnShipment). */
 const returnShipment = async (returnRequest, order) => {
-  const { weight } = await loadShippingDetails(returnRequest.items);
+  const { weight, dimensions } = await loadShippingDetails(returnRequest.items);
   const warehouse = getReturnWarehouse();
   const itemsValue = returnRequest.items.reduce((sum, i) => sum + (Number(i.price) || 0) * (i.quantity || 1), 0);
   return {
@@ -56,23 +55,27 @@ const returnShipment = async (returnRequest, order) => {
     cod: false,
     isReturn: true,
     declaredValue: money(itemsValue) || money(returnRequest.refundAmount),
-    ...BOX
+    ...dimensions
   };
 };
 
-/** Exchange legs (payloads: buildReversePayload / buildForwardPayload, both 0.5 kg). */
-const exchangeShipment = (exchange, order, leg) => {
+/** Exchange legs (payloads: buildReversePayload / buildForwardPayload): the leg's item weight and box. */
+const exchangeShipment = async (exchange, order, leg) => {
+  const productId = leg === 'reverse'
+    ? exchange.originalItem && exchange.originalItem.productId
+    : ((exchange.requestedVariant && exchange.requestedVariant.productId) || (exchange.originalItem && exchange.originalItem.productId));
+  const { weight, dimensions } = await loadShippingDetails(productId ? [{ productId, quantity: 1 }] : []);
   if (leg === 'reverse') {
     const warehouse = getReturnWarehouse();
     return {
       kind: 'exchange_reverse',
       pickupPincode: order.deliveryAddress && order.deliveryAddress.pincode,
       deliveryPincode: warehouse.pincode,
-      weight: 0.5,
+      weight: weight || 0.5,
       cod: false,
       isReturn: true,
       declaredValue: money(exchange.originalItem && exchange.originalItem.price),
-      ...BOX
+      ...dimensions
     };
   }
   const codDifference = exchange.paymentMethod === 'COD' && Number(exchange.additionalAmount) > 0;
@@ -80,11 +83,11 @@ const exchangeShipment = (exchange, order, leg) => {
     kind: 'exchange_forward',
     pickupPincode: pickupPincode(),
     deliveryPincode: order.deliveryAddress && order.deliveryAddress.pincode,
-    weight: 0.5,
+    weight: weight || 0.5,
     cod: codDifference,
     isReturn: false,
     declaredValue: money(codDifference ? exchange.additionalAmount : exchange.requestedVariant && exchange.requestedVariant.price),
-    ...BOX
+    ...dimensions
   };
 };
 

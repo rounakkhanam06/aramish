@@ -360,8 +360,8 @@ exports.webhookReceiver = async (req, res) => {
 
       // Send to Shiprocket
       try {
-        const { hsnByProductId } = await loadShippingDetails(newOrder.items);
-        const shiprocketOrderData = buildShiprocketOrderPayload(newOrder, user, { weight: totalOrderWeight, hsnByProductId });
+        const shipping = await loadShippingDetails(newOrder.items);
+        const shiprocketOrderData = buildShiprocketOrderPayload(newOrder, user, { ...shipping, weight: totalOrderWeight });
 
         const srResponse = await shiprocketService.createShiprocketOrder(shiprocketOrderData);
         if (srResponse) {

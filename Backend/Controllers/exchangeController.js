@@ -10,7 +10,7 @@ const { resolveVariantPrice } = require('../utils/priceHelper');
 const { getDeliveredAt, refundOnlinePayment } = require('../utils/orderHelper');
 const { verifyWebhookToken } = require('../utils/shiprocketWebhookAuth');
 const { isRazorpayConfigured, verifyAndCapturePayment } = require('../utils/razorpayService');
-const { loadShippingDetails, toOrderItem, getReturnWarehouse, fallbackEmail } = require('../utils/shiprocketPayload');
+const { loadShippingDetails, toOrderItem, itemLabel, getReturnWarehouse, fallbackEmail } = require('../utils/shiprocketPayload');
 const { srErrorMessage, requestPickupChecked, PICKUP_BOOKED_OR_LATER } = require('../utils/shiprocketResults');
 const { exchangeShipment, resolveSelectedCourier, assignAwbWithCourier, mismatchWarning, getCourierConfig } = require('../utils/courierSelection');
 const { LEG_FIELDS, isSupersededAwb, applyShiprocketCourier, fetchShiprocketShipment, isCancelledStatus } = require('../utils/shipmentSync');
@@ -156,10 +156,13 @@ const cancelExchangeShipments = async (exchange) => {
   return notCancelled;
 };
 
-// HSN codes (set per product in admin) for the old and the replacement item of an exchange.
-const exchangeHsnCodes = async (exchange) => {
-  const items = [exchange.originalItem, exchange.requestedVariant].filter(i => i && i.productId);
-  return (await loadShippingDetails(items)).hsnByProductId;
+// Shipping details (weight, box size, HSN, article number from admin) for one exchange leg:
+// the old item for the reverse pickup, the replacement for the forward delivery.
+const exchangeShippingDetails = (exchange, leg) => {
+  const productId = leg === 'reverse'
+    ? exchange.originalItem?.productId
+    : (exchange.requestedVariant?.productId || exchange.originalItem?.productId);
+  return loadShippingDetails(productId ? [{ productId, quantity: 1 }] : []);
 };
 
 // A leg that has its AWB but whose courier pickup was never requested, and that hasn't started
@@ -221,7 +224,8 @@ const requireShiprocketOrder = (resp, leg) => {
 
 // Builds the Shiprocket reverse-shipment payload (pickup of the old item). Priced at the
 // original item's value, since that's what's being returned.
-const buildReversePayload = (exchange, originalOrder, cityState, hsnByProductId = {}) => {
+const buildReversePayload = (exchange, originalOrder, cityState, shipping = {}) => {
+  const { hsnByProductId = {}, articleByProductId = {}, dimensions = {}, weight } = shipping;
   const warehouse = getReturnWarehouse();
   return {
   order_id: `EXC_REV_${exchange._id.toString()}`,
@@ -248,15 +252,15 @@ const buildReversePayload = (exchange, originalOrder, cityState, hsnByProductId 
   shipping_phone: warehouse.phone,
   shipping_email: warehouse.email,
   order_items: [toOrderItem({
-    name: exchange.originalItem.name,
+    name: itemLabel(exchange.originalItem),
     sku: exchange.originalItem.variationSku || exchange.originalItem.productId.toString(),
     units: 1,
     price: exchange.originalItem.price,
     productId: exchange.originalItem.productId
-  }, hsnByProductId)],
+  }, hsnByProductId, articleByProductId)],
   payment_method: 'Prepaid',
   sub_total: exchange.originalItem.price,
-  length: 10, breadth: 10, height: 10, weight: 0.5
+  length: dimensions.length || 10, breadth: dimensions.breadth || 10, height: dimensions.height || 10, weight: weight || 0.5
   };
 };
 
@@ -264,7 +268,8 @@ const buildReversePayload = (exchange, originalOrder, cityState, hsnByProductId 
 // replacement's actual value. If the price difference is being collected via COD, the courier
 // collects only that delta on delivery — the item itself was already paid for as part of the
 // original order plus (if Online) the difference charge.
-const buildForwardPayload = (exchange, originalOrder, cityState, hsnByProductId = {}) => {
+const buildForwardPayload = (exchange, originalOrder, cityState, shipping = {}) => {
+  const { hsnByProductId = {}, articleByProductId = {}, dimensions = {}, weight } = shipping;
   const isCodDifference = exchange.paymentMethod === 'COD' && exchange.additionalAmount > 0;
   return {
     order_id: `EXC_FWD_${exchange._id.toString()}`,
@@ -297,10 +302,10 @@ const buildForwardPayload = (exchange, originalOrder, cityState, hsnByProductId 
       units: 1,
       price: exchange.requestedVariant.price,
       productId: exchange.requestedVariant.productId || exchange.originalItem.productId
-    }, hsnByProductId)],
+    }, hsnByProductId, articleByProductId)],
     payment_method: isCodDifference ? 'COD' : 'Prepaid',
     sub_total: isCodDifference ? exchange.additionalAmount : exchange.requestedVariant.price,
-    length: 10, breadth: 10, height: 10, weight: 0.5
+    length: dimensions.length || 10, breadth: dimensions.breadth || 10, height: dimensions.height || 10, weight: weight || 0.5
   };
 };
 
@@ -678,7 +683,7 @@ exports.updateExchangeStatus = async (req, res) => {
 
         // ── Create Reverse Shipment (pickup old item) ──────────────────────────
         try {
-          const reversePayload = buildReversePayload(exchange, originalOrder, cityState, await exchangeHsnCodes(exchange));
+          const reversePayload = buildReversePayload(exchange, originalOrder, cityState, await exchangeShippingDetails(exchange, 'reverse'));
 
           const reverseResp = requireShiprocketOrder(await shiprocketService.createShiprocketReturnOrder(reversePayload), 'reverse');
           exchange.reverse = {
@@ -706,7 +711,7 @@ exports.updateExchangeStatus = async (req, res) => {
 
         // ── Create Forward Shipment (deliver replacement) ──────────────────────
         try {
-          const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState, await exchangeHsnCodes(exchange));
+          const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState, await exchangeShippingDetails(exchange, 'forward'));
 
           const forwardResp = requireShiprocketOrder(await shiprocketService.createExchangeForwardOrder(forwardPayload), 'forward');
           exchange.forward = {
@@ -1094,7 +1099,7 @@ exports.retryExchangeShipment = async (req, res) => {
       try {
         const order = await Order.findById(current.orderId);
         if (!order) throw new Error('Order not found');
-        courier = await resolveSelectedCourier(exchangeShipment(current, order, leg), req.body.courierId, await getCourierConfig());
+        courier = await resolveSelectedCourier(await exchangeShipment(current, order, leg), req.body.courierId, await getCourierConfig());
       } catch (courierErr) {
         return res.status(courierErr.status || 500).json({ success: false, code: courierErr.code, message: courierErr.message });
       }
@@ -1175,7 +1180,7 @@ exports.retryExchangeShipment = async (req, res) => {
 
       if (leg === 'reverse') {
         // Create Reverse Shipment
-        const reversePayload = buildReversePayload(exchange, originalOrder, cityState, await exchangeHsnCodes(exchange));
+        const reversePayload = buildReversePayload(exchange, originalOrder, cityState, await exchangeShippingDetails(exchange, 'reverse'));
 
         const reverseResp = requireShiprocketOrder(await shiprocketService.createShiprocketReturnOrder(reversePayload), 'reverse');
         exchange.reverse = {
@@ -1191,7 +1196,7 @@ exports.retryExchangeShipment = async (req, res) => {
         // Courier is booked once the admin selects one.
       } else {
         // Create Forward Shipment
-        const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState, await exchangeHsnCodes(exchange));
+        const forwardPayload = buildForwardPayload(exchange, originalOrder, cityState, await exchangeShippingDetails(exchange, 'forward'));
 
         const forwardResp = requireShiprocketOrder(await shiprocketService.createExchangeForwardOrder(forwardPayload), 'forward');
         exchange.forward = {
