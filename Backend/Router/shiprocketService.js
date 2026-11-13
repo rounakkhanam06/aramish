@@ -302,6 +302,9 @@ const EXCHANGE_WEBHOOK_MAP = {
         'Undelivered': 'Manual Review'
     },
     forward: {
+        // The courier has collected the replacement from the warehouse.
+        'Picked Up': 'Replacement Dispatched',
+        'Shipped': 'Replacement Dispatched',
         'In Transit': 'Replacement Dispatched',
         'Out for Delivery': 'Replacement Dispatched',
         'Delivered': 'Completed',

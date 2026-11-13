@@ -528,7 +528,21 @@ describe('Exchanges', () => {
     await api('POST', '/exchanges/webhook/shiprocket', { headers, body: { order_id: `EXC_FWD_${exchange._id}`, current_status: 'Delivered' } });
     await api('POST', '/exchanges/webhook/shiprocket', { headers, body: { order_id: `EXC_FWD_${exchange._id}`, current_status: 'Delivered' } });
     expect((await ExchangeRequest.findById(exchange._id)).status).toBe('Completed');
+    // The old item was never picked up, so it is not back in stock yet...
+    expect(await variantStock(p._id, p.variations[0].sku)).toBe(4);
+    // ...until its pickup scan arrives — once, even if Shiprocket repeats it.
+    await api('POST', '/exchanges/webhook/shiprocket', { headers, body: { order_id: `EXC_REV_${exchange._id}`, current_status: 'Picked Up' } });
+    await api('POST', '/exchanges/webhook/shiprocket', { headers, body: { order_id: `EXC_REV_${exchange._id}`, current_status: 'In Transit' } });
+    expect((await ExchangeRequest.findById(exchange._id)).status).toBe('Completed');
     expect(await variantStock(p._id, p.variations[0].sku)).toBe(5);
+  });
+
+  test('forward Picked Up / Shipped scan marks the replacement dispatched', async () => {
+    const { adminToken, exchange } = await setupExchange();
+    await api('PUT', `/exchanges/admin/${exchange._id}/status`, { token: adminToken, body: { status: 'Approved' } });
+    const headers = { 'x-api-key': process.env.SHIPROCKET_WEBHOOK_SECRET };
+    await api('POST', '/exchanges/webhook/shiprocket', { headers, body: { order_id: `EXC_FWD_${exchange._id}`, current_status: 'PICKED UP' } });
+    expect((await ExchangeRequest.findById(exchange._id)).status).toBe('Replacement Dispatched');
   });
 
   test('exchange to a cheaper variant is refused; out-of-stock variant is refused', async () => {

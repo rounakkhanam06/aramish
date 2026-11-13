@@ -406,7 +406,7 @@ export default function TrackOrderPage() {
                     <>
                       <div>
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pickup Partner</p>
-                        <p className="text-xs font-black text-slate-755">Shiprocket Partner</p>
+                        <p className="text-xs font-black text-slate-755">{exchange.reverse.courierName || 'Shiprocket Partner'}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">AWB (Pickup)</p>
@@ -417,7 +417,7 @@ export default function TrackOrderPage() {
                     <>
                       <div>
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Delivery Partner</p>
-                        <p className="text-xs font-black text-slate-755">Shiprocket Partner</p>
+                        <p className="text-xs font-black text-slate-755">{exchange.forward.courierName || 'Shiprocket Partner'}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">AWB (Delivery)</p>

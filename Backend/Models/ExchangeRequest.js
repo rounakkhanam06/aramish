@@ -91,6 +91,10 @@ const exchangeRequestSchema = new mongoose.Schema({
     enum: ['Requested','Approved','Rejected','Pickup Scheduled','Old Item Picked Up','Replacement Dispatched','Completed','Cancelled','Failed','Manual Review'],
     default: 'Requested'
   },
+  // true: the old item was added back to stock. false: completed (replacement delivered) before
+  // the old item was picked up, so the restock waits for the reverse leg's pickup scan.
+  // null: not completed yet, or completed before this field existed (never restocked late).
+  originalItemRestocked: { type: Boolean, default: null },
   adminNotes:      { type: String, default: '' },
   rejectionReason: { type: String, default: '' },
   shipmentRetryInProgress: { type: Boolean, default: false },

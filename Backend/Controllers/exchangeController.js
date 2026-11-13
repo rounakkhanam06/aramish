@@ -128,6 +128,12 @@ const releaseReservedStock = async (exchange) => {
 // True once either parcel has started moving: the old item is on its way to us or the replacement
 // is on its way to the customer. From then on the exchange can't simply be called off.
 const LEG_MOVING = /PICKED UP|IN TRANSIT|OUT FOR DELIVERY|REACHED|SHIPPED|DELIVERED/;
+// The old item is on its way back to us: the reverse leg was scanned as picked up (or later), or
+// the exchange went through 'Old Item Picked Up'.
+const oldItemPickedUp = (exchange) =>
+  (exchange.timeline || []).some(e => e.status === 'Old Item Picked Up') ||
+  LEG_MOVING.test(String(exchange.reverse?.status || '').toUpperCase().replace(/_/g, ' '));
+
 const exchangeShipmentStarted = (exchange) =>
   (exchange.timeline || []).some(e => ['Old Item Picked Up', 'Replacement Dispatched'].includes(e.status)) ||
   ['reverse', 'forward'].some(leg => LEG_MOVING.test(String(exchange[leg]?.status || '').toUpperCase().replace(/_/g, ' ')));
@@ -761,7 +767,9 @@ exports.updateExchangeStatus = async (req, res) => {
 
       // ── COMPLETED ─────────────────────────────────────────────────────────────
       else if (status === 'Completed') {
+        // Admin marking it completed confirms the old item is back.
         await restockOriginalItem(exchange);
+        exchange.originalItemRestocked = true;
         exchange.status = 'Completed';
         order.status = 'Exchange Completed';
         addTimeline(exchange, 'Completed', 'admin', admin?._id, adminNotes || 'Exchange completed');
@@ -906,6 +914,19 @@ const processExchangeWebhook = async (payload) => {
     exchange[leg].pickupScheduled = true;
   }
 
+  // Completed before the old item was picked up: restock it now that its pickup scan arrived.
+  // The flag is claimed atomically so duplicate webhooks restock once.
+  if (leg === 'reverse' && exchange.status === 'Completed' && exchange.originalItemRestocked === false &&
+      LEG_MOVING.test(rawStatus.toUpperCase().replace(/_/g, ' '))) {
+    const claimed = await ExchangeRequest.findOneAndUpdate(
+      { _id: exchange._id, originalItemRestocked: false }, { $set: { originalItemRestocked: true } });
+    if (claimed) {
+      await restockOriginalItem(exchange);
+      exchange.originalItemRestocked = true;
+      addTimeline(exchange, 'Completed', 'webhook', null, `Old item picked up (Shiprocket: ${rawStatus}) and added back to stock.`);
+    }
+  }
+
   const order = await Order.findById(exchange.orderId);
 
   // A single failed leg needs a human; only both legs failing is a full failure.
@@ -920,7 +941,16 @@ const processExchangeWebhook = async (payload) => {
     // Same claim as the admin endpoint: duplicate/out-of-order webhooks can't restock twice.
     if (await claimExchangeStatus(exchange._id, fromStatus, target)) {
       if (target === 'Completed') {
-        await restockOriginalItem(exchange);
+        // The replacement was delivered; the old item goes back into stock only once it has been
+        // picked up — otherwise when its pickup scan arrives (below).
+        if (oldItemPickedUp(exchange)) {
+          await restockOriginalItem(exchange);
+          exchange.originalItemRestocked = true;
+        } else {
+          exchange.originalItemRestocked = false;
+          addAudit(exchange, 'restock_deferred', null, fromStatus, target,
+            'Replacement delivered before the old item was picked up. Old item will be restocked on its pickup scan.');
+        }
         if (order) order.status = 'Exchange Completed';
       } else if (target === 'Failed') {
         try {
@@ -1103,8 +1133,20 @@ exports.retryExchangeShipment = async (req, res) => {
           : `Booking failed for ${leg} leg: ${exchange.shipmentErrors[exchange.shipmentErrors.length - 1].error}`;
         addTimeline(exchange, exchange.status, 'admin', admin?._id, note);
         addAudit(exchange, booked ? 'shipment_retry' : 'shipment_retry_failed', admin, exchange.status, exchange.status, note);
+        // Old item pickup booked: move the exchange on so the customer sees "Pickup scheduled"
+        // without waiting for a Shiprocket webhook. Same atomic claim as the status endpoint.
+        let pickupOrder = null;
+        if (booked && leg === 'reverse' && exchange.reverse.pickupScheduled && exchange.status === 'Approved' &&
+            await claimExchangeStatus(exchange._id, 'Approved', 'Pickup Scheduled')) {
+          exchange.status = 'Pickup Scheduled';
+          addTimeline(exchange, 'Pickup Scheduled', 'admin', admin?._id, 'Courier pickup booked for the old item.');
+          addAudit(exchange, 'status_updated', admin, 'Approved', 'Pickup Scheduled', 'Reverse pickup booked');
+          pickupOrder = await Order.findById(exchange.orderId);
+          if (pickupOrder) pickupOrder.status = 'Pickup Scheduled';
+        }
         exchange.shipmentRetryInProgress = false;
         await exchange.save();
+        if (pickupOrder) await pickupOrder.save();
         return res.status(booked ? 200 : 502).json({ success: booked, message: note, warning: mismatchWarning(exchange[leg].courierSelection), exchange });
       }
 
