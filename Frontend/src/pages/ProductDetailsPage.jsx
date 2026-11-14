@@ -1,5 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+
+// Old-website product links (e.g. from a Meta catalog built on the old store) use a name slug
+// like /product/aramish-genuine-leather-back-open-loafers-shoes-for-men/ instead of our id.
+const isProductId = (value) => /^[a-f0-9]{24}$/i.test(String(value || ''));
+const SLUG_FILLER = new Set(['aramish', 'genuine', 'pure', 'leather', 'shoes', 'shoe', 'for', 'men', 'mens', 'man', 'women', 'the', 'and', 'with', 'new']);
+
+/** Our product that best matches an old slug: search its words, dropping the last one until something matches. */
+const findProductForSlug = async (apiBase, slug) => {
+  const words = String(slug).toLowerCase().split(/[^a-z0-9]+/).filter(w => w && !SLUG_FILLER.has(w));
+  for (let n = words.length; n > 0; n--) {
+    const params = new URLSearchParams({ page: '1', limit: '1', search: words.slice(0, n).join(' ') });
+    try {
+      const res = await fetch(`${apiBase}/admin/catalog/products/combined?${params}`);
+      const data = await res.json();
+      const match = data && data.success && (data.products || [])[0];
+      if (match && match._id) return match._id;
+    } catch (_) { /* try fewer words */ }
+  }
+  return null;
+};
 import { ArrowLeft, Search, ShoppingCart, Heart, Send, Star, ChevronRight, Home, Truck, Store, RotateCcw, Banknote, ShieldCheck, ArrowRight, ChevronDown, ChevronUp, CheckCircle2, CheckCircle, X, Play, MapPin, Coins, PackageX } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { useApp } from '../context/AppContext';
@@ -11,6 +31,7 @@ import { formatDiscount } from '../utils/discountHelper';
 export default function ProductDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { search: urlSearch } = useLocation();
   const { totalCartItems, addToCart, cart, toggleWishlist, isInWishlist, user, setSearchQuery, location: userLocation, systemSettings } = useApp();
   
   const [product, setProduct] = useState(null);
@@ -310,6 +331,12 @@ export default function ProductDetailsPage() {
       setIsLoading(true);
       try {
         const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        // Old-site link: open the matching product (or all products), keeping ?utm_ tracking.
+        if (!isProductId(id)) {
+          const matchId = await findProductForSlug(apiBase, id);
+          navigate(matchId ? `/product/${matchId}${urlSearch}` : `/all-products${urlSearch}`, { replace: true });
+          return;
+        }
         const res = await fetch(`${apiBase}/admin/catalog/products/${id}`);
         const data = await res.json();
         
