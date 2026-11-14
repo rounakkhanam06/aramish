@@ -1,5 +1,12 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+
+// Old-site links still out there (ads, ChatGPT/Google results, e.g. /about/?utm_source=chatgpt.com):
+// send them to the homepage instead of a 404, keeping the ?utm_ tracking parameters.
+const ToHome = () => {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: '/', search }} replace />;
+};
 import { Toaster } from 'react-hot-toast';
 import { AppProvider, useApp } from './context/AppContext';
 import Layout from './components/layout/Layout';
@@ -185,6 +192,8 @@ function AppContent() {
           <Route path="/order-details/:orderId" element={<OrderDetailsPage />} />
           <Route path="/brand/:brandId" element={<BrandPage />} />
           <Route path="/search" element={<SearchPage />} />
+          <Route path="/about" element={<ToHome />} />
+          <Route path="/about-us" element={<ToHome />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
         </Suspense>
