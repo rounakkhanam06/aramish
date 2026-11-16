@@ -491,8 +491,23 @@ exports.syncOrderStatus = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Order has no AWB code to track' });
         }
 
-        const trackingData = await shiprocketService.trackAWB(order.awbCode);
-        
+        // A courier booked in the Shiprocket panel: the order is now being processed. Save the
+        // AWB/courier before tracking, so a tracking failure can't lose it.
+        if (order.status === 'Pending') {
+            order.status = 'Processing';
+            if (!order.shipmentStatus && srShipment && srShipment.status) order.shipmentStatus = srShipment.status;
+        }
+        await order.save();
+
+        let trackingData = null;
+        try {
+            trackingData = await shiprocketService.trackAWB(order.awbCode);
+        } catch (trackErr) {
+            // A freshly assigned AWB often has no tracking yet: the courier sync above still stands.
+            console.error('Shiprocket tracking not available yet:', srErrorMessage(trackErr));
+            return res.status(200).json({ success: true, message: 'Courier synced from Shiprocket (tracking not available yet)', order });
+        }
+
         if (trackingData && trackingData.tracking_data) {
             const shipmentTrack = trackingData.tracking_data.shipment_track;
             const activities = trackingData.tracking_data.shipment_track_activities || [];
@@ -505,7 +520,7 @@ exports.syncOrderStatus = async (req, res) => {
                 let mappedStatus = order.status;
                 const srStatus = currentStatus ? String(currentStatus).toUpperCase().trim() : '';
 
-                if (['SHIPPED', 'IN TRANSIT', 'DISPATCHED'].includes(srStatus)) {
+                if (['SHIPPED', 'IN TRANSIT', 'IN_TRANSIT', 'DISPATCHED'].includes(srStatus)) {
                     mappedStatus = 'Shipped';
                 } else if (['OUT FOR DELIVERY', 'OUT_FOR_DELIVERY'].includes(srStatus)) {
                     mappedStatus = 'Out for Delivery';
