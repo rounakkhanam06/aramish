@@ -1012,6 +1012,17 @@ exports.trackOrderById = async (req, res) => {
 // @access  Private/Admin
 exports.deleteOrder = async (req, res) => {
   try {
+    // Orders imported from the old site keep their text ids (e.g. "ORD-OTOLNE"), which can't be
+    // cast to an ObjectId. They were never placed here (no stock/coupon/Shiprocket of ours), so
+    // they are just removed from the collection.
+    if (!/^[0-9a-f]{24}$/i.test(String(req.params.id))) {
+      const result = await Order.collection.deleteOne({ _id: String(req.params.id) });
+      if (!result.deletedCount) {
+        return res.status(404).json({ success: false, message: 'Order not found' });
+      }
+      return res.status(200).json({ success: true, message: 'Old order deleted successfully' });
+    }
+
     const order = await Order.findById(req.params.id);
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
