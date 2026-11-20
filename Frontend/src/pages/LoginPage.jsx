@@ -11,7 +11,7 @@ const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/auth
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { setUser } = useApp();
+  const { setUser, systemSettings } = useApp();
   const [searchParams] = useSearchParams();
 
   // Referral code from the shared link (?ref=CODE), or one captured earlier on any page
@@ -302,6 +302,15 @@ export default function LoginPage() {
               <h2 className="text-2xl font-extrabold text-[#02006c]">Sign In / Register</h2>
               <p className="text-[10px] text-slate-500 font-bold">Sign in to your Registered Account</p>
               <div className="w-6 h-0.75 bg-[#0B132B] rounded-full mt-1.5"></div>
+            </div>
+
+            {/* Welcome coins promo */}
+            <div className="flex items-center gap-2 bg-[#0B132B] text-amber-400 rounded-xl px-3 py-2.5 shadow-md">
+              <span className="text-lg animate-pulse">🪙</span>
+              <p className="text-[11px] font-extrabold uppercase tracking-wide">
+                Login & Get {systemSettings?.welcomeBonusCoins || 1000} Coins in your App Wallet
+                <span className="text-amber-400/60 font-bold normal-case"> *T&C apply</span>
+              </p>
             </div>
 
             <form onSubmit={handleSendOtp} className="space-y-4 pt-2">
